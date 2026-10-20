@@ -2,7 +2,7 @@
 
 > **Đơn vị phát triển**: Nhóm ADHT  
 > **Mô hình Repository**: Monorepo (Quản lý tập trung toàn bộ Firmware và Mobile App trong 1 Repository duy nhất)  
-> **Công nghệ lõi**: ESP32 (FreeRTOS) + HiveMQ Cloud (MQTT TLS) + Supabase (PostgreSQL REST API) + Flutter Mobile App  
+> **Công nghệ lõi**: ESP32 (FreeRTOS) + EMQX Cloud Serverless (MQTT TLS) + Supabase (PostgreSQL REST API) + Flutter Mobile App  
 
 ---
 
@@ -30,7 +30,7 @@ IoT-project/
 │   ├── include/                        # Header dùng chung
 │   ├── lib/                            # Thư viện cục bộ (Adafruit GFX, SH110X, DHT, Kalman)
 │   └── src/
-│       ├── config.h                    # Cấu hình WiFi, HiveMQ Cloud, Supabase API Key & Pinout
+│       ├── config.h                    # Cấu hình WiFi, EMQX Cloud Serverless, Supabase API Key & Pinout
 │       ├── types.h                     # Cấu trúc dữ liệu WeatherData, SystemConfig, NetworkStatus
 │       ├── main.cpp                    # Hàm setup(), khởi tạo và điều phối 4 Task FreeRTOS trên 2 Core
 │       ├── sensors/
@@ -38,7 +38,7 @@ IoT-project/
 │       │   └── sensor_manager.cpp      # Đọc DHT11 (bộ lọc Kalman), ngắt đo xung Mưa và Gió
 │       ├── network/
 │       │   ├── wifi_manager.h/.cpp     # Quản lý kết nối WiFi và cơ chế tự động kết nối lại
-│       │   ├── mqtt_manager.h/.cpp     # Client MQTT kết nối HiveMQ Cloud (TLS 8883), LWT, Pub/Sub
+│       │   ├── mqtt_manager.h/.cpp     # Client MQTT kết nối EMQX Cloud Serverless (TLS 8883), LWT, Pub/Sub
 │       │   └── supabase_manager.h/.cpp # Client HTTPS POST gửi dữ liệu JSON vào Supabase REST API
 │       ├── display/
 │       │   ├── oled_manager.h          # Khai báo giao diện OLED
@@ -79,7 +79,7 @@ flowchart TD
     end
 
     subgraph CLOUD["2. TẦNG ĐÁM MÂY (CLOUD LAYER - 100% FREE TIER)"]
-        Broker["MQTT Broker: HiveMQ Cloud<br/>- Cổng bảo mật: 8883 (TLS/SSL)<br/>- Cơ chế LWT: Báo Online/Offline"]
+        Broker["MQTT Broker: EMQX Cloud Serverless<br/>- Cổng bảo mật: 8883 (TLS/SSL)<br/>- Cơ chế LWT: Báo Online/Offline"]
         DB[("Supabase Cloud (PostgreSQL)<br/>- Bảng: weather_logs<br/>- Giao diện: REST API HTTPS")]
     end
 
@@ -135,7 +135,7 @@ flowchart TD
 
 ## 4. ĐẶC TẢ GIAO THỨC MẠNG & MQTT TOPICS
 
-- **MQTT Broker**: HiveMQ Cloud Cluster
+- **MQTT Broker**: EMQX Cloud Serverless
 - **Cổng kết nối**: `8883` (MQTTS - Mã hóa TLS/SSL) hoặc `8884` (WSS)
 - **Thiết bị định danh (Client ID)**: `adht_weather_01`
 
@@ -250,7 +250,7 @@ create policy "Allow anonymous select" on weather_logs for select using (true);
 ```text
 adht-weather-app/lib/
 ├── core/
-│   ├── constants/            # HiveMQ URL, Supabase API Key, Topic definitions
+│   ├── constants/            # EMQX Cloud URL, Supabase API Key, Topic definitions
 │   ├── theme/                # Màu sắc giao diện (Dark/Light mode, Glassmorphism)
 │   └── utils/                # Hàm chuyển đổi đơn vị, định dạng ngày giờ
 ├── data/
@@ -287,8 +287,8 @@ Toàn bộ nhóm làm việc tập trung trên cùng một Git Repository, phân
 
 | Giai đoạn | Nhiệm vụ chính | Phân hệ | Đầu ra nghiệm thu |
 |---|---|---|---|
-| **Tuần 1** | **Khởi tạo Đám mây & Kiểm thử Mạch**<br/>- Đăng ký cụm HiveMQ Cloud Free & tạo tài khoản kết nối.<br/>- Tạo dự án Supabase & chạy script SQL tạo bảng.<br/>- Kiểm tra nguồn và đường truyền tín hiệu cảm biến ESP32. | Cloud & Hardware | - Cụm HiveMQ & Supabase sẵn sàng.<br/>- Bảng đo kiểm tín hiệu GPIO hoạt động tốt. |
-| **Tuần 2** | **Hiệu chuẩn & Vận hành Firmware**<br/>- Điền WiFi và Cloud credentials vào [config.h](file:///home/duongan/Documents/Code/IoT-project/adht-weather-firmware/src/config.h).<br/>- Hiệu chuẩn hệ số gàu lật mưa và chong chóng gió.<br/>- Nạp code và kiểm tra dữ liệu đẩy lên HiveMQ + Supabase. | `adht-weather-firmware` | - ESP32 hoạt động liên tục 24/7.<br/>- OLED hiển thị đầy đủ thông số và trạng thái mạng. |
+| **Tuần 1** | **Khởi tạo Đám mây & Kiểm thử Mạch**<br/>- Đăng ký cụm EMQX Cloud Serverless Free & tạo tài khoản kết nối.<br/>- Tạo dự án Supabase & chạy script SQL tạo bảng.<br/>- Kiểm tra nguồn và đường truyền tín hiệu cảm biến ESP32. | Cloud & Hardware | - Cụm EMQX Cloud & Supabase sẵn sàng.<br/>- Bảng đo kiểm tín hiệu GPIO hoạt động tốt. |
+| **Tuần 2** | **Hiệu chuẩn & Vận hành Firmware**<br/>- Điền WiFi và Cloud credentials vào [config.h](file:///home/duongan/Documents/Code/IoT-project/adht-weather-firmware/src/config.h).<br/>- Hiệu chuẩn hệ số gàu lật mưa và chong chóng gió.<br/>- Nạp code và kiểm tra dữ liệu đẩy lên EMQX Cloud + Supabase. | `adht-weather-firmware` | - ESP32 hoạt động liên tục 24/7.<br/>- OLED hiển thị đầy đủ thông số và trạng thái mạng. |
 | **Tuần 3** | **Khởi tạo Flutter & Màn hình Realtime**<br/>- Tạo dự án Flutter trong `adht-weather-app`.<br/>- Xây dựng service kết nối MQTT Client nhận `telemetry`.<br/>- Thiết kế Dashboard hiển thị số đo và Badge Online/Offline. | `adht-weather-app` | - Ứng dụng chạy trên Android/iOS.<br/>- Nhận dữ liệu Realtime độ trễ < 100ms. |
 | **Tuần 4** | **Biểu đồ Lịch sử & Điều khiển Cảnh báo**<br/>- Tích hợp `fl_chart` kết nối Supabase REST API.<br/>- Làm bộ lọc thời gian: 6 giờ, 24 giờ, 7 ngày.<br/>- Màn hình Settings cho phép đổi ngưỡng cảnh báo và test còi. | `adht-weather-app` | - Biểu đồ trực quan hóa dữ liệu theo ngày/tuần.<br/>- Điều khiển còi và lưu cấu hình ngưỡng từ xa. |
 | **Tuần 5** | **Kiểm thử Hệ thống, Đóng gói & Báo cáo**<br/>- Stress test: Mất WiFi, mất điện đột ngột, phục hồi tự động.<br/>- Xuất bản file cài đặt Android `.apk`.<br/>- Hoàn thiện hộp bảo vệ ngoài trời và tài liệu báo cáo. | Toàn hệ thống | - File cài đặt `ADHT_Weather.apk`.<br/>- Trạm thời tiết hoàn thiện và Slide thuyết trình. |
@@ -302,7 +302,7 @@ Toàn bộ nhóm làm việc tập trung trên cùng một Git Repository, phân
    - *Kỳ vọng*: ESP32 tự động nhận biết mất kết nối, chuyển hiển thị `W:--` trên OLED, tiếp tục đo cảm biến ngắt bình thường và tự động kết nối lại mạng ngay khi có sóng.
 2. **Kiểm thử Cơ chế Báo trạng thái tức thì (LWT Test)**:
    - *Tình huống*: Rút nguồn adapter cấp cho ESP32.
-   - *Kỳ vọng*: Sau 5–10 giây, HiveMQ tự động phát bản tin LWT, Mobile App lập tức chuyển trạng thái trạm sang `Offline`.
+   - *Kỳ vọng*: Sau 5–10 giây, EMQX Cloud tự động phát bản tin LWT, Mobile App lập tức chuyển trạng thái trạm sang `Offline`.
 3. **Kiểm thử Độ Bền & Lưu Trữ Dữ Liệu (Endurance Test)**:
    - *Tình huống*: Cho trạm hoạt động liên tục 24 giờ ngoài môi trường thực tế.
    - *Kỳ vọng*: Supabase ghi nhận khoảng 2.880 bản ghi (với chu kỳ 30 giây/lần), biểu đồ hiển thị liên tục không bị gián đoạn.

@@ -6,7 +6,7 @@
 
 ## 🚀 Công nghệ sử dụng
 - **Framework**: [Flutter](https://flutter.dev/) (Dart SDK)
-- **Giao thức thời gian thực**: MQTT qua WebSocket (`wss://`) kết nối với **HiveMQ Cloud**
+- **Giao thức thời gian thực**: MQTT qua WebSocket (`wss://`) kết nối với **EMQX Cloud Serverless**
 - **Cơ sở dữ liệu & Phân tích lịch sử**: **Supabase Cloud** (PostgreSQL REST API)
 - **Thư viện biểu đồ**: `fl_chart` (Vẽ biểu đồ đường cong nhiệt độ, độ ẩm và biểu đồ cột lượng mưa)
 - **Quản lý trạng thái (State Management)**: `provider`
@@ -18,7 +18,7 @@
 adht-weather-app/
 ├── lib/
 │   ├── main.dart                      # Điểm khởi chạy ứng dụng
-│   ├── core/                          # Hằng số (HiveMQ/Supabase API), Theme, Helpers
+│   ├── core/                          # Hằng số (EMQX/Supabase API), Theme, Helpers
 │   ├── data/
 │   │   ├── models/                    # Model dữ liệu thời tiết & cấu hình
 │   │   └── services/                  # MqttService & SupabaseService
@@ -48,4 +48,3 @@ flutter pub add mqtt_client supabase_flutter fl_chart provider intl
 # 3. Chạy ứng dụng trên máy ảo hoặc thiết bị thật
 flutter run
 ```
-

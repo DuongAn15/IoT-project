@@ -3,6 +3,7 @@
 
 #include "../config.h"
 #include "../types.h"
+#include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 

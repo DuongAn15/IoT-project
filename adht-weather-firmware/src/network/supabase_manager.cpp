@@ -7,7 +7,16 @@ SupabaseManager::SupabaseManager() {}
 
 void SupabaseManager::begin() {
     secureClient.setInsecure();
-    endpointUrl = String(SUPABASE_URL) + "/rest/v1/" + String(SUPABASE_TABLE);
+    String base = String(SUPABASE_URL);
+    while (base.endsWith("/")) {
+        base.remove(base.length() - 1);
+    }
+    if (base.endsWith("/rest/v1")) {
+        endpointUrl = base + "/" + String(SUPABASE_TABLE);
+    } else {
+        endpointUrl = base + "/rest/v1/" + String(SUPABASE_TABLE);
+    }
+    Serial.printf("[Supabase] Endpoint configured: %s\n", endpointUrl.c_str());
 }
 
 bool SupabaseManager::logWeatherData(const WeatherData &data) {

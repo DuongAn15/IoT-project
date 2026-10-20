@@ -179,12 +179,11 @@ void setup() {
 
     // 6. Create FreeRTOS Tasks
     xTaskCreatePinnedToCore(taskSensors, "SensorsTask", 1024 * 4, NULL, 3, &taskSensorsHandle, 1);
-    xTaskCreatePinnedToCore(taskNetwork, "NetworkTask", 1024 * 8, NULL, 2, &taskNetworkHandle, 0);
+    xTaskCreatePinnedToCore(taskNetwork, "NetworkTask", 1024 * 10, NULL, 2, &taskNetworkHandle, 0);
     xTaskCreatePinnedToCore(taskDisplay, "DisplayTask", 1024 * 4, NULL, 1, &taskDisplayHandle, 1);
-    xTaskCreatePinnedToCore(taskAlert,   "AlertTask",   1024 * 2, NULL, 1, &taskAlertHandle,   1);
+    xTaskCreatePinnedToCore(taskAlert,   "AlertTask",   1024 * 4, NULL, 1, &taskAlertHandle,   1);
 }
 
 void loop() {
-    // Delete Arduino default loop task to save FreeRTOS RAM
-    vTaskDelete(NULL);
+    vTaskDelay(pdMS_TO_TICKS(1000));
 }

@@ -34,20 +34,38 @@
 #define WIND_SAMPLE_PERIOD_SEC  5        // Chu kỳ tính tốc độ gió (giây)
 
 // ==========================================
-// 3. WIFI CREDENTIALS (Thay thế theo mạng của bạn)
+// 3. WIFI CREDENTIALS (Load từ .env)
 // ==========================================
+#ifndef DEFAULT_WIFI_SSID
 #define DEFAULT_WIFI_SSID       "Your_WiFi_SSID"
+#endif
+
+#ifndef DEFAULT_WIFI_PASS
 #define DEFAULT_WIFI_PASS       "Your_WiFi_Password"
+#endif
 
 // ==========================================
-// 4. HIVEMQ CLOUD (MQTT BROKER)
+// 4. EMQX CLOUD (MQTT BROKER) (Load từ .env)
 // ==========================================
-// Lấy từ bảng điều khiển HiveMQ Cloud
-#define MQTT_BROKER_HOST        "xxxxxxxx.s1.eu.hivemq.cloud"
+#ifndef MQTT_BROKER_HOST
+#define MQTT_BROKER_HOST        "xxxxxxxx.ala.asia-southeast1.emqxsl.com"
+#endif
+
+#ifndef MQTT_BROKER_PORT
 #define MQTT_BROKER_PORT        8883     // TLS/SSL Port
+#endif
+
+#ifndef MQTT_USERNAME
 #define MQTT_USERNAME           "adht_device"
+#endif
+
+#ifndef MQTT_PASSWORD
 #define MQTT_PASSWORD           "Your_Mqtt_Password"
+#endif
+
+#ifndef DEVICE_ID
 #define DEVICE_ID               "adht_weather_01"
+#endif
 
 // MQTT Topics
 #define TOPIC_TELEMETRY         "adht/weather/telemetry"
@@ -56,12 +74,19 @@
 #define TOPIC_CONFIG            "adht/weather/config"
 
 // ==========================================
-// 5. SUPABASE DATABASE (REST API)
+// 5. SUPABASE DATABASE (REST API) (Load từ .env)
 // ==========================================
-// Lấy từ Project Settings > API trên Supabase
+#ifndef SUPABASE_URL
 #define SUPABASE_URL            "https://xxxxxxxx.supabase.co"
+#endif
+
+#ifndef SUPABASE_ANON_KEY
 #define SUPABASE_ANON_KEY       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+#endif
+
+#ifndef SUPABASE_TABLE
 #define SUPABASE_TABLE          "weather_logs"
+#endif
 
 // ==========================================
 // 6. TIMING INTERVALS
@@ -72,4 +97,3 @@
 #define DISPLAY_UPDATE_MS       500      // 500ms cập nhật màn hình OLED
 
 #endif // CONFIG_H
-

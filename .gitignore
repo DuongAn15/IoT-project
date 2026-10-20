@@ -18,7 +18,12 @@
 *.o
 *.a
 
+# Secrets & Environment variables (DO NOT COMMIT)
+.env
+*.env
+!.env.example
+secrets.h
+
 # OS Files
 .DS_Store
 Thumbs.db
-
