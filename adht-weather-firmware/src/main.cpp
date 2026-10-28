@@ -4,7 +4,6 @@
 #include "sensors/sensor_manager.h"
 #include "network/wifi_manager.h"
 #include "network/mqtt_manager.h"
-#include "network/supabase_manager.h"
 #include "display/oled_manager.h"
 #include "storage/storage_manager.h"
 
@@ -52,11 +51,10 @@ void taskSensors(void *pvParameters) {
 }
 
 // ----------------------------------------------------------------
-// TASK 2: Network & Cloud (WiFi, MQTT Pub/Sub, Supabase Logging)
+// TASK 2: Network & Cloud (WiFi, MQTT Pub/Sub)
 // ----------------------------------------------------------------
 void taskNetwork(void *pvParameters) {
     uint32_t lastMqttPub = 0;
-    uint32_t lastDbLog = 0;
 
     while (1) {
         wifiMgr.loop();
@@ -66,19 +64,11 @@ void taskNetwork(void *pvParameters) {
         WeatherData weather = sensorMgr.getData();
         NetworkStatus net = wifiMgr.getStatus();
 
-        // 1. Publish Realtime Telemetry via MQTT
+        // Publish Realtime Telemetry via MQTT (EMQX Cloud automatically forwards to Supabase)
         if (now - lastMqttPub >= MQTT_PUBLISH_INTERVAL_MS) {
             lastMqttPub = now;
             if (mqttMgr.isConnected()) {
                 mqttMgr.publishTelemetry(weather, net.wifi_rssi);
-            }
-        }
-
-        // 2. Log History to Supabase Database
-        if (now - lastDbLog >= DB_LOG_INTERVAL_MS) {
-            lastDbLog = now;
-            if (wifiMgr.isConnected()) {
-                supabaseMgr.logWeatherData(weather);
             }
         }
 
@@ -171,8 +161,6 @@ void setup() {
     mqttMgr.setCommandCallback(handleMqttCommand);
     mqttMgr.setConfigCallback(handleMqttConfig);
     mqttMgr.begin();
-
-    supabaseMgr.begin();
 
     oledMgr.showBootScreen("System Ready!");
     delay(1000);

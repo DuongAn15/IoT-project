@@ -74,26 +74,10 @@
 #define TOPIC_CONFIG            "adht/weather/config"
 
 // ==========================================
-// 5. SUPABASE DATABASE (REST API) (Load từ .env)
-// ==========================================
-#ifndef SUPABASE_URL
-#define SUPABASE_URL            "https://xxxxxxxx.supabase.co"
-#endif
-
-#ifndef SUPABASE_ANON_KEY
-#define SUPABASE_ANON_KEY       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-#endif
-
-#ifndef SUPABASE_TABLE
-#define SUPABASE_TABLE          "weather_logs"
-#endif
-
-// ==========================================
-// 6. TIMING INTERVALS
+// 5. TIMING INTERVALS
 // ==========================================
 #define SENSOR_READ_INTERVAL_MS 2000     // 2 giây đọc cảm biến 1 lần
-#define MQTT_PUBLISH_INTERVAL_MS 5000    // 5 giây publish MQTT 1 lần (Realtime)
-#define DB_LOG_INTERVAL_MS      30000    // 30 giây lưu vào Supabase 1 lần
+#define MQTT_PUBLISH_INTERVAL_MS 3000    // 3 giây publish MQTT 1 lần (EMQX tự forward sang Supabase)
 #define DISPLAY_UPDATE_MS       500      // 500ms cập nhật màn hình OLED
 
 #endif // CONFIG_H

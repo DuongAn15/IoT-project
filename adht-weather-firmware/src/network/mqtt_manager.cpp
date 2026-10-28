@@ -56,8 +56,8 @@ bool MqttManager::reconnect() {
         mqttClient.publish(TOPIC_STATUS, onlinePayload, true);
 
         // Subscribe to Command & Config topics
-        mqttClient.subscribe(TOPIC_COMMAND);
-        mqttClient.subscribe(TOPIC_CONFIG);
+        mqttClient.subscribe(TOPIC_COMMAND, 1);
+        mqttClient.subscribe(TOPIC_CONFIG, 1);
         Serial.printf("[MQTT] Subscribed to %s and %s\n", TOPIC_COMMAND, TOPIC_CONFIG);
         return true;
     } else {
