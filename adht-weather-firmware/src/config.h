@@ -77,7 +77,7 @@
 // 5. TIMING INTERVALS
 // ==========================================
 #define SENSOR_READ_INTERVAL_MS 2000     // 2 giây đọc cảm biến 1 lần
-#define MQTT_PUBLISH_INTERVAL_MS 3000    // 3 giây publish MQTT 1 lần (EMQX tự forward sang Supabase)
+#define MQTT_PUBLISH_INTERVAL_MS 5000    // 5 giây publish MQTT 1 lần (EMQX tự forward sang Supabase)
 #define DISPLAY_UPDATE_MS       500      // 500ms cập nhật màn hình OLED
 
 #endif // CONFIG_H

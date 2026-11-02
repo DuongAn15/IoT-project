@@ -1,0 +1,51 @@
+{
+  "name": "adht-weather-backend",
+  "version": "1.0.0",
+  "description": "NestJS Backend Gateway & Time-Series Processor for ADHT Smart Weather Station",
+  "author": "ADHT Team",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "nest build",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "start": "nest start",
+    "dev": "nest start --watch",
+    "start:dev": "nest start --watch",
+    "start:debug": "nest start --debug --watch",
+    "start:prod": "node dist/main",
+    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix"
+  },
+  "dependencies": {
+    "@nestjs/axios": "^3.0.2",
+    "@nestjs/common": "^10.3.8",
+    "@nestjs/config": "^3.2.2",
+    "@nestjs/core": "^10.3.8",
+    "@nestjs/platform-express": "^10.3.8",
+    "@nestjs/platform-socket.io": "^10.3.8",
+    "@nestjs/swagger": "^7.3.1",
+    "@nestjs/websockets": "^10.3.8",
+    "@supabase/supabase-js": "^2.43.4",
+    "axios": "^1.7.2",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "dotenv": "^16.4.5",
+    "firebase-admin": "^12.1.1",
+    "mqtt": "^5.6.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.3.2",
+    "@nestjs/schematics": "^10.1.1",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.12.12",
+    "rimraf": "^5.0.7",
+    "source-map-support": "^0.5.21",
+    "ts-loader": "^9.5.1",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.4.5"
+  }
+}
+

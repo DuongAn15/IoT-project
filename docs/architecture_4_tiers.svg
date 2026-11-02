@@ -1,0 +1,209 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 1390" width="1440" height="1390" style="background:#F8FAFC; font-family:system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <!-- Soft Shadows -->
+    <filter id="card-shadow" x="-3%" y="-3%" width="106%" height="110%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#0F172A" flood-opacity="0.08" />
+    </filter>
+    <filter id="subcard-shadow" x="-2%" y="-2%" width="104%" height="108%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0F172A" flood-opacity="0.05" />
+    </filter>
+    <filter id="badge-shadow" x="-5%" y="-5%" width="110%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0F172A" flood-opacity="0.12" />
+    </filter>
+
+    <!-- Markers for Arrows -->
+    <marker id="arrow-down-blue" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0284C7"/>
+    </marker>
+    <marker id="arrow-up-blue" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 10 0 L 0 5 L 10 10 z" fill="#0284C7"/>
+    </marker>
+
+    <marker id="arrow-down-green" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#059669"/>
+    </marker>
+    <marker id="arrow-up-green" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 10 0 L 0 5 L 10 10 z" fill="#059669"/>
+    </marker>
+
+    <marker id="arrow-down-purple" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7C3AED"/>
+    </marker>
+    <marker id="arrow-up-purple" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 10 0 L 0 5 L 10 10 z" fill="#7C3AED"/>
+    </marker>
+  </defs>
+
+  <!-- ==================== HEADER BANNER ==================== -->
+  <rect x="0" y="0" width="1440" height="96" fill="#0F172A" />
+  <rect x="0" y="93" width="1440" height="3" fill="#38BDF8" />
+  <text x="720" y="44" fill="#FFFFFF" font-size="25" font-weight="800" text-anchor="middle" letter-spacing="0.5">HỆ THỐNG TRẠM QUAN TRẮC THỜI TIẾT THÔNG MINH ADHT</text>
+  <text x="720" y="74" fill="#94A3B8" font-size="14" font-weight="600" text-anchor="middle" letter-spacing="0.3">SƠ ĐỒ KIẾN TRÚC HỆ THỐNG 4 TẦNG TIÊU CHUẨN (4-TIER IoT ARCHITECTURE)</text>
+
+  <!-- ==================== TIER 1: THIẾT BỊ ĐẦU CUỐI ==================== -->
+  <g id="tier-1">
+    <!-- Main Card Container -->
+    <rect x="120" y="125" width="1200" height="235" rx="14" fill="#F0F9FF" stroke="#0284C7" stroke-width="2" filter="url(#card-shadow)"/>
+    <!-- Top Header Bar -->
+    <path d="M 120 139 Q 120 125 134 125 L 1306 125 Q 1320 125 1320 139 L 1320 170 L 120 170 Z" fill="#0284C7"/>
+    <text x="145" y="156" fill="#FFFFFF" font-size="16" font-weight="700">1. TẦNG THIẾT BỊ ĐẦU CUỐI (ESP32 NODES &amp; SIMULATOR)</text>
+    <text x="1300" y="156" fill="#E0F2FE" font-size="13" font-weight="600" text-anchor="end">EDGE DEVICES &amp; SENSORS</text>
+    
+    <!-- Subtitle -->
+    <text x="145" y="191" fill="#475569" font-size="13" font-weight="500">Thu thập dữ liệu vi khí hậu hiện trường, hiển thị tại chỗ qua OLED và điều khiển thiết bị ngoại vi</text>
+
+    <!-- Sub-box 1: Hardware ESP32 -->
+    <rect x="145" y="205" width="565" height="135" rx="10" fill="#FFFFFF" stroke="#BAE6FD" stroke-width="1.5" filter="url(#subcard-shadow)"/>
+    <rect x="145" y="205" width="565" height="30" rx="10" fill="#E0F2FE"/>
+    <path d="M 145 225 L 145 235 L 710 235 L 710 225 Z" fill="#E0F2FE"/>
+    <text x="160" y="225" fill="#0369A1" font-size="13" font-weight="700">📟 Trạm Phần Cứng Thật (Node: adht_weather_01)</text>
+    <text x="160" y="255" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">Vi điều khiển:</tspan> ESP32 FreeRTOS Dual-Core (Core 0: Mạng, Core 1: Cảm biến)</text>
+    <text x="160" y="277" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">Cảm biến:</tspan> DHT11 (Kalman Filter), Gió (ngắt Hall), Mưa (gàu lật số)</text>
+    <text x="160" y="299" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">Ngoại vi tại trạm:</tspan> OLED SH1106 1.3", Còi Buzzer (GPIO 2), LED, 3 nút bấm</text>
+    <text x="160" y="321" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">Giao tiếp:</tspan> WiFi 2.4GHz, gửi MQTTS chu kỳ 5.0s, lưu cấu hình NVS Flash</text>
+
+    <!-- Sub-box 2: Virtual Simulators -->
+    <rect x="730" y="205" width="565" height="135" rx="10" fill="#FFFFFF" stroke="#BAE6FD" stroke-width="1.5" filter="url(#subcard-shadow)"/>
+    <rect x="730" y="205" width="565" height="30" rx="10" fill="#E0F2FE"/>
+    <path d="M 730 225 L 730 235 L 1295 235 L 1295 225 Z" fill="#E0F2FE"/>
+    <text x="745" y="225" fill="#0369A1" font-size="13" font-weight="700">💻 Bộ Giả Lập Trạm Ảo Phụ Trợ (tools/simulate_nodes.py)</text>
+    <text x="745" y="255" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">Trạm ảo 02 (adht_weather_02):</tspan> Mô phỏng kịch bản nắng nóng, nhiệt độ cao</text>
+    <text x="745" y="277" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">Trạm ảo 03 (adht_weather_03):</tspan> Mô phỏng dông lốc, mưa to và gió giật mạnh</text>
+    <text x="745" y="299" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">Đồng bộ chu kỳ 5.0s:</tspan> Client ID riêng biệt, tránh xung đột với trạm thật</text>
+    <text x="745" y="321" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">Mục đích:</tspan> Kiểm thử tải đồng thời nhiều trạm cho Backend &amp; App</text>
+  </g>
+
+  <!-- ==================== ARROW TIER 1 -> TIER 2 ==================== -->
+  <line x1="720" y1="360" x2="720" y2="425" stroke="#0284C7" stroke-width="3" marker-start="url(#arrow-up-blue)" marker-end="url(#arrow-down-blue)"/>
+  <rect x="390" y="377" width="660" height="30" rx="15" fill="#FFFFFF" stroke="#0284C7" stroke-width="2" filter="url(#badge-shadow)"/>
+  <text x="720" y="397" fill="#0369A1" font-size="12.5" font-weight="700" text-anchor="middle">Giao thức MQTTS TLS 8883 (Telemetry chu kỳ 5.0s / LWT Status / Lệnh còi QoS 1)</text>
+
+  <!-- ==================== TIER 2: MQTT BROKER ==================== -->
+  <g id="tier-2">
+    <!-- Main Card Container -->
+    <rect x="120" y="425" width="1200" height="215" rx="14" fill="#ECFDF5" stroke="#059669" stroke-width="2" filter="url(#card-shadow)"/>
+    <!-- Top Header Bar -->
+    <path d="M 120 439 Q 120 425 134 425 L 1306 425 Q 1320 425 1320 439 L 1320 470 L 120 470 Z" fill="#059669"/>
+    <text x="145" y="456" fill="#FFFFFF" font-size="16" font-weight="700">2. TẦNG KẾT NỐI &amp; TRUNG CHUYỂN BẢN TIN (MQTT BROKER)</text>
+    <text x="1300" y="456" fill="#D1FAE5" font-size="13" font-weight="600" text-anchor="end">MESSAGE BROKER CLUSTER</text>
+    
+    <!-- Subtitle -->
+    <text x="145" y="491" fill="#475569" font-size="13" font-weight="500">Định tuyến gói tin nhẹ, độ trễ thấp (&lt;100ms) và bảo vệ an toàn với chứng chỉ mã hóa TLS</text>
+
+    <!-- Sub-box 1: EMQX Cluster -->
+    <rect x="145" y="505" width="565" height="115" rx="10" fill="#FFFFFF" stroke="#A7F3D0" stroke-width="1.5" filter="url(#subcard-shadow)"/>
+    <rect x="145" y="505" width="565" height="30" rx="10" fill="#D1FAE5"/>
+    <path d="M 145 525 L 145 535 L 710 535 L 710 525 Z" fill="#D1FAE5"/>
+    <text x="160" y="525" fill="#065F46" font-size="13" font-weight="700">☁️ Hạ Tầng EMQX Cloud Serverless Broker</text>
+    <text x="160" y="555" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">Bảo mật kết nối:</tspan> Cổng MQTTS 8883 mã hóa TLS/SSL, xác thực Username/Pass</text>
+    <text x="160" y="577" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">Cơ chế LWT (Last Will):</tspan> Tự động phát hiện &amp; báo trạm Offline khi mất điện / rớt mạng</text>
+    <text x="160" y="599" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">Tính sẵn sàng cao:</tspan> Vận hành 24/7 trên Cloud, độ ổn định 99.9% không cần tự host</text>
+
+    <!-- Sub-box 2: Topics Structure -->
+    <rect x="730" y="505" width="565" height="115" rx="10" fill="#FFFFFF" stroke="#A7F3D0" stroke-width="1.5" filter="url(#subcard-shadow)"/>
+    <rect x="730" y="505" width="565" height="30" rx="10" fill="#D1FAE5"/>
+    <path d="M 730 525 L 730 535 L 1295 535 L 1295 525 Z" fill="#D1FAE5"/>
+    <text x="745" y="525" fill="#065F46" font-size="13" font-weight="700">📬 Cấu Trúc Topics Giao Tiếp Hai Chiều</text>
+    <text x="745" y="555" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">adht/weather/+/telemetry:</tspan> Thu nhận dữ liệu cảm biến định kỳ mỗi 5 giây</text>
+    <text x="745" y="577" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">adht/weather/+/status:</tspan> Trạng thái Online / Offline tức thì qua LWT</text>
+    <text x="745" y="599" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">adht/weather/+/command &amp; config:</tspan> Phát lệnh còi/LED &amp; cấu hình ngưỡng NVS</text>
+  </g>
+
+  <!-- ==================== ARROW TIER 2 -> TIER 3 ==================== -->
+  <line x1="720" y1="640" x2="720" y2="705" stroke="#059669" stroke-width="3" marker-start="url(#arrow-up-green)" marker-end="url(#arrow-down-green)"/>
+  <rect x="400" y="657" width="640" height="30" rx="15" fill="#FFFFFF" stroke="#059669" stroke-width="2" filter="url(#badge-shadow)"/>
+  <text x="720" y="677" fill="#047857" font-size="12.5" font-weight="700" text-anchor="middle">Hybrid Ingestion (MQTT Consumer ngầm khi Localhost / Webhook Rule Engine khi Cloud)</text>
+
+  <!-- ==================== TIER 3: BACKEND & DATABASE ==================== -->
+  <g id="tier-3">
+    <!-- Main Card Container -->
+    <rect x="120" y="705" width="1200" height="260" rx="14" fill="#F5F3FF" stroke="#7C3AED" stroke-width="2" filter="url(#card-shadow)"/>
+    <!-- Top Header Bar -->
+    <path d="M 120 719 Q 120 705 134 705 L 1306 705 Q 1320 705 1320 719 L 1320 750 L 120 750 Z" fill="#7C3AED"/>
+    <text x="145" y="736" fill="#FFFFFF" font-size="16" font-weight="700">3. TẦNG MÁY CHỦ TRUNG TÂM &amp; CƠ SỞ DỮ LIỆU (BACKEND &amp; DATABASE)</text>
+    <text x="1300" y="736" fill="#EDE9FE" font-size="13" font-weight="600" text-anchor="end">GATEWAY &amp; STORAGE</text>
+    
+    <!-- Subtitle -->
+    <text x="145" y="771" fill="#475569" font-size="13" font-weight="500">Bộ não điều phối: Lọc rác, kích hoạt cảnh báo sớm, lưu trữ bảo mật và phục vụ ứng dụng</text>
+
+    <!-- Sub-box 1: NestJS Gateway -->
+    <rect x="145" y="785" width="370" height="160" rx="10" fill="#FFFFFF" stroke="#DDD6FE" stroke-width="1.5" filter="url(#subcard-shadow)"/>
+    <rect x="145" y="785" width="370" height="30" rx="10" fill="#EDE9FE"/>
+    <path d="M 145 805 L 145 815 L 515 815 L 515 805 Z" fill="#EDE9FE"/>
+    <text x="160" y="805" fill="#5B21B6" font-size="13" font-weight="700">🦁 NestJS Backend Gateway</text>
+    <text x="160" y="833" fill="#1E293B" font-size="12">• <tspan font-weight="600">Single Gateway:</tspan> Cổng độc quyền cho App</text>
+    <text x="160" y="853" fill="#1E293B" font-size="12">• <tspan font-weight="600">Docker Compose:</tspan> Đóng gói chạy 1 lệnh</text>
+    <text x="160" y="873" fill="#1E293B" font-size="12">• <tspan font-weight="600">REST API (8 endpoints):</tspan> Quản lý trạm</text>
+    <text x="160" y="893" fill="#1E293B" font-size="12">• <tspan font-weight="600">WebSocket /ws/telemetry:</tspan> Đẩy tức thì 5s</text>
+    <text x="160" y="913" fill="#1E293B" font-size="12">• <tspan font-weight="600">OpenWeatherMap API:</tspan> Dự báo 3 ngày</text>
+    <text x="160" y="933" fill="#1E293B" font-size="12">• <tspan font-weight="600">Swagger UI (/docs):</tspan> Test API trực quan</text>
+
+    <!-- Sub-box 2: Alert Engine & FCM -->
+    <rect x="535" y="785" width="370" height="160" rx="10" fill="#FFFFFF" stroke="#DDD6FE" stroke-width="1.5" filter="url(#subcard-shadow)"/>
+    <rect x="535" y="785" width="370" height="30" rx="10" fill="#EDE9FE"/>
+    <path d="M 535 805 L 535 815 L 905 815 L 905 805 Z" fill="#EDE9FE"/>
+    <text x="550" y="805" fill="#5B21B6" font-size="13" font-weight="700">🔔 Early Warning &amp; Firebase FCM</text>
+    <text x="550" y="833" fill="#1E293B" font-size="12">• <tspan font-weight="600">Tự động phát hiện thiên tai cực đoan</tspan></text>
+    <text x="550" y="853" fill="#1E293B" font-size="12">• <tspan font-weight="600">Ngưỡng gió bão:</tspan> Gió giật ≥ 15 m/s</text>
+    <text x="550" y="873" fill="#1E293B" font-size="12">• <tspan font-weight="600">Ngưỡng mưa to:</tspan> Cường độ ≥ 30 mm/h</text>
+    <text x="550" y="893" fill="#1E293B" font-size="12">• <tspan font-weight="600">Ngưỡng nhiệt:</tspan> Nhiệt độ ≥ 38°C / ≤ 10°C</text>
+    <text x="550" y="913" fill="#1E293B" font-size="12">• <tspan font-weight="600">Firebase Admin SDK:</tspan> Rung chuông khóa máy</text>
+    <text x="550" y="933" fill="#1E293B" font-size="12">• <tspan font-weight="600">Cooldown 5 phút:</tspan> Chống spam thông báo</text>
+
+    <!-- Sub-box 3: Supabase Database -->
+    <rect x="925" y="785" width="370" height="160" rx="10" fill="#FFFFFF" stroke="#DDD6FE" stroke-width="1.5" filter="url(#subcard-shadow)"/>
+    <rect x="925" y="785" width="370" height="30" rx="10" fill="#EDE9FE"/>
+    <path d="M 925 805 L 925 815 L 1295 815 L 1295 805 Z" fill="#EDE9FE"/>
+    <text x="940" y="805" fill="#5B21B6" font-size="13" font-weight="700">⚡ CSDL Supabase (PostgreSQL)</text>
+    <text x="940" y="833" fill="#1E293B" font-size="12">• <tspan font-weight="600">Bảng weather_logs:</tspan> Chuỗi thời gian sạch</text>
+    <text x="940" y="853" fill="#1E293B" font-size="12">• <tspan font-weight="600">Bảng daily_summary:</tspan> Thống kê ngày</text>
+    <text x="940" y="873" fill="#1E293B" font-size="12">• <tspan font-weight="600">Bảng alert_logs:</tspan> Nhật ký thiên tai</text>
+    <text x="940" y="893" fill="#1E293B" font-size="12">• <tspan font-weight="600">Downsampling:</tspan> Nén điểm mượt cho biểu đồ</text>
+    <text x="940" y="913" fill="#1E293B" font-size="12">• <tspan font-weight="600">Bộ lọc:</tspan> Khung 1H, 6H, 24H, 3D, 7D</text>
+    <text x="940" y="933" fill="#1E293B" font-size="12">• <tspan font-weight="600">Bảo mật:</tspan> Tuyệt đối không mở key ra ngoài</text>
+  </g>
+
+  <!-- ==================== ARROW TIER 3 -> TIER 4 ==================== -->
+  <line x1="720" y1="965" x2="720" y2="1030" stroke="#7C3AED" stroke-width="3" marker-start="url(#arrow-up-purple)" marker-end="url(#arrow-down-purple)"/>
+  <rect x="360" y="982" width="720" height="30" rx="15" fill="#FFFFFF" stroke="#7C3AED" stroke-width="2" filter="url(#badge-shadow)"/>
+  <text x="720" y="1002" fill="#6D28D9" font-size="12.5" font-weight="700" text-anchor="middle">Single Gateway Architecture (REST API + WebSocket Realtime + Firebase FCM Push Notification)</text>
+
+  <!-- ==================== TIER 4: CLIENT APPS ==================== -->
+  <g id="tier-4">
+    <!-- Main Card Container -->
+    <rect x="120" y="1030" width="1200" height="235" rx="14" fill="#FFFBEB" stroke="#EA580C" stroke-width="2" filter="url(#card-shadow)"/>
+    <!-- Top Header Bar -->
+    <path d="M 120 1044 Q 120 1030 134 1030 L 1306 1030 Q 1320 1030 1320 1044 L 1320 1075 L 120 1075 Z" fill="#EA580C"/>
+    <text x="145" y="1061" fill="#FFFFFF" font-size="16" font-weight="700">4. TẦNG ỨNG DỤNG NGƯỜI DÙNG (MOBILE APP &amp; WEB DASHBOARD)</text>
+    <text x="1300" y="1061" fill="#FEF3C7" font-size="13" font-weight="600" text-anchor="end">PRESENTATION &amp; CLIENTS</text>
+    
+    <!-- Subtitle -->
+    <text x="145" y="1096" fill="#475569" font-size="13" font-weight="500">Giao diện người dùng trực quan, cập nhật thời gian thực, vẽ biểu đồ mượt mà và điều khiển từ xa</text>
+
+    <!-- Sub-box 1: Mobile App -->
+    <rect x="145" y="1110" width="565" height="135" rx="10" fill="#FFFFFF" stroke="#FDE68A" stroke-width="1.5" filter="url(#subcard-shadow)"/>
+    <rect x="145" y="1110" width="565" height="30" rx="10" fill="#FEF3C7"/>
+    <path d="M 145 1130 L 145 1140 L 710 1140 L 710 1130 Z" fill="#FEF3C7"/>
+    <text x="160" y="1130" fill="#9A3412" font-size="13" font-weight="700">📱 Flutter Mobile App (Android / iOS)</text>
+    <text x="160" y="1160" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">Dashboard Realtime:</tspan> Nhận số đo nhảy mỗi 5s qua WebSocket (Nhiệt, ẩm, gió, mưa)</text>
+    <text x="160" y="1182" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">Biểu đồ fl_chart:</tspan> Tương tác chạm điểm, xem lịch sử 1H, 6H, 24H, 3D, 7D mượt mà</text>
+    <text x="160" y="1204" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">Nhận cảnh báo sớm (FCM):</tspan> Rung chuông nổi banner đỏ màn hình khóa khi bão/lũ</text>
+    <text x="160" y="1226" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">Dự báo 3 ngày tới:</tspan> Hiển thị nhiệt độ, biểu tượng thời tiết và khả năng mưa (%)</text>
+
+    <!-- Sub-box 2: Web Dashboard & Remote Control -->
+    <rect x="730" y="1110" width="565" height="135" rx="10" fill="#FFFFFF" stroke="#FDE68A" stroke-width="1.5" filter="url(#subcard-shadow)"/>
+    <rect x="730" y="1110" width="565" height="30" rx="10" fill="#FEF3C7"/>
+    <path d="M 730 1130 L 730 1140 L 1295 1140 L 1295 1130 Z" fill="#FEF3C7"/>
+    <text x="745" y="1130" fill="#9A3412" font-size="13" font-weight="700">🖥️ Web Dashboard &amp; Trung Tâm Điều Khiển</text>
+    <text x="745" y="1160" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">Giám sát đa trạm:</tspan> Dropdown chuyển đổi linh hoạt giữa Trạm 01 (Thật), 02 &amp; 03 (Ảo)</text>
+    <text x="745" y="1182" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">Điều khiển ngoại vi:</tspan> Bấm nút kích hoạt còi hú kiểm tra, nháy LED, khởi động lại trạm</text>
+    <text x="745" y="1204" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">Cấu hình ngưỡng NVS:</tspan> Thay đổi ngưỡng cảnh báo từ xa, lưu thẳng vào ESP32</text>
+    <text x="745" y="1226" fill="#1E293B" font-size="12.5">• <tspan font-weight="600">Single Gateway:</tspan> Chỉ gọi Backend API, bảo mật 100% không lo rò rỉ credential</text>
+  </g>
+
+  <!-- ==================== FOOTER BANNER ==================== -->
+  <rect x="0" y="1320" width="1440" height="70" fill="#0F172A" />
+  <rect x="0" y="1320" width="1440" height="2" fill="#38BDF8" />
+  <text x="720" y="1350" fill="#E2E8F0" font-size="13.5" font-weight="600" text-anchor="middle">© 2026 NHÓM ADHT - DỰ ÁN TRẠM QUAN TRẮC THỜI TIẾT THÔNG MINH IoT</text>
+  <text x="720" y="1372" fill="#94A3B8" font-size="12" font-weight="500" text-anchor="middle">Kiến trúc 4 Tầng: ESP32 (FreeRTOS) ➔ EMQX Cloud (MQTTS) ➔ NestJS Backend Gateway (Docker) ➔ Supabase + Flutter App &amp; Web</text>
+</svg>
