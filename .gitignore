@@ -23,6 +23,17 @@
 *.env
 !.env.example
 secrets.h
+serviceAccountKey.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+*.egg-info/
+.pytest_cache/
 
 # OS Files
 .DS_Store

@@ -1,18 +1,19 @@
-# 📱 ADHT Weather Station - Mobile Application
+# 📱 ADHT Weather Station - Mobile Application & Web Dashboard
 
-Ứng dụng di động đa nền tảng (Android & iOS) thuộc hệ sinh thái **Trạm quan trắc thời tiết thông minh ADHT**.
+Ứng dụng đa nền tảng (Android, iOS & Web) thuộc hệ sinh thái **Trạm quan trắc thời tiết thông minh ADHT**.
 
-Ứng dụng đảm nhận **3 vai trò cốt lõi**:
-1. **Giám sát thời gian thực (Realtime Dashboard)**: Lắng nghe bản tin MQTT mỗi 3 giây từ EMQX Cloud để cập nhật số đo nhiệt độ, độ ẩm, gió, mưa với độ trễ < 100ms.
-2. **Biểu đồ & Phân tích lịch sử (Historical Analytics)**: Truy vấn cơ sở dữ liệu Supabase để vẽ biểu đồ diễn biến thời tiết theo 1H, 6H, 24H, 3D, 7D bằng thư viện `fl_chart`.
-3. **Điều khiển & Cài đặt từ xa (Remote Control)**: Gửi lệnh bật còi báo động, kiểm tra LED, reboot trạm và cập nhật ngưỡng cảnh báo xuống ESP32 qua các MQTT topics chuyên biệt.
+Ứng dụng kết nối **DUY NHẤT với Backend Gateway** (Mô hình bảo mật Single Gateway - không lộ Database Key):
+1. **Giám sát thời gian thực (Realtime Dashboard)**: Lắng nghe kênh **WebSocket** từ Backend để cập nhật số đo nhiệt độ, độ ẩm, gió, mưa mỗi 5 giây.
+2. **Biểu đồ & Phân tích lịch sử (Historical Analytics)**: Gọi **REST API** Backend để vẽ biểu đồ diễn biến thời tiết 1H, 6H, 24H, 3D, 7D đã được làm mịn (Downsampled) bằng thư viện `fl_chart`.
+3. **Điều khiển & Cài đặt từ xa (Remote Control)**: Gọi **REST API** Backend để gửi lệnh bật còi, đổi LED, reboot trạm và cập nhật ngưỡng cảnh báo NVS.
+4. **Nhận Cảnh Báo Sớm Khẩn Cấp (Firebase FCM)**: Tích hợp **Firebase Cloud Messaging** để rung chuông và hiện banner cảnh báo đỏ trên màn hình khóa khi có giông bão, mưa to kể cả khi tắt App.
 
 ---
 
 ## 🚀 Công nghệ sử dụng
-- **Framework**: [Flutter](https://flutter.dev/) (Dart SDK)
-- **Giao thức thời gian thực & Điều khiển**: MQTT qua WebSocket (`wss://`) hoặc TLS Socket (`mqtts://`) kết nối với **EMQX Cloud Serverless**
-- **Cơ sở dữ liệu & Phân tích lịch sử**: **Supabase Cloud** (PostgreSQL REST API)
+- **Framework**: [Flutter](https://flutter.dev/) (Dart SDK - Hỗ trợ Mobile & Web)
+- **Giao thức mạng**: REST API (`dio`) + Realtime (`web_socket_channel`) kết nối trực tiếp với **Backend Gateway**
+- **Thông báo đẩy (Push Alerts)**: **Firebase Cloud Messaging (FCM)**
 - **Thư viện biểu đồ**: `fl_chart` (Vẽ biểu đồ đường cong nhiệt độ, độ ẩm và biểu đồ cột lượng mưa)
 - **Quản lý trạng thái (State Management)**: `provider`
 
@@ -23,16 +24,17 @@
 adht-weather-app/
 ├── lib/
 │   ├── main.dart                      # Điểm khởi chạy ứng dụng
-│   ├── core/                          # Hằng số (EMQX/Supabase API), Theme, Helpers
+│   ├── core/                          # Hằng số Base URL Backend, Theme, Helpers
 │   ├── data/
 │   │   ├── models/                    # Model dữ liệu thời tiết & cấu hình
-│   │   └── services/                  # MqttClientService & SupabaseService
+│   │   └── services/                  # ApiClientService, WebSocketService & FcmService
 │   └── presentation/
 │       ├── providers/                 # WeatherProvider (quản lý state phản ứng)
 │       ├── screens/
-│       │   ├── dashboard_screen.dart  # Màn hình số đo thời gian thực & trạng thái Online (MQTT)
-│       │   ├── analytics_screen.dart  # Màn hình biểu đồ phân tích 1h, 6h, 24h, 3d, 7d (Supabase)
-│       │   └── control_screen.dart    # Màn hình điều khiển còi & cài đặt ngưỡng (MQTT)
+│       │   ├── dashboard_screen.dart  # Màn hình số đo thời gian thực qua WebSocket
+│       │   ├── analytics_screen.dart  # Màn hình biểu đồ phân tích 1H, 6H, 24H, 3D, 7D
+│       │   ├── forecast_screen.dart   # Màn hình dự báo thời tiết 3 ngày tới
+│       │   └── control_screen.dart    # Màn hình điều khiển còi & cài đặt ngưỡng
 │       └── widgets/                   # Thẻ đồng hồ Gauge, Card thông số, Biểu đồ
 ├── assets/                            # Biểu tượng thời tiết, hình ảnh minh họa
 └── pubspec.yaml                       # Khai báo dependencies
