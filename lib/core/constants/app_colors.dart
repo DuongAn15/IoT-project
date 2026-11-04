@@ -50,18 +50,7 @@ abstract class AppColors {
   static const Color error = Color(0xFFEF4444);
   static const Color info = Color(0xFF3B82F6);
 
-  // Gradients for Hero Card & Visual Accents
-  static const LinearGradient heroGradientLight = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [Color(0xFF0284C7), Color(0xFF0369A1), Color(0xFF1E3A8A)],
-  );
-
-  static const LinearGradient heroGradientDark = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [Color(0xFF0F172A), Color(0xFF1E293B), Color(0xFF0369A1)],
-  );
+  // Chart Gradients for Spline Fill
 
   static const LinearGradient tempChartGradient = LinearGradient(
     begin: Alignment.topCenter,

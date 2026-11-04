@@ -110,34 +110,6 @@ abstract class WeatherUnitHelper {
     return 'Cấp 6+';
   }
 
-  /// Tổng hợp mô tả tổng quan trạng thái thời tiết
-  static String getOverallWeatherStatus({
-    required double temp,
-    required double rain,
-    required double wind,
-  }) {
-    if (rain > 5.0) return 'Trời đang có mưa rào';
-    if (rain > 0.0) return 'Trời có mưa nhỏ lác đác';
-    if (wind > 25.0) return 'Trời nhiều gió lộng';
-    if (temp >= 33.0) return 'Trời nắng nóng';
-    if (temp <= 22.0) return 'Trời mát mẻ se lạnh';
-    return 'Thời tiết ôn hòa dễ chịu';
-  }
-
-  /// Icon đại diện thời tiết dựa trên các chỉ số
-  static IconData getOverallWeatherIcon({
-    required double temp,
-    required double rain,
-    required double wind,
-  }) {
-    if (rain > 5.0) return Icons.thunderstorm_rounded;
-    if (rain > 0.0) return Icons.cloudy_snowing;
-    if (wind > 25.0) return Icons.air_rounded;
-    if (temp >= 33.0) return Icons.wb_sunny_rounded;
-    if (temp <= 22.0) return Icons.cloud_rounded;
-    return Icons.wb_cloudy_rounded;
-  }
-
   /// Tính toán cấu hình trục Y chuẩn hóa: luôn bắt đầu từ 0 và chia các khoảng đều chẵn
   static YAxisConfig calculateYAxisConfig({
     required WeatherMetricType metricType,

@@ -3,18 +3,12 @@ import 'package:intl/intl.dart';
 /// Tiện ích chuyển đổi và định dạng thời gian chuẩn tiếng Việt
 abstract class DateTimeFormatter {
   static final DateFormat _timeFormat = DateFormat('HH:mm');
-  static final DateFormat _timeWithSecFormat = DateFormat('HH:mm:ss');
   static final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
   static final DateFormat _shortDateFormat = DateFormat('dd/MM');
 
   /// Định dạng giờ phút (ví dụ: "14:25")
   static String formatTime(DateTime dateTime) {
     return _timeFormat.format(dateTime);
-  }
-
-  /// Định dạng giờ phút giây
-  static String formatTimeWithSeconds(DateTime dateTime) {
-    return _timeWithSecFormat.format(dateTime);
   }
 
   /// Định dạng ngày tháng năm ("04/11/2026")
@@ -52,36 +46,6 @@ abstract class DateTimeFormatter {
         return 'T7';
       case DateTime.sunday:
         return 'CN';
-      default:
-        return '';
-    }
-  }
-
-  /// Tên thứ đầy đủ ("Thứ Hai", "Hôm nay",...)
-  static String getDayOfWeekFull(DateTime date) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final target = DateTime(date.year, date.month, date.day);
-
-    if (target.isAtSameMomentAs(today)) {
-      return 'Hôm nay';
-    }
-
-    switch (date.weekday) {
-      case DateTime.monday:
-        return 'Thứ Hai';
-      case DateTime.tuesday:
-        return 'Thứ Ba';
-      case DateTime.wednesday:
-        return 'Thứ Tư';
-      case DateTime.thursday:
-        return 'Thứ Năm';
-      case DateTime.friday:
-        return 'Thứ Sáu';
-      case DateTime.saturday:
-        return 'Thứ Bảy';
-      case DateTime.sunday:
-        return 'Chủ Nhật';
       default:
         return '';
     }

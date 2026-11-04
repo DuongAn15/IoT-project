@@ -40,11 +40,14 @@ class MockWeatherDataGenerator {
       final humNoise = (_random.nextDouble() - 0.5) * 1.5;
       final hum = double.parse((humBase + humAmplitude * cos(humAngle) + humNoise).clamp(35.0, 95.0).toStringAsFixed(0));
 
-      // 3. Lượng mưa: Chủ yếu là 0.0, giả lập cơn mưa rào nhẹ vào khoảng 13:00 - 13:40
+      // 3. Lượng mưa: Giả lập cơn mưa rào trưa và cơn mưa rào chiều gần đây để kiểm thử trực quan cutscene trời mưa
       double rain = 0.0;
       if (hourFrac >= 13.0 && hourFrac <= 13.7) {
         final rainPeak = sin((hourFrac - 13.0) / 0.7 * pi);
         rain = double.parse((rainPeak * 3.5 + _random.nextDouble() * 0.8).toStringAsFixed(1));
+      } else if (totalSteps > 0 && i >= max(0, totalSteps - 12)) {
+        // Cơn mưa rào 4.2 - 6.5 mm trong 1 tiếng gần nhất đến hiện tại để kiểm thử màn hình mưa
+        rain = double.parse((4.2 + (_random.nextDouble() * 2.3)).toStringAsFixed(1));
       }
 
       // 4. Tốc độ gió: Ban đêm 4-9 km/h, ban ngày 12-22 km/h
