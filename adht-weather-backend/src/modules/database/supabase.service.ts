@@ -76,8 +76,8 @@ export class SupabaseService {
       });
       if (error) throw error;
       return true;
-    } catch {
-      this.logger.error('Failed to save telemetry to Supabase');
+    } catch (error: unknown) {
+      this.logger.error(`Failed to save telemetry to Supabase: ${this.describeError(error)}`);
       return false;
     }
   }
@@ -93,8 +93,8 @@ export class SupabaseService {
         .maybeSingle<WeatherLogRow>();
       if (error) throw error;
       return data ? this.toWeatherRecord(data) : null;
-    } catch {
-      this.logger.error('Failed to fetch latest telemetry from Supabase');
+    } catch (error: unknown) {
+      this.logger.error(`Failed to fetch latest telemetry from Supabase: ${this.describeError(error)}`);
       throw new ServiceUnavailableException('Unable to load latest weather data');
     }
   }
@@ -144,8 +144,8 @@ export class SupabaseService {
         // Stop only on an empty page, even if the server caps pages below 500 rows.
         offset += data.length;
       }
-    } catch {
-      this.logger.error('Failed to fetch weather history from Supabase');
+    } catch (error: unknown) {
+      this.logger.error(`Failed to fetch weather history from Supabase: ${this.describeError(error)}`);
       throw new ServiceUnavailableException('Unable to load weather history');
     }
 
@@ -156,6 +156,31 @@ export class SupabaseService {
       rain_rate: point.rain_rate / count,
       wind_speed: point.wind_speed / count,
     }));
+  }
+
+  private describeError(error: unknown): string {
+    // Raw errors/details can contain row contents or request credentials.
+    if (typeof error !== 'object' || error === null || !('code' in error)) {
+      return 'No database error code; check network, endpoint and API key';
+    }
+    const code = error.code;
+    if (typeof code !== 'string' || !/^[A-Z0-9]{5,12}$/.test(code)) {
+      return 'No database error code; check network, endpoint and API key';
+    }
+    const hints: Record<string, string> = {
+      '42501': 'Permission denied; check role grants and RLS policies',
+      '23502': 'Required database column is missing a value',
+      '23503': 'Foreign key constraint failed',
+      '23505': 'Unique constraint failed',
+      '23514': 'Check constraint failed',
+      '42P01': 'Database table does not exist',
+      '42703': 'Database column does not exist; check schema mapping',
+      PGRST205: 'Table not found in the API schema cache',
+      PGRST204: 'Column not found in the API schema cache',
+      PGRST301: 'JWT could not be verified',
+      PGRST303: 'JWT claims validation failed',
+    };
+    return `${code}: ${hints[code] || 'Check Supabase database/API logs'}`;
   }
 
   private toWeatherRecord(row: WeatherLogRow): WeatherRecord {

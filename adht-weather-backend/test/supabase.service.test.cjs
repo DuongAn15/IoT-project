@@ -49,6 +49,22 @@ test('save rejects invalid input and reports database or transport failures', as
   assert.equal(await service.saveTelemetry(measurement), false);
 });
 
+test('logs safe database codes and hints without exposing error details or credentials', async () => {
+  const { service } = setup([
+    { error: { code: '42501', message: 'private-row', details: 'secret-token' } },
+    { error: { code: 'secret-token', message: 'private-row' } },
+    new Error('fetch failed: secret-token'),
+  ]);
+  const logs = [];
+  service.logger.error = message => logs.push(message);
+  assert.equal(await service.saveTelemetry(measurement), false);
+  assert.match(logs[0], /42501.*RLS/);
+  await assert.rejects(service.getLatest());
+  await assert.rejects(service.getHistory('station1'));
+  assert.equal(logs.length, 3);
+  assert.doesNotMatch(logs.join('\n'), /private-row|secret-token/);
+});
+
 test('latest filters by device, maps fields, and orders deterministically', async () => {
   const { service, calls } = setup([{ data: row, error: null }]);
   assert.deepEqual(await service.getLatest('station1'), { ...measurement, recorded_at: row.created_at });
