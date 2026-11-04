@@ -52,6 +52,24 @@ src/
   - Do ESP32 gửi dữ liệu **5 giây/lần** (17.280 bản ghi/ngày), điện thoại di động không thể render hết hàng vạn điểm này.
   - Viết thuật toán gộp nhóm (Downsampling) tính trung bình (Nhiệt độ, Độ ẩm, Gió) theo các mốc `1h`, `6h`, `24h`, `3d`, `7d` trước khi trả về.
 
+#### Cách `getHistory(deviceId, range)` gộp điểm lịch sử
+
+Hàm lọc log của một thiết bị theo `device_id`, trong khoảng từ **hiện tại trừ `range` đến hiện tại**. Backend đọc nhiều trang từ Supabase rồi gộp log thành các khoảng nhỏ (bucket), không trả toàn bộ log thô.
+
+| `range` | Khoảng dữ liệu | Gộp mỗi | Số điểm dự kiến khi đủ dữ liệu |
+| --- | --- | --- | --- |
+| `1h` | 1 giờ gần nhất | 1 phút | 60 |
+| `6h` | 6 giờ gần nhất | 5 phút | 6 × 12 = 72 |
+| `24h` | 24 giờ gần nhất | 10 phút | 24 × 6 = 144 |
+| `3d` | 3 ngày gần nhất | 30 phút | 3 × 24 × 2 = 144 |
+| `7d` | 7 ngày gần nhất | 1 giờ | 7 × 24 = 168 |
+
+- Ví dụ `6h`: các log trong cùng một khoảng 5 phút được lấy trung bình thành một điểm; nếu thiết bị gửi đều mỗi 5 giây thì mỗi khoảng thường có 60 log.
+- Mỗi điểm chứa trung bình `temp`, `humi`, `rain_rate`, `wind_speed`. Trung bình `rain_rate` vẫn là cường độ mưa (mm/giờ), không phải tổng lượng mưa (mm).
+- Bucket bắt đầu từ đầu khoảng truy vấn, không nhất thiết trùng mốc phút/giờ trên đồng hồ. `recorded_at` của điểm là thời điểm bắt đầu bucket; kết quả sắp từ cũ đến mới.
+- Bucket không có log sẽ không tạo điểm, không tự chèn số 0; vì vậy số điểm thực tế có thể ít hơn bảng trên.
+- Code hiện tại lấy cả mốc kết thúc (`created_at <= end`): nếu có log đúng tại `end`, có thể xuất hiện thêm một điểm biên so với số dự kiến.
+
 ### 📌 Nhiệm vụ 3: Cảnh báo sớm thiên tai (`src/modules/notifications/notifications.service.ts`)
 
 - [ ] Khởi tạo Firebase Admin SDK từ file `serviceAccountKey.json`.
