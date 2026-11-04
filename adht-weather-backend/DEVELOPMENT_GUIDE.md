@@ -79,8 +79,43 @@ Hàm lọc log của một thiết bị theo `device_id`, trong khoảng từ **
 
 ### 📌 Nhiệm vụ 4: Truyền dữ liệu thời gian thực (`src/modules/websocket/telemetry.gateway.ts`)
 
-- [ ] Gateway đã lắng nghe tại path `/ws/telemetry`.
-- [ ] Hàm `broadcastTelemetry(data)`: Gửi sự kiện `telemetry` chứa JSON số đo cảm biến mỗi 5s tới các client Flutter App / Web Dashboard đang kết nối.
+- [X] Gateway Socket.IO lắng nghe tại path `/ws/telemetry` trên cùng cổng HTTP của backend.
+- [X] Hàm `broadcastTelemetry(data)`: Phát sự kiện `telemetry` chứa số đo hợp lệ tới tất cả client đang kết nối ngay khi nhận từ MQTT/HTTP. Chu kỳ khoảng 5 giây phụ thuộc phía gửi, không có timer phát lại dữ liệu cũ.
+- [X] Hàm `broadcastStatus(data)`: Phát sự kiện `status` khi được gọi bởi luồng nhận trạng thái; không tự suy luận trạng thái offline.
+
+#### Kết nối realtime từ app/web
+
+Đây là **Socket.IO**, không phải WebSocket thuần. Dùng Socket.IO client tương thích, kết nối origin backend và đặt `path` riêng; không dùng `/api` hay coi `/ws/telemetry` là namespace.
+
+Ví dụ phía web (ứng dụng client cần cài `socket.io-client`):
+
+```ts
+import { io } from 'socket.io-client';
+
+const socket = io('http://localhost:8000', {
+  path: '/ws/telemetry',
+});
+
+socket.on('telemetry', (data) => {
+  // Cập nhật số đo trên giao diện; payload giữ nguyên các trường của CreateTelemetryDto.
+});
+socket.on('status', (data) => {
+  // Cập nhật trạng thái từ payload bên gửi.
+});
+socket.emit('ping', (reply: string) => {
+  // ACK trả về 'pong'; không phải sự kiện 'pong' riêng.
+});
+
+// Gọi khi màn hình/component bị hủy, với client do màn hình sở hữu.
+function disposeRealtime() {
+  socket.removeAllListeners();
+  socket.disconnect();
+}
+```
+
+Nếu dùng socket chung cho nhiều màn hình, mỗi màn hình chỉ hủy listener của mình; không đóng socket chung.
+
+Gateway không lưu hay phát lại lịch sử cho client vừa kết nối. App có thể gọi `/api/weather/latest?device_id=...` để lấy trạng thái số đo ban đầu rồi cập nhật từ sự kiện realtime. Khi reconnect, cần tải lại nếu muốn bù dữ liệu bị lỡ. Hiện gateway chưa có xác thực/phân quyền và broadcast toàn bộ các trạm; CORS `*` không phải cơ chế bảo vệ dữ liệu.
 
 ### 📌 Nhiệm vụ 5: Tích hợp OpenWeatherMap (`src/modules/weather/weather.service.ts`)
 
