@@ -3,6 +3,12 @@ import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { WeatherService } from './weather.service';
 import { QueryHistoryDto } from './dto/query-history.dto';
 
+function parseCoordinate(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || value.trim() === '') return NaN;
+  return Number(value);
+}
+
 @ApiTags('Weather')
 @Controller('weather')
 export class WeatherController {
@@ -25,8 +31,10 @@ export class WeatherController {
   @Get('forecast')
   @ApiOperation({ summary: 'Dự báo thời tiết 3 ngày tới' })
   @ApiResponse({ status: 200, description: 'Thông tin dự báo thời tiết' })
-  getForecast(@Query('lat') lat?: number, @Query('lon') lon?: number) {
-    return this.weatherService.getForecast(lat ? Number(lat) : undefined, lon ? Number(lon) : undefined);
+  getForecast(@Query('lat') lat?: string, @Query('lon') lon?: string) {
+    return this.weatherService.getForecast(
+      parseCoordinate(lat),
+      parseCoordinate(lon),
+    );
   }
 }
-

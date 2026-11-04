@@ -119,7 +119,29 @@ Gateway không lưu hay phát lại lịch sử cho client vừa kết nối. Ap
 
 ### 📌 Nhiệm vụ 5: Tích hợp OpenWeatherMap (`src/modules/weather/weather.service.ts`)
 
-- [ ] Dùng `axios` gọi OpenWeatherMap API để lấy dự báo thời tiết 3 ngày cho màn hình Forecast của Flutter App.
+- [X] Dùng `axios` gọi OpenWeatherMap API để lấy dự báo thời tiết 3 ngày cho màn hình Forecast của Flutter App.
+
+#### API dự báo OpenWeatherMap
+
+- Điền `OPENWEATHER_API_KEY` trong `.env` backend. Key cần có quyền dùng API **5 day / 3 hour forecast** (`https://api.openweathermap.org/data/2.5/forecast`); không sử dụng endpoint One Call yêu cầu gói khác.
+- Request: `GET /api/weather/forecast?lat=10.7769&lon=106.7009`. Có thể bỏ từng tọa độ để dùng `DEFAULT_LAT`, `DEFAULT_LON`; tọa độ `0` vẫn hợp lệ. `lat` phải thuộc [-90, 90], `lon` thuộc [-180, 180]. Chuỗi rỗng hoặc không phải số trả HTTP 400.
+- Backend gọi HTTPS với timeout 10 giây, `units=metric`, `lang=vi`. API key không xuất hiện trong response hay log lỗi.
+- Dữ liệu mỗi 3 giờ được nhóm thành **3 ngày lịch tiếp theo, không tính hôm nay**, theo `city.timezone` do OpenWeather trả về. Đây không phải cửa sổ 72 giờ bắt đầu từ lúc gọi.
+
+Payload trong `data` của response wrapper gồm:
+
+| Trường | Ý nghĩa |
+| --- | --- |
+| `status` | `success` |
+| `coords` | `{ lat, lon }` dùng để truy vấn |
+| `timezone_offset_seconds` | Độ lệch múi giờ địa điểm so với UTC, đơn vị giây |
+| `forecast_days` | 3 phần tử, sắp theo `date` dạng `YYYY-MM-DD` tại địa điểm |
+
+Mỗi ngày chứa `temp_min`, `temp_max` (°C, thấp/cao nhất trong các mốc dự báo), `humidity` (% trung bình), `wind_speed` (m/s trung bình), `rain_mm` (tổng lượng mưa dự báo của các khoảng 3 giờ), `precipitation_probability` (xác suất mưa lớn nhất trong các mốc, từ 0 đến 1), và `periods`.
+
+Mỗi phần tử `periods` gồm `timestamp` (ISO UTC), `temp`, `temp_min`, `temp_max`, `humidity`, `wind_speed`, `rain_mm`, `precipitation_probability`, `description`, `icon`. Các điểm được sắp từ cũ đến mới. Các thống kê ngày được tổng hợp từ các mốc 3 giờ theo ngày của timestamp; không phải sản phẩm dự báo daily riêng. `rain_mm` không phải `rain_rate` và không phải bộ đếm `rain_total` từ thiết bị.
+
+Thiếu key, key không được chấp nhận/quyền API không phù hợp, hoặc vượt quota trả HTTP 503. Timeout, lỗi upstream hay response không hợp lệ/thiếu ngày trả HTTP 502, không trả dự báo rỗng như thể thành công. Hiện chưa cache response: mỗi request hợp lệ sẽ gọi OpenWeather, nên app không nên polling dự báo theo nhịp telemetry 5 giây.
 
 ---
 

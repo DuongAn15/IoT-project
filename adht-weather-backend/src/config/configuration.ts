@@ -23,8 +23,8 @@ export default (): AppConfig => ({
   },
   openWeather: {
     apiKey: process.env.OPENWEATHER_API_KEY || '',
-    defaultLat: parseFloat(process.env.DEFAULT_LAT) || 10.7769,
-    defaultLon: parseFloat(process.env.DEFAULT_LON) || 106.7009,
+    defaultLat: parseFloat(process.env.DEFAULT_LAT || '10.7769'),
+    defaultLon: parseFloat(process.env.DEFAULT_LON || '106.7009'),
   },
   thresholds: {
     tempMax: parseFloat(process.env.ALERT_TEMP_MAX) || 38.0,
