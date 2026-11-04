@@ -82,7 +82,7 @@ src/
   "humi": 68.0,
   "heat_index": 36.2,
   "rain_rate": 0.0,
-  "rain_total": 12.5,
+  "rain_daily": 12.5,
   "wind_speed": 2.1,
   "wind_max": 4.5,
   "rssi": -58,

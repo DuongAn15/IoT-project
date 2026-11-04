@@ -75,11 +75,12 @@ npm run start:dev
 
 ## 🌧️ Trường lượng mưa trong telemetry
 
-- Backend yêu cầu **`rain_total`** (số không âm, đơn vị mm), khớp payload MQTT của firmware và công cụ mô phỏng; **`rain_daily` không thay thế được trường bắt buộc này**.
+- Backend yêu cầu **`rain_daily`** (số không âm, đơn vị mm trong ngày), theo hợp đồng trên `master`. **`rain_total` không thay thế được trường bắt buộc này**.
 - Trên firmware, `rain_total` là lượng mưa cộng dồn từ lúc thiết bị khởi động, bắt đầu từ 0 và reset khi thiết bị khởi động lại. Đây **không phải lượng mưa trong ngày** và không tự reset lúc 00:00.
 - `rain_rate` là cường độ mưa hiện tại (mm/giờ), khác với lượng mưa tích lũy `rain_total`.
 - Nếu cần lượng mưa theo ngày, phải tính riêng với múi giờ và xử lý trường hợp thiết bị khởi động lại; không đổi tên trực tiếp `rain_total` thành `rain_daily`.
-- Phần lưu Supabase hiện là stub. Khi triển khai schema/lưu dữ liệu, cần dùng trường `rain_total` theo đúng ý nghĩa trên.
+- Firmware và công cụ mô phỏng hiện vẫn gửi `rain_total`, nên payload này sẽ bị backend từ chối vì thiếu `rain_daily`. Cần đồng bộ phía gửi và cách tính lượng mưa theo ngày trước khi tích hợp.
+- Khi triển khai schema/lưu dữ liệu, cần dùng trường `rain_daily` theo hợp đồng backend.
 
 ## 📖 Hướng Dẫn Chi Tiết
 Vui lòng xem chi tiết danh sách checklist `TODO` và đặc tả dữ liệu tại:  
