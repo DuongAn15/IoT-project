@@ -185,6 +185,8 @@ class SevenDayAverageChart extends StatelessWidget {
             maxY: yConfig.maxY,
             barGroups: barGroups,
           ),
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOutCubic,
         ),
       ),
     );

@@ -102,10 +102,10 @@ abstract class DateTimeFormatter {
     return '${hour}h';
   }
 
-  /// Nhãn hiển thị cập nhật ("Cập nhật: 14:25 hôm nay")
+  /// Nhãn hiển thị cập nhật ("Cập nhật: 14:25 04/11")
   static String formatLastUpdated(DateTime dateTime) {
     final timeStr = formatTime(dateTime);
-    final dayStr = getDayOfWeekLabel(dateTime).toLowerCase();
-    return 'Cập nhật: $timeStr $dayStr';
+    final dateStr = formatShortDate(dateTime);
+    return 'Cập nhật: $timeStr $dateStr';
   }
 }

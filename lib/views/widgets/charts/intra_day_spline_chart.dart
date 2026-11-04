@@ -193,6 +193,8 @@ class IntraDaySplineChart extends StatelessWidget {
               ),
             ],
           ),
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOutCubic,
         ),
       ),
     );

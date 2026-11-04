@@ -24,6 +24,7 @@ class IntraDayDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final dashboardAsync = ref.watch(weatherDashboardProvider);
     final selectedMetric = ref.watch(intraDaySelectedMetricProvider);
+    final selectedInterval = ref.watch(intraDayIntervalProvider);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
@@ -53,6 +54,10 @@ class IntraDayDetailScreen extends ConsumerWidget {
         ),
         data: (state) {
           final points = state.intraDayPoints;
+          final filteredPoints = points
+              .where((p) => p.minutesFromMidnight % selectedInterval.minutes == 0)
+              .toList();
+
           return CustomPullRefresh(
             onRefresh: () => ref.read(weatherDashboardProvider.notifier).refresh(),
             child: SingleChildScrollView(
@@ -90,13 +95,39 @@ class IntraDayDetailScreen extends ConsumerWidget {
                       }).toList(),
                     ),
                   ),
+                  const SizedBox(height: AppDimensions.spaceSm),
+
+                  // 2. Interval Selector (15 phút, 30 phút, 1 tiếng)
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: IntraDayInterval.values.map((interval) {
+                        final isSelected = interval == selectedInterval;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: AppDimensions.spaceSm),
+                          child: ChoiceChip(
+                            selected: isSelected,
+                            label: Text(interval.label),
+                            labelStyle: theme.textTheme.labelMedium?.copyWith(
+                              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                              color: isSelected ? Colors.white : null,
+                            ),
+                            selectedColor: isDark ? AppColors.primaryDark : AppColors.primaryLight,
+                            onSelected: (_) {
+                              ref.read(intraDayIntervalProvider.notifier).state = interval;
+                            },
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
                   const SizedBox(height: AppDimensions.spaceMd),
 
-                  // 2. Summary Stat Cards (Hiện tại, Cao nhất, Thấp nhất)
+                  // 3. Summary Stat Cards (Hiện tại, Cao nhất, Thấp nhất)
                   _buildStatCardsRow(context, points, selectedMetric),
                   const SizedBox(height: AppDimensions.spaceLg),
 
-                  // 3. Interactive Spline Chart Card
+                  // 4. Interactive Spline Chart Card
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(AppDimensions.spaceMd),
@@ -127,7 +158,7 @@ class IntraDayDetailScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: AppDimensions.spaceMd),
                           IntraDaySplineChart(
-                            points: points,
+                            points: filteredPoints.length >= 2 ? filteredPoints : points,
                             metricType: selectedMetric,
                             isCompact: false,
                           ),
@@ -137,8 +168,12 @@ class IntraDayDetailScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: AppDimensions.spaceLg),
 
-                  // 4. Recent Readings Table Preview
-                  _buildRecentReadingsList(context, points, selectedMetric),
+                  // 5. Recent Readings Table Preview
+                  _buildRecentReadingsList(
+                    context,
+                    filteredPoints.isNotEmpty ? filteredPoints : points,
+                    selectedMetric,
+                  ),
                 ],
               ),
             ),
@@ -285,7 +320,7 @@ class IntraDayDetailScreen extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Bản ghi đo gần nhất',
+          'Bản ghi gần nhất',
           style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: AppDimensions.spaceSm),

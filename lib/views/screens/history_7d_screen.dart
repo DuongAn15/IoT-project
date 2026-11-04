@@ -7,7 +7,6 @@ import '../../core/utils/weather_unit_helper.dart';
 import '../../data/models/weather_daily_summary.dart';
 import '../../providers/history_7d_provider.dart';
 import '../../providers/weather_dashboard_provider.dart';
-import '../widgets/charts/rainfall_bar_chart.dart';
 import '../widgets/charts/seven_day_average_chart.dart';
 import '../widgets/common/custom_pull_refresh.dart';
 import '../widgets/common/shimmer_card_skeleton.dart';
@@ -100,11 +99,10 @@ class History7dScreen extends ConsumerWidget {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                selectedMetric == WeatherMetricType.rainfall
-                                    ? 'Tổng Lượng Mưa 7 Ngày (mm)'
-                                    : 'Giá Trị Trung Bình 7 Ngày (${selectedMetric.unit})',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
+                                '(${selectedMetric.unit})',
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
                                 ),
                               ),
                               Container(
@@ -121,13 +119,10 @@ class History7dScreen extends ConsumerWidget {
                             ],
                           ),
                           const SizedBox(height: AppDimensions.spaceMd),
-                          if (selectedMetric == WeatherMetricType.rainfall)
-                            RainfallBarChart(dailySummaries: summaries)
-                          else
-                            SevenDayAverageChart(
-                              dailySummaries: summaries,
-                              metricType: selectedMetric,
-                            ),
+                          SevenDayAverageChart(
+                            dailySummaries: summaries,
+                            metricType: selectedMetric,
+                          ),
                         ],
                       ),
                     ),
@@ -153,7 +148,7 @@ class History7dScreen extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Chi tiết tổng hợp từng ngày',
+          'Lịch sử các ngày',
           style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: AppDimensions.spaceSm),
@@ -205,7 +200,6 @@ class History7dScreen extends ConsumerWidget {
                             theme: theme,
                             label: 'Nhiệt độ TB',
                             value: '${summary.avgTemperature.toStringAsFixed(1)}°C',
-                            subValue: '${summary.minTemperature.toStringAsFixed(0)}° - ${summary.maxTemperature.toStringAsFixed(0)}°',
                           ),
 
                           // Humidity
@@ -248,7 +242,6 @@ class History7dScreen extends ConsumerWidget {
     required ThemeData theme,
     required String label,
     required String value,
-    String? subValue,
     Color? valueColor,
   }) {
     return Column(
@@ -262,11 +255,6 @@ class History7dScreen extends ConsumerWidget {
             color: valueColor,
           ),
         ),
-        if (subValue != null)
-          Text(
-            subValue,
-            style: theme.textTheme.labelSmall?.copyWith(fontSize: 9),
-          ),
       ],
     );
   }

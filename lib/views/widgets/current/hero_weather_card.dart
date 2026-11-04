@@ -10,14 +10,12 @@ class HeroWeatherCard extends StatelessWidget {
   final WeatherCurrentModel current;
   final double? minTemp;
   final double? maxTemp;
-  final Function(WeatherMetricType)? onMetricTap;
 
   const HeroWeatherCard({
     super.key,
     required this.current,
     this.minTemp,
     this.maxTemp,
-    this.onMetricTap,
   });
 
   @override
@@ -46,69 +44,62 @@ class HeroWeatherCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // 1. Nhiệt độ lớn ở trung tâm card & Thấp / Cao ngay dưới cùng dòng
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () => onMetricTap?.call(WeatherMetricType.temperature),
-              borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
-                child: Column(
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
+            child: Column(
+              children: [
+                // Số nhiệt độ lớn ở chính giữa
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
                   children: [
-                    // Số nhiệt độ lớn ở chính giữa
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
-                      children: [
-                        Text(
-                          current.temperature.toStringAsFixed(1),
-                          style: theme.textTheme.displayLarge?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 68,
-                            letterSpacing: -1.5,
-                          ),
-                        ),
-                        Text(
-                          '°C',
-                          style: theme.textTheme.headlineMedium?.copyWith(
-                            color: Colors.white.withValues(alpha: 0.85),
-                            fontWeight: FontWeight.w600,
-                            fontSize: 28,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-
-                    // Thấp và Cao nằm ngay dưới nhiệt độ, cùng một dòng cách nhau một khoảng
-                    if (minTemp != null && maxTemp != null)
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Thấp: ${minTemp!.toStringAsFixed(1)}°',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: Colors.white.withValues(alpha: 0.85),
-                              fontWeight: FontWeight.w500,
-                              fontSize: 15,
-                            ),
-                          ),
-                          const SizedBox(width: AppDimensions.spaceXl), // Khoảng cách giữa Thấp và Cao
-                          Text(
-                            'Cao: ${maxTemp!.toStringAsFixed(1)}°',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: Colors.white.withValues(alpha: 0.85),
-                              fontWeight: FontWeight.w500,
-                              fontSize: 15,
-                            ),
-                          ),
-                        ],
+                    Text(
+                      current.temperature.toStringAsFixed(1),
+                      style: theme.textTheme.displayLarge?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 68,
+                        letterSpacing: -1.5,
                       ),
+                    ),
+                    Text(
+                      '°C',
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 28,
+                      ),
+                    ),
                   ],
                 ),
-              ),
+                const SizedBox(height: 6),
+
+                // Thấp và Cao nằm ngay dưới nhiệt độ, cùng một dòng cách nhau một khoảng
+                if (minTemp != null && maxTemp != null)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Thấp: ${minTemp!.toStringAsFixed(1)}°',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontWeight: FontWeight.w500,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(width: AppDimensions.spaceXl), // Khoảng cách giữa Thấp và Cao
+                      Text(
+                        'Cao: ${maxTemp!.toStringAsFixed(1)}°',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontWeight: FontWeight.w500,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
             ),
           ),
           const SizedBox(height: AppDimensions.spaceLg),
@@ -132,7 +123,6 @@ class HeroWeatherCard extends StatelessWidget {
                   label: 'Độ ẩm',
                   value: '${current.humidity.toStringAsFixed(0)}%',
                   subText: WeatherUnitHelper.getHumidityAssessment(current.humidity),
-                  onTap: () => onMetricTap?.call(WeatherMetricType.humidity),
                 ),
                 Container(
                   width: 1,
@@ -147,7 +137,6 @@ class HeroWeatherCard extends StatelessWidget {
                   label: 'Lượng mưa',
                   value: '${current.rainfall.toStringAsFixed(1)} mm',
                   subText: WeatherUnitHelper.getRainfallAssessment(current.rainfall),
-                  onTap: () => onMetricTap?.call(WeatherMetricType.rainfall),
                 ),
                 Container(
                   width: 1,
@@ -162,7 +151,6 @@ class HeroWeatherCard extends StatelessWidget {
                   label: 'Tốc độ gió',
                   value: '${current.windSpeed.toStringAsFixed(1)} km/h',
                   subText: WeatherUnitHelper.getWindAssessment(current.windSpeed),
-                  onTap: () => onMetricTap?.call(WeatherMetricType.windSpeed),
                 ),
               ],
             ),
@@ -178,65 +166,57 @@ class HeroWeatherCard extends StatelessWidget {
     required String label,
     required String value,
     required String subText,
-    required VoidCallback onTap,
   }) {
     final theme = Theme.of(context);
 
     return Expanded(
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-            child: Column(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      icon,
-                      size: 13,
-                      color: Colors.white.withValues(alpha: 0.85),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      label,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: Colors.white.withValues(alpha: 0.85),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
+                Icon(
+                  icon,
+                  size: 13,
+                  color: Colors.white.withValues(alpha: 0.85),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(width: 4),
                 Text(
-                  value,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subText,
+                  label,
                   style: theme.textTheme.labelSmall?.copyWith(
-                    color: Colors.white.withValues(alpha: 0.75),
-                    fontSize: 10,
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
-          ),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subText,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: Colors.white.withValues(alpha: 0.75),
+                fontSize: 10,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ),
       ),
     );
