@@ -46,9 +46,9 @@ src/
 
 ### 📌 Nhiệm vụ 2: Lưu trữ Database & Downsampling (`src/modules/database/supabase.service.ts`)
 
-- [ ] Khởi tạo client Supabase (`@supabase/supabase-js`) từ `SUPABASE_URL` và `SUPABASE_SERVICE_ROLE_KEY`.
-- [ ] Hàm `saveTelemetry()`: Insert bản ghi vào bảng `weather_logs`.
-- [ ] Hàm `getHistory(deviceId, range)`:
+- [X] Khởi tạo client Supabase (`@supabase/supabase-js`) từ `SUPABASE_URL` và `SUPABASE_SERVICE_ROLE_KEY`.
+- [X] Hàm `saveTelemetry()`: Insert bản ghi vào bảng `weather_logs`.
+- [X] Hàm `getHistory(deviceId, range)`:
   - Do ESP32 gửi dữ liệu **5 giây/lần** (17.280 bản ghi/ngày), điện thoại di động không thể render hết hàng vạn điểm này.
   - Viết thuật toán gộp nhóm (Downsampling) tính trung bình (Nhiệt độ, Độ ẩm, Gió) theo các mốc `1h`, `6h`, `24h`, `3d`, `7d` trước khi trả về.
 
@@ -56,13 +56,13 @@ src/
 
 Hàm lọc log của một thiết bị theo `device_id`, trong khoảng từ **hiện tại trừ `range` đến hiện tại**. Backend đọc nhiều trang từ Supabase rồi gộp log thành các khoảng nhỏ (bucket), không trả toàn bộ log thô.
 
-| `range` | Khoảng dữ liệu | Gộp mỗi | Số điểm dự kiến khi đủ dữ liệu |
-| --- | --- | --- | --- |
-| `1h` | 1 giờ gần nhất | 1 phút | 60 |
-| `6h` | 6 giờ gần nhất | 5 phút | 6 × 12 = 72 |
-| `24h` | 24 giờ gần nhất | 10 phút | 24 × 6 = 144 |
-| `3d` | 3 ngày gần nhất | 30 phút | 3 × 24 × 2 = 144 |
-| `7d` | 7 ngày gần nhất | 1 giờ | 7 × 24 = 168 |
+| `range` | Khoảng dữ liệu  | Gộp mỗi | Số điểm dự kiến khi đủ dữ liệu |
+| --------- | ------------------ | --------- | --------------------------------------- |
+| `1h`    | 1 giờ gần nhất  | 1 phút   | 60                                      |
+| `6h`    | 6 giờ gần nhất  | 5 phút   | 6 × 12 = 72                            |
+| `24h`   | 24 giờ gần nhất | 10 phút  | 24 × 6 = 144                           |
+| `3d`    | 3 ngày gần nhất | 30 phút  | 3 × 24 × 2 = 144                      |
+| `7d`    | 7 ngày gần nhất | 1 giờ    | 7 × 24 = 168                           |
 
 - Ví dụ `6h`: các log trong cùng một khoảng 5 phút được lấy trung bình thành một điểm; nếu thiết bị gửi đều mỗi 5 giây thì mỗi khoảng thường có 60 log.
 - Mỗi điểm chứa trung bình `temp`, `humi`, `rain_rate`, `wind_speed`. Trung bình `rain_rate` vẫn là cường độ mưa (mm/giờ), không phải tổng lượng mưa (mm).
@@ -72,10 +72,10 @@ Hàm lọc log của một thiết bị theo `device_id`, trong khoảng từ **
 
 ### 📌 Nhiệm vụ 3: Cảnh báo sớm thiên tai (`src/modules/notifications/notifications.service.ts`)
 
-- [ ] Khởi tạo Firebase Admin SDK từ file `serviceAccountKey.json`.
-- [ ] Hàm `checkAndAlert()`: So sánh `temp >= 38°C`, `wind_speed >= 15 m/s`, `rain_rate >= 30 mm/h`.
-- [ ] Hàm `sendPushNotification()`: Gửi tin nhắn FCM tới Topic `adht_weather_alerts`. (Lưu ý đặt cooldown 5 phút để tránh spam chuông điện thoại).
-- [ ] Hàm `registerToken()`: Đăng ký token từ Mobile App gửi lên vào Topic.
+- [X] Khởi tạo Firebase Admin SDK từ file `serviceAccountKey.json`.
+- [X] Hàm `checkAndAlert()`: So sánh `temp >= 38°C`, `wind_speed >= 15 m/s`, `rain_rate >= 30 mm/h`.
+- [X] Hàm `sendPushNotification()`: Gửi tin nhắn FCM tới Topic `adht_weather_alerts`. (Lưu ý đặt cooldown 5 phút để tránh spam chuông điện thoại).
+- [X] Hàm `registerToken()`: Đăng ký token từ Mobile App gửi lên vào Topic.
 
 ### 📌 Nhiệm vụ 4: Truyền dữ liệu thời gian thực (`src/modules/websocket/telemetry.gateway.ts`)
 
@@ -83,41 +83,7 @@ Hàm lọc log của một thiết bị theo `device_id`, trong khoảng từ **
 - [X] Hàm `broadcastTelemetry(data)`: Phát sự kiện `telemetry` chứa số đo hợp lệ tới tất cả client đang kết nối ngay khi nhận từ MQTT/HTTP. Chu kỳ khoảng 5 giây phụ thuộc phía gửi, không có timer phát lại dữ liệu cũ.
 - [X] Hàm `broadcastStatus(data)`: Phát sự kiện `status` khi được gọi bởi luồng nhận trạng thái; không tự suy luận trạng thái offline.
 
-#### Kết nối realtime từ app/web
-
-Đây là **Socket.IO**, không phải WebSocket thuần. Dùng Socket.IO client tương thích, kết nối origin backend và đặt `path` riêng; không dùng `/api` hay coi `/ws/telemetry` là namespace.
-
-Ví dụ phía web (ứng dụng client cần cài `socket.io-client`):
-
-```ts
-import { io } from 'socket.io-client';
-
-const socket = io('http://localhost:8000', {
-  path: '/ws/telemetry',
-});
-
-socket.on('telemetry', (data) => {
-  // Cập nhật số đo trên giao diện; payload giữ nguyên các trường của CreateTelemetryDto.
-});
-socket.on('status', (data) => {
-  // Cập nhật trạng thái từ payload bên gửi.
-});
-socket.emit('ping', (reply: string) => {
-  // ACK trả về 'pong'; không phải sự kiện 'pong' riêng.
-});
-
-// Gọi khi màn hình/component bị hủy, với client do màn hình sở hữu.
-function disposeRealtime() {
-  socket.removeAllListeners();
-  socket.disconnect();
-}
-```
-
-Nếu dùng socket chung cho nhiều màn hình, mỗi màn hình chỉ hủy listener của mình; không đóng socket chung.
-
-Gateway không lưu hay phát lại lịch sử cho client vừa kết nối. App có thể gọi `/api/weather/latest?device_id=...` để lấy trạng thái số đo ban đầu rồi cập nhật từ sự kiện realtime. Khi reconnect, cần tải lại nếu muốn bù dữ liệu bị lỡ. Hiện gateway chưa có xác thực/phân quyền và broadcast toàn bộ các trạm; CORS `*` không phải cơ chế bảo vệ dữ liệu.
-
-### 📌 Nhiệm vụ 5: Tích hợp OpenWeatherMap (`src/modules/weather/weather.service.ts`)
+#### 📌 Nhiệm vụ 5: Tích hợp OpenWeatherMap (`src/modules/weather/weather.service.ts`)
 
 - [X] Dùng `axios` gọi OpenWeatherMap API để lấy dự báo thời tiết 3 ngày cho màn hình Forecast của Flutter App.
 
@@ -157,13 +123,22 @@ Thiếu key, key không được chấp nhận/quyền API không phù hợp, ho
   "humi": 68.0,
   "heat_index": 36.2,
   "rain_rate": 0.0,
-  "rain_daily": 12.5,
+  "rain_total": 12.5,
   "wind_speed": 2.1,
   "wind_max": 4.5,
   "rssi": -58,
   "uptime": 3600
 }
 ```
+
+### Lưu ý về lượng mưa (`rain_total`)
+
+- Backend yêu cầu `rain_total` là số không âm (mm), thống nhất với trường firmware publish tại `src/network/mqtt_manager.cpp` và công cụ mô phỏng.
+- Firmware khởi tạo bộ đếm bằng 0, cộng dồn lượng mưa từ lúc thiết bị khởi động và reset khi khởi động lại. Bộ đếm không tự reset lúc 00:00.
+- `rain_total` **không phải lượng mưa trong ngày** (`rain_daily`); không đổi tên hai trường cho nhau nếu chưa có thuật toán tính theo ngày, múi giờ và xử lý reboot.
+- `rain_rate` là cường độ mưa (mm/giờ), không phải lượng mưa tích lũy (mm).
+- Hợp đồng backend trước đây yêu cầu `rain_daily` nhưng firmware gửi `rain_total`, khiến telemetry bị từ chối. DTO HTTP/MQTT hiện dùng `rain_total`; payload chỉ có `rain_daily` không đáp ứng validation.
+- Phần lưu Supabase hiện chỉ lưu các số đo được ánh xạ trong `SupabaseService` và chưa lưu `rain_total`. Nếu cần lưu/truy vấn lượng mưa tích lũy, phải bổ sung schema và mapping riêng; việc DTO nhận trường này không đồng nghĩa nó đã được lưu.
 
 ### Bản tin Lệnh từ Mobile App gửi xuống ESP32:
 

@@ -34,10 +34,10 @@ export class CreateTelemetryDto {
   @Min(0)
   rain_rate: number;
 
-  @ApiProperty({ example: 12.5, description: 'Lượng mưa tích lũy trong ngày (mm)' })
+  @ApiProperty({ example: 12.5, description: 'Lượng mưa tích lũy từ lúc thiết bị khởi động (mm)' })
   @IsNumber()
   @Min(0)
-  rain_daily: number;
+  rain_total: number;
 
   @ApiProperty({ example: 2.1, description: 'Tốc độ gió tức thời (m/s)' })
   @IsNumber()

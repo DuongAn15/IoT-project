@@ -34,7 +34,7 @@ Tài liệu phản ánh controller, DTO và service hiện tại của backend.
   "temp": 24.4,
   "humi": 92.5,
   "rain_rate": 29.75,
-  "rain_daily": 9.5,
+  "rain_total": 9.5,
   "wind_speed": 4.4,
   "wind_max": 11.1,
   "rssi": -59,
@@ -48,7 +48,7 @@ Tài liệu phản ánh controller, DTO và service hiện tại của backend.
 | `temp` | Có | Number, từ -40 đến 80 °C |
 | `humi` | Có | Number, từ 0 đến 100 % |
 | `rain_rate` | Có | Number ≥ 0, mm/giờ |
-| `rain_daily` | Có | Number ≥ 0, mm tích lũy trong ngày |
+| `rain_total` | Có | Number ≥ 0, mm tích lũy từ lúc thiết bị khởi động |
 | `wind_speed` | Có | Number ≥ 0, m/s |
 | `timestamp` | Không | Number, Unix timestamp |
 | `heat_index` | Không | Number, nhiệt độ cảm nhận (°C) |
@@ -56,7 +56,7 @@ Tài liệu phản ánh controller, DTO và service hiện tại của backend.
 | `rssi` | Không | Number, cường độ Wi-Fi (dBm) |
 | `uptime` | Không | Number, thời gian hoạt động (giây) |
 
-Backend dùng `rain_daily` theo hợp đồng trên `master`. Firmware và simulator hiện vẫn gửi `rain_total` (tích lũy từ lúc khởi động), nên payload đó bị từ chối vì thiếu `rain_daily`. Không chỉ đổi tên trường nếu chưa tính đúng lượng mưa trong ngày.
+Backend dùng `rain_total` thống nhất với firmware và simulator: lượng mưa tích lũy từ lúc khởi động, không phải lượng mưa trong ngày. Payload chỉ có `rain_daily` bị từ chối vì thiếu `rain_total`. Supabase hiện chưa lưu trường này; xem ghi chú trong `DEVELOPMENT_GUIDE.md`.
 
 ### Response hiện tại — HTTP 201
 
@@ -283,7 +283,7 @@ Chưa đăng ký token hoặc gửi thông báo FCM thật.
 
 ## 8. Response lỗi validation
 
-Ví dụ gửi telemetry với `rain_daily: -1` và các trường còn lại hợp lệ:
+Ví dụ gửi telemetry với `rain_total: -1` và các trường còn lại hợp lệ:
 
 ```json
 {
@@ -292,7 +292,7 @@ Ví dụ gửi telemetry với `rain_daily: -1` và các trường còn lại h�
   "path": "/api/telemetry",
   "error": {
     "message": [
-      "rain_daily must not be less than 0"
+      "rain_total must not be less than 0"
     ],
     "error": "Bad Request",
     "statusCode": 400
@@ -344,7 +344,7 @@ Payload mẫu cho event `telemetry`:
   "temp": 24.4,
   "humi": 92.5,
   "rain_rate": 29.75,
-  "rain_daily": 9.5,
+  "rain_total": 9.5,
   "wind_speed": 4.4,
   "wind_max": 11.1,
   "rssi": -59,
