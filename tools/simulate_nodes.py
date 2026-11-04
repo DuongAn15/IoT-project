@@ -70,11 +70,12 @@ C_MAGENTA = "\033[35m"
 C_CYAN    = "\033[36m"
 C_WHITE   = "\033[37m"
 
-def find_and_load_env() -> Dict[str, str]:
-    """Tìm và đọc file .env từ thư mục firmware hoặc thư mục gốc."""
-    candidate_paths = [
+def find_and_load_env(env_file: str = None) -> Dict[str, str]:
+    """Load an explicit env file, or discover the project's .env files."""
+    candidate_paths = [env_file] if env_file else [
         os.path.join(os.path.dirname(__file__), "..", "adht-weather-firmware", ".env"),
         os.path.join(os.path.dirname(__file__), "..", ".env"),
+        os.path.join(os.path.dirname(__file__), "..", "adht-weather-backend", ".env"),
         os.path.join(os.getcwd(), "adht-weather-firmware", ".env"),
         os.path.join(os.getcwd(), ".env"),
     ]
@@ -96,14 +97,11 @@ def find_and_load_env() -> Dict[str, str]:
                 k, v = line.split("=", 1)
                 env_vars[k.strip()] = v.strip().strip("'\"")
     else:
+        if env_file:
+            raise ValueError(f"Không tìm thấy file cấu hình: {env_file}")
         print(f"{C_YELLOW}[ENV] Không tìm thấy file .env, sử dụng cấu hình mặc định.{C_RESET}")
+    env_vars.update(os.environ)
     return env_vars
-
-_env = find_and_load_env()
-BROKER_HOST = _env.get("MQTT_BROKER_HOST", _env.get("MQTT_HOST", "xxxxxxxx.ala.asia-southeast1.emqxsl.com"))
-BROKER_PORT = int(_env.get("MQTT_BROKER_PORT", _env.get("MQTT_PORT", 8883)))
-BROKER_USER = _env.get("MQTT_USERNAME", _env.get("MQTT_USER", "adht_device"))
-BROKER_PASS = _env.get("MQTT_PASSWORD", _env.get("MQTT_PASS", "Your_Mqtt_Password"))
 
 # Danh mục cấu hình các Trạm Ảo (Tránh trùng với adht_weather_01 thật)
 VIRTUAL_NODE_PROFILES = [
@@ -162,7 +160,7 @@ NODE_01_FALLBACK_PROFILE = {
 class SimulatedEsp32Node:
     """Đại diện cho 1 thiết bị ESP32 ảo với đầy đủ cảm biến và giao tiếp MQTTS."""
 
-    def __init__(self, profile: Dict[str, Any], host: str, port: int, user: str, password: str, interval: float = 5.0):
+    def __init__(self, profile: Dict[str, Any], host: str, port: int, user: str, password: str, interval: float = 5.0, use_tls: bool = True, ca_file: str = None):
         self.profile = profile
         self.device_id = profile["id"]
         self.name = profile["name"]
@@ -172,6 +170,7 @@ class SimulatedEsp32Node:
         self.user = user
         self.password = password
         self.interval = interval
+        self.use_tls = use_tls
 
         self.temp = profile["base_temp"]
         self.humi = profile["base_humi"]
@@ -204,10 +203,10 @@ class SimulatedEsp32Node:
 
         self.client.username_pw_set(self.user, self.password)
 
-        context = ssl.create_default_context()
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
-        self.client.tls_set_context(context)
+        if self.use_tls:
+            context = ssl.create_default_context(cafile=ca_file)
+            self.client.tls_set_context(context)
+        self.client.reconnect_delay_set(min_delay=1, max_delay=30)
 
         # LWT riêng của node (QoS 1, retain True)
         lwt_payload = json.dumps({"status": "offline", "device": self.device_id})
@@ -216,6 +215,7 @@ class SimulatedEsp32Node:
         self.client.on_connect = self._on_connect
         self.client.on_disconnect = self._on_disconnect
         self.client.on_message = self._on_message
+        self.client.on_connect_fail = self._on_connect_fail
 
     def _log(self, msg: str, color: str = None):
         c = color or self.color
@@ -225,7 +225,8 @@ class SimulatedEsp32Node:
         rc_code = rc if isinstance(rc, int) else getattr(rc, "value", rc)
         if rc_code == 0:
             self.is_connected = True
-            self._log(f"✅ Kết nối MQTTS thành công ({self.host}:{self.port})", C_GREEN)
+            protocol = "MQTTS" if self.use_tls else "MQTT"
+            self._log(f"✅ Kết nối {protocol} thành công ({self.host}:{self.port})", C_GREEN)
 
             # Báo Online
             online_payload = json.dumps({
@@ -243,7 +244,17 @@ class SimulatedEsp32Node:
         else:
             self._log(f"❌ Kết nối thất bại, mã lỗi = {rc_code}", C_RED)
 
-    def _on_disconnect(self, client, userdata, rc, properties=None):
+    def _on_connect_fail(self, client, userdata):
+        self.is_connected = False
+        self._log(
+            f"Không kết nối được {self.host}:{self.port}; đang tự thử lại. "
+            "Kiểm tra endpoint, cổng, TLS, firewall/VPN và file cấu hình đã nạp.",
+            C_RED,
+        )
+
+    def _on_disconnect(self, client, userdata, *args):
+        # API v1: rc[, properties]; API v2: flags, reason_code, properties.
+        rc = args[1] if len(args) == 3 else args[0]
         self.is_connected = False
         self._log(f"⚠️ Mất kết nối MQTT (code={rc})", C_YELLOW)
 
@@ -318,11 +329,8 @@ class SimulatedEsp32Node:
             self.rain_rate = 0.0
 
     def start(self):
-        try:
-            self.client.connect(self.host, self.port, keepalive=60)
-            self.client.loop_start()
-        except Exception as e:
-            self._log(f"Lỗi kết nối tới broker: {e}", C_RED)
+        self.client.connect_async(self.host, self.port, keepalive=60)
+        self.client.loop_start()
 
         t = threading.Thread(target=self._telemetry_loop, daemon=True)
         t.start()
@@ -399,13 +407,35 @@ def main():
         action="store_true",
         help="Mô phỏng cả adht_weather_01 (Chỉ dùng khi KHÔNG cắm ESP32 thật để tránh xung đột Client ID)"
     )
+    parser.add_argument(
+        "--env-file",
+        help="Đường dẫn file cấu hình (.env hoặc env); ưu tiên hơn tự tìm file",
+    )
     args = parser.parse_args()
+    try:
+        env = find_and_load_env(args.env_file)
+        broker_host = env.get("MQTT_BROKER_HOST", env.get("MQTT_HOST", ""))
+        broker_port = int(env.get("MQTT_BROKER_PORT", env.get("MQTT_PORT", "8883")))
+        broker_user = env.get("MQTT_USERNAME", env.get("MQTT_USER", "adht_device"))
+        broker_pass = env.get("MQTT_PASSWORD", env.get("MQTT_PASS", ""))
+        use_tls = env.get("MQTT_USE_TLS", "true").lower() == "true"
+        ca_file = env.get("MQTT_CA_FILE") or None
+        if not broker_host or "xxxx" in broker_host:
+            raise ValueError("Thiếu MQTT_BROKER_HOST hợp lệ; chọn đúng file bằng --env-file")
+        if "://" in broker_host or "/" in broker_host:
+            raise ValueError("MQTT_BROKER_HOST chỉ chứa hostname, không có mqtts:// hoặc đường dẫn")
+        if not 1 <= broker_port <= 65535:
+            raise ValueError("MQTT_BROKER_PORT phải nằm trong khoảng 1–65535")
+        if args.interval <= 0:
+            raise ValueError("--interval phải lớn hơn 0")
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
 
     print(f"\n{C_BOLD}{C_BLUE}======================================================{C_RESET}")
     print(f"{C_BOLD}{C_BLUE}  🌦️ ADHT SMART WEATHER STATION - COMPANION SIMULATOR {C_RESET}")
     print(f"{C_BOLD}{C_BLUE}======================================================{C_RESET}")
-    print(f"• Broker:   {C_WHITE}{BROKER_HOST}:{BROKER_PORT}{C_RESET}")
-    print(f"• Username: {C_WHITE}{BROKER_USER}{C_RESET}")
+    print(f"• Broker:   {C_WHITE}{broker_host}:{broker_port}{C_RESET}")
+    print(f"• TLS:      {'bật (xác thực chứng chỉ)' if use_tls else 'tắt'}")
     print(f"• Chu kỳ:   {C_GREEN}{args.interval} giây/lần{C_RESET}")
 
     selected_profiles = []
@@ -426,17 +456,19 @@ def main():
     for profile in selected_profiles:
         node = SimulatedEsp32Node(
             profile=profile,
-            host=BROKER_HOST,
-            port=BROKER_PORT,
-            user=BROKER_USER,
-            password=BROKER_PASS,
-            interval=args.interval
+            host=broker_host,
+            port=broker_port,
+            user=broker_user,
+            password=broker_pass,
+            interval=args.interval,
+            use_tls=use_tls,
+            ca_file=ca_file,
         )
         nodes.append(node)
         node.start()
         time.sleep(0.4)
 
-    print(f"\n{C_GREEN}⚡ Đã kết nối và phát dữ liệu song song!{C_RESET}")
+    print(f"\n{C_GREEN}⚡ Đã khởi động các trạm; đang chờ broker xác nhận kết nối.{C_RESET}")
     print(f"{C_WHITE}👉 Trạm thật: {C_BOLD}adht_weather_01{C_RESET} | Trạm ảo: {C_BOLD}{', '.join([n.device_id for n in nodes])}{C_RESET}")
     print(f"{C_YELLOW}👉 Bấm Ctrl + C để dừng mô phỏng.{C_RESET}\n")
 

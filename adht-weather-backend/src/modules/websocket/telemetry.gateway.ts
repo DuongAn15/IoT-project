@@ -8,6 +8,7 @@ import {
 } from '@nestjs/websockets';
 import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
+import type { CreateTelemetryDto } from '../telemetry/dto/create-telemetry.dto';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -15,19 +16,20 @@ import { Server, Socket } from 'socket.io';
 })
 export class TelemetryGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
-  server: Server;
+  server?: Server;
 
   private readonly logger = new Logger(TelemetryGateway.name);
 
-  afterInit(server: Server) {
+  afterInit(server: Server): void {
+    this.server = server;
     this.logger.log('WebSocket Gateway đã sẵn sàng tại path: /ws/telemetry');
   }
 
-  handleConnection(client: Socket) {
+  handleConnection(client: Socket): void {
     this.logger.log(`[WS] Client kết nối: ${client.id}`);
   }
 
-  handleDisconnect(client: Socket) {
+  handleDisconnect(client: Socket): void {
     this.logger.log(`[WS] Client ngắt kết nối: ${client.id}`);
   }
 
@@ -36,17 +38,11 @@ export class TelemetryGateway implements OnGatewayInit, OnGatewayConnection, OnG
     return 'pong';
   }
 
-  broadcastTelemetry(data: any) {
-    // TODO: Phát số đo tức thời tới tất cả client đang kết nối (Mobile App & Web Dashboard)
-    if (this.server) {
-      this.server.emit('telemetry', data);
-    }
+  broadcastTelemetry(data: CreateTelemetryDto): void {
+    this.server?.emit('telemetry', data);
   }
 
-  broadcastStatus(data: any) {
-    // TODO: Phát trạng thái Online / Offline của trạm tới các client
-    if (this.server) {
-      this.server.emit('status', data);
-    }
+  broadcastStatus(data: object): void {
+    this.server?.emit('status', data);
   }
 }

@@ -18,13 +18,13 @@ export class TelemetryService {
     this.logger.log(`[TelemetryService] Tiếp nhận bản tin webhook từ: ${dto.device_id}`);
 
     // TODO: 1. Lưu CSDL Supabase
-    await this.supabaseService.saveTelemetry(dto);
+    // await this.supabaseService.saveTelemetry(dto);
 
-    // TODO: 2. Kiểm tra ngưỡng thiên tai & bắn Firebase FCM
-    await this.notificationsService.checkAndAlert(dto);
+    // // TODO: 2. Kiểm tra ngưỡng thiên tai & bắn Firebase FCM
+    // await this.notificationsService.checkAndAlert(dto);
 
-    // TODO: 3. Phát số đo qua WebSocket cho App & Web
-    this.telemetryGateway.broadcastTelemetry(dto);
+    // // TODO: 3. Phát số đo qua WebSocket cho App & Web
+    // this.telemetryGateway.broadcastTelemetry(dto);
 
     return { status: 'success', message: 'Telemetry received (Stub)' };
   }

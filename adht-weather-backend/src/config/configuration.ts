@@ -9,12 +9,12 @@ export default (): AppConfig => ({
     port: parseInt(process.env.MQTT_BROKER_PORT, 10) || 8883,
     username: process.env.MQTT_USERNAME || 'adht_device',
     password: process.env.MQTT_PASSWORD || '',
-    useTls: process.env.MQTT_USE_TLS === 'true' || true,
+    useTls: (process.env.MQTT_USE_TLS || 'true') === 'true',
     clientId: process.env.MQTT_CLIENT_ID || 'adht_backend_gateway',
   },
   supabase: {
     url: process.env.SUPABASE_URL || '',
-    key: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '',
+    key: process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY || '',
     table: process.env.SUPABASE_TABLE || 'weather_logs',
   },
   firebase: {
@@ -23,8 +23,8 @@ export default (): AppConfig => ({
   },
   openWeather: {
     apiKey: process.env.OPENWEATHER_API_KEY || '',
-    defaultLat: parseFloat(process.env.DEFAULT_LAT) || 10.7769,
-    defaultLon: parseFloat(process.env.DEFAULT_LON) || 106.7009,
+    defaultLat: parseFloat(process.env.DEFAULT_LAT || '10.7769'),
+    defaultLon: parseFloat(process.env.DEFAULT_LON || '106.7009'),
   },
   thresholds: {
     tempMax: parseFloat(process.env.ALERT_TEMP_MAX) || 38.0,
@@ -34,4 +34,3 @@ export default (): AppConfig => ({
     rainMax: parseFloat(process.env.ALERT_RAIN_MAX) || 30.0,
   },
 });
-

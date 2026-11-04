@@ -1,0 +1,6 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Firebase Admin private keys
+/*firebase-adminsdk*.json
