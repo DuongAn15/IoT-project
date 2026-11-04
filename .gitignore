@@ -11,6 +11,9 @@
 *.swp
 *.swo
 
+# Local OpenCode skill
+/.opencode/skills/commit-per-change/
+
 # Build outputs
 *.bin
 *.elf

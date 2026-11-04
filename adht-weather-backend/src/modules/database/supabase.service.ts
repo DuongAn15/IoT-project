@@ -7,7 +7,7 @@ export interface WeatherRecord {
   humi: number;
   heat_index?: number;
   rain_rate: number;
-  rain_daily: number;
+  rain_total: number;
   wind_speed: number;
   wind_max?: number;
   rssi?: number;

@@ -9,7 +9,7 @@ export default (): AppConfig => ({
     port: parseInt(process.env.MQTT_BROKER_PORT, 10) || 8883,
     username: process.env.MQTT_USERNAME || 'adht_device',
     password: process.env.MQTT_PASSWORD || '',
-    useTls: process.env.MQTT_USE_TLS === 'true' || true,
+    useTls: (process.env.MQTT_USE_TLS || 'true') === 'true',
     clientId: process.env.MQTT_CLIENT_ID || 'adht_backend_gateway',
   },
   supabase: {
@@ -34,4 +34,3 @@ export default (): AppConfig => ({
     rainMax: parseFloat(process.env.ALERT_RAIN_MAX) || 30.0,
   },
 });
-
