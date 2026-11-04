@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_dimensions.dart';
+import '../../core/utils/date_time_formatter.dart';
 import '../../core/utils/weather_unit_helper.dart';
+import '../../providers/history_7d_provider.dart';
 import '../../providers/intra_day_provider.dart';
 import '../../providers/theme_mode_provider.dart';
 import '../../providers/weather_dashboard_provider.dart';
 import '../widgets/charts/intra_day_spline_chart.dart';
+import '../widgets/charts/rainfall_bar_chart.dart';
 import '../widgets/charts/seven_day_average_chart.dart';
 import '../widgets/common/app_header_bar.dart';
 import '../widgets/common/custom_pull_refresh.dart';
@@ -19,16 +22,13 @@ import 'settings_screen.dart';
 
 /// Màn hình chính Dashboard Tổng Quan Thời Tiết
 class MainDashboardScreen extends ConsumerWidget {
-  final Function(int)? onNavigateTab;
-
-  const MainDashboardScreen({
-    super.key,
-    this.onNavigateTab,
-  });
+  const MainDashboardScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final dashboardAsync = ref.watch(weatherDashboardProvider);
+    final selectedIntraDayMetric = ref.watch(intraDaySelectedMetricProvider);
+    final selectedHistoryMetric = ref.watch(history7dSelectedMetricProvider);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
@@ -85,12 +85,13 @@ class MainDashboardScreen extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // 1. Station Header Bar
+                    // 1. Station Header Bar (Dropdown chọn trạm, icon đổi Theme & icon Cài đặt)
                     AppHeaderBar(
                       stationName: state.current.stationName,
-                      lastUpdated: state.lastUpdated,
-                      isOnline: state.current.isOnline,
                       isDark: isDark,
+                      onStationChanged: (newStation) {
+                        ref.read(weatherDashboardProvider.notifier).changeStation(newStation);
+                      },
                       onThemeToggle: () {
                         ref.read(themeModeProvider.notifier).toggleTheme();
                       },
@@ -118,53 +119,34 @@ class MainDashboardScreen extends ConsumerWidget {
                             maxTemp: maxToday,
                             onMetricTap: (metricType) {
                               ref.read(intraDaySelectedMetricProvider.notifier).state = metricType;
-                              if (onNavigateTab != null) {
-                                onNavigateTab!(1); // Chuyển sang Tab Trong ngày
-                              } else {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => IntraDayDetailScreen(initialMetric: metricType),
-                                  ),
-                                );
-                              }
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => IntraDayDetailScreen(initialMetric: metricType),
+                                ),
+                              );
                             },
                           ),
-                          const SizedBox(height: AppDimensions.spaceLg),
+                          const SizedBox(height: AppDimensions.spaceSm),
 
-                          // 4. Intra-day preview chart section
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Diễn biến hôm nay',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
+                          // Dòng chữ cập nhật thời gian chuyển xuống dưới Hero Card (căn trái, không icon đồng hồ)
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              left: AppDimensions.spaceXs,
+                              top: AppDimensions.spaceXs,
+                              bottom: AppDimensions.spaceSm,
+                            ),
+                            child: Text(
+                              DateTimeFormatter.formatLastUpdated(state.lastUpdated),
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: isDark ? AppColors.textMutedDark : AppColors.textMutedLight,
+                                fontWeight: FontWeight.w500,
                               ),
-                              TextButton(
-                                onPressed: () {
-                                  if (onNavigateTab != null) {
-                                    onNavigateTab!(1);
-                                  } else {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => const IntraDayDetailScreen(),
-                                      ),
-                                    );
-                                  }
-                                },
-                                child: const Row(
-                                  children: [
-                                    Text('Xem chi tiết'),
-                                    SizedBox(width: 2),
-                                    Icon(Icons.chevron_right_rounded, size: 18),
-                                  ],
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
+                          const SizedBox(height: AppDimensions.spaceSm),
+
+                          // 4. Khối Thời tiết hôm nay
                           Card(
                             child: Padding(
                               padding: const EdgeInsets.all(AppDimensions.spaceMd),
@@ -172,15 +154,84 @@ class MainDashboardScreen extends ConsumerWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      const Icon(
-                                        Icons.thermostat_rounded,
+                                      Text(
+                                        'Thời tiết hôm nay',
+                                        style: theme.textTheme.titleMedium?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      TextButton(
+                                        style: TextButton.styleFrom(
+                                          visualDensity: VisualDensity.compact,
+                                          padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spaceXs),
+                                        ),
+                                        onPressed: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => IntraDayDetailScreen(initialMetric: selectedIntraDayMetric),
+                                            ),
+                                          );
+                                        },
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text('Xem chi tiết'),
+                                            SizedBox(width: 2),
+                                            Icon(Icons.chevron_right_rounded, size: 18),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: AppDimensions.spaceXs),
+
+                                  // Bộ chọn chỉ số cho Thời tiết hôm nay
+                                  SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: Row(
+                                      children: WeatherMetricType.values.map((metric) {
+                                        final isSelected = metric == selectedIntraDayMetric;
+                                        return Padding(
+                                          padding: const EdgeInsets.only(right: AppDimensions.spaceSm),
+                                          child: FilterChip(
+                                            selected: isSelected,
+                                            avatar: Icon(
+                                              metric.icon,
+                                              size: AppDimensions.iconSm,
+                                              color: isSelected
+                                              ? Colors.white
+                                              : (isDark ? Colors.white70 : AppColors.primaryLight),
+                                            ),
+                                            label: Text(metric.labelVi),
+                                            selectedColor: isDark ? AppColors.primaryDark : AppColors.primaryLight,
+                                            labelStyle: theme.textTheme.labelMedium?.copyWith(
+                                              color: isSelected ? Colors.white : null,
+                                              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                            ),
+                                            onSelected: (_) {
+                                              ref.read(intraDaySelectedMetricProvider.notifier).state = metric;
+                                            },
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ),
+                                  const SizedBox(height: AppDimensions.spaceMd),
+
+                                  // Tiêu đề phụ chỉ số đang chọn
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        selectedIntraDayMetric.icon,
                                         size: AppDimensions.iconSm,
-                                        color: AppColors.temperature,
+                                        color: isDark ? AppColors.primaryDark : AppColors.primaryLight,
                                       ),
                                       const SizedBox(width: AppDimensions.spaceXs),
                                       Text(
-                                        'Nhiệt độ (°C) từ 00:00 đến nay',
+                                        '${selectedIntraDayMetric.labelVi} (${selectedIntraDayMetric.unit}) từ 00:00 đến nay',
                                         style: theme.textTheme.titleSmall?.copyWith(
                                           fontWeight: FontWeight.w600,
                                         ),
@@ -190,48 +241,16 @@ class MainDashboardScreen extends ConsumerWidget {
                                   const SizedBox(height: AppDimensions.spaceSm),
                                   IntraDaySplineChart(
                                     points: state.intraDayPoints,
-                                    metricType: WeatherMetricType.temperature,
+                                    metricType: selectedIntraDayMetric,
                                     isCompact: true,
                                   ),
                                 ],
                               ),
                             ),
                           ),
-                          const SizedBox(height: AppDimensions.spaceLg),
+                          const SizedBox(height: AppDimensions.spaceMd),
 
-                          // 6. 7-day preview chart section
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Xu hướng 7 ngày gần nhất',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              TextButton(
-                                onPressed: () {
-                                  if (onNavigateTab != null) {
-                                    onNavigateTab!(2);
-                                  } else {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => const History7dScreen(),
-                                      ),
-                                    );
-                                  }
-                                },
-                                child: const Row(
-                                  children: [
-                                    Text('Xem chi tiết'),
-                                    SizedBox(width: 2),
-                                    Icon(Icons.chevron_right_rounded, size: 18),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
+                          // 5. Khối Lịch sử
                           Card(
                             child: Padding(
                               padding: const EdgeInsets.all(AppDimensions.spaceMd),
@@ -239,15 +258,86 @@ class MainDashboardScreen extends ConsumerWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      const Icon(
-                                        Icons.calendar_month_rounded,
+                                      Text(
+                                        'Lịch sử',
+                                        style: theme.textTheme.titleMedium?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      TextButton(
+                                        style: TextButton.styleFrom(
+                                          visualDensity: VisualDensity.compact,
+                                          padding: const EdgeInsets.symmetric(horizontal: AppDimensions.spaceXs),
+                                        ),
+                                        onPressed: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => const History7dScreen(),
+                                            ),
+                                          );
+                                        },
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text('Xem chi tiết'),
+                                            SizedBox(width: 2),
+                                            Icon(Icons.chevron_right_rounded, size: 18),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: AppDimensions.spaceXs),
+
+                                  // Bộ chọn chỉ số cho Lịch sử
+                                  SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: Row(
+                                      children: WeatherMetricType.values.map((metric) {
+                                        final isSelected = metric == selectedHistoryMetric;
+                                        return Padding(
+                                          padding: const EdgeInsets.only(right: AppDimensions.spaceSm),
+                                          child: FilterChip(
+                                            selected: isSelected,
+                                            avatar: Icon(
+                                              metric.icon,
+                                              size: AppDimensions.iconSm,
+                                              color: isSelected
+                                              ? Colors.white
+                                              : (isDark ? Colors.white70 : AppColors.primaryLight),
+                                            ),
+                                            label: Text(metric == WeatherMetricType.rainfall ? 'Lượng mưa' : metric.labelVi),
+                                            selectedColor: isDark ? AppColors.primaryDark : AppColors.primaryLight,
+                                            labelStyle: theme.textTheme.labelMedium?.copyWith(
+                                              color: isSelected ? Colors.white : null,
+                                              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                            ),
+                                            onSelected: (_) {
+                                              ref.read(history7dSelectedMetricProvider.notifier).state = metric;
+                                            },
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ),
+                                  const SizedBox(height: AppDimensions.spaceMd),
+
+                                  // Tiêu đề phụ chỉ số đang chọn
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        selectedHistoryMetric.icon,
                                         size: AppDimensions.iconSm,
-                                        color: AppColors.primaryLight,
+                                        color: isDark ? AppColors.primaryDark : AppColors.primaryLight,
                                       ),
                                       const SizedBox(width: AppDimensions.spaceXs),
                                       Text(
-                                        'Nhiệt độ trung bình (°C)',
+                                        selectedHistoryMetric == WeatherMetricType.rainfall
+                                            ? 'Tổng lượng mưa (${selectedHistoryMetric.unit}) 7 ngày'
+                                            : 'Trung bình ${selectedHistoryMetric.labelVi} (${selectedHistoryMetric.unit})',
                                         style: theme.textTheme.titleSmall?.copyWith(
                                           fontWeight: FontWeight.w600,
                                         ),
@@ -255,10 +345,13 @@ class MainDashboardScreen extends ConsumerWidget {
                                     ],
                                   ),
                                   const SizedBox(height: AppDimensions.spaceSm),
-                                  SevenDayAverageChart(
-                                    dailySummaries: state.weeklySummaries,
-                                    metricType: WeatherMetricType.temperature,
-                                  ),
+                                  if (selectedHistoryMetric == WeatherMetricType.rainfall)
+                                    RainfallBarChart(dailySummaries: state.weeklySummaries)
+                                  else
+                                    SevenDayAverageChart(
+                                      dailySummaries: state.weeklySummaries,
+                                      metricType: selectedHistoryMetric,
+                                    ),
                                 ],
                               ),
                             ),

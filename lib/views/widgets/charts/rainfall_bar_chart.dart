@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
@@ -29,11 +28,15 @@ class RainfallBarChart extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
     final dayLabels = dailySummaries.map((s) => s.dayOfWeek).toList();
 
-    double maxRain = 5.0;
+    double dataMax = 0.0;
     for (final s in dailySummaries) {
-      if (s.totalRainfall > maxRain) maxRain = s.totalRainfall;
+      if (s.totalRainfall > dataMax) dataMax = s.totalRainfall;
     }
-    final maxY = (maxRain * 1.25).ceilToDouble();
+
+    final yConfig = WeatherUnitHelper.calculateYAxisConfig(
+      metricType: WeatherMetricType.rainfall,
+      dataMax: dataMax,
+    );
 
     final barGroups = <BarChartGroupData>[];
     for (int i = 0; i < dailySummaries.length; i++) {
@@ -77,7 +80,7 @@ class RainfallBarChart extends StatelessWidget {
             gridData: FlGridData(
               show: true,
               drawVerticalLine: false,
-              horizontalInterval: max(1.0, maxY / 4),
+              horizontalInterval: yConfig.interval,
               getDrawingHorizontalLine: (value) {
                 return FlLine(
                   color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
@@ -94,12 +97,21 @@ class RainfallBarChart extends StatelessWidget {
                 sideTitles: SideTitles(
                   showTitles: true,
                   reservedSize: 32,
-                  interval: max(1.0, maxY / 4),
+                  interval: yConfig.interval,
                   getTitlesWidget: (value, meta) {
-                    return Text(
-                      value.toStringAsFixed(0),
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: isDark ? AppColors.textMutedDark : AppColors.textMutedLight,
+                    final remainder = (value - yConfig.minY) % yConfig.interval;
+                    final isMultiple = remainder.abs() < 0.01 || (yConfig.interval - remainder).abs() < 0.01;
+                    if (!isMultiple) {
+                      return const SizedBox.shrink();
+                    }
+                    return SideTitleWidget(
+                      meta: meta,
+                      space: 4,
+                      child: Text(
+                        value.round().toString(),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: isDark ? AppColors.textMutedDark : AppColors.textMutedLight,
+                        ),
                       ),
                     );
                   },
@@ -131,7 +143,8 @@ class RainfallBarChart extends StatelessWidget {
               ),
             ),
             borderData: FlBorderData(show: false),
-            maxY: maxY,
+            minY: yConfig.minY,
+            maxY: yConfig.maxY,
             barGroups: barGroups,
           ),
         ),

@@ -46,6 +46,21 @@ class WeatherDashboardNotifier extends AsyncNotifier<WeatherDashboardState> {
       return _fetchData();
     });
   }
+
+  /// Chuyển đổi sang trạm quan trắc khác
+  Future<void> changeStation(String newStation) async {
+    final prev = state.value;
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(() async {
+      final repo = ref.read(weatherRepositoryProvider);
+      await repo.refreshAllData();
+      final fresh = await _fetchData();
+      final updatedCurrent = (prev?.current ?? fresh.current).copyWith(
+        stationName: newStation,
+      );
+      return fresh.copyWith(current: updatedCurrent);
+    });
+  }
 }
 
 final weatherDashboardProvider =

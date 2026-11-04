@@ -22,6 +22,28 @@ class WeatherCurrentModel {
     this.isOnline = true,
   });
 
+  WeatherCurrentModel copyWith({
+    String? stationId,
+    String? stationName,
+    DateTime? timestamp,
+    double? temperature,
+    double? humidity,
+    double? rainfall,
+    double? windSpeed,
+    bool? isOnline,
+  }) {
+    return WeatherCurrentModel(
+      stationId: stationId ?? this.stationId,
+      stationName: stationName ?? this.stationName,
+      timestamp: timestamp ?? this.timestamp,
+      temperature: temperature ?? this.temperature,
+      humidity: humidity ?? this.humidity,
+      rainfall: rainfall ?? this.rainfall,
+      windSpeed: windSpeed ?? this.windSpeed,
+      isOnline: isOnline ?? this.isOnline,
+    );
+  }
+
   /// Chuyển đổi từ WeatherPoint5m
   factory WeatherCurrentModel.fromPoint5m({
     required WeatherPoint5m point,

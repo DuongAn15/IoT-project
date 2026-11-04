@@ -26,7 +26,7 @@ class History7dScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'Xu Hướng 7 Ngày Gần Nhất',
+          'Lịch Sử',
           style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
         ),
       ),

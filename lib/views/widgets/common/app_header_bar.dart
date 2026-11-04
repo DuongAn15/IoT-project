@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
+import '../../../core/constants/api_constants.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_dimensions.dart';
-import '../../../core/utils/date_time_formatter.dart';
 
-/// Header chuẩn hiển thị tên trạm quan trắc IoT, trạng thái kết nối và giờ cập nhật
+/// Header thanh điều hướng: chứa Dropdown chọn trạm quan trắc, nút đổi Theme và icon Cài đặt
 class AppHeaderBar extends StatelessWidget {
   final String stationName;
-  final DateTime lastUpdated;
-  final bool isOnline;
+  final List<String> availableStations;
+  final ValueChanged<String>? onStationChanged;
   final VoidCallback? onSettingsTap;
   final VoidCallback? onThemeToggle;
   final bool isDark;
@@ -15,8 +15,8 @@ class AppHeaderBar extends StatelessWidget {
   const AppHeaderBar({
     super.key,
     required this.stationName,
-    required this.lastUpdated,
-    this.isOnline = true,
+    this.availableStations = ApiConstants.availableStations,
+    this.onStationChanged,
     this.onSettingsTap,
     this.onThemeToggle,
     this.isDark = false,
@@ -26,6 +26,11 @@ class AppHeaderBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    // Đảm bảo tên trạm hiện tại luôn nằm trong danh sách items
+    final stations = availableStations.contains(stationName)
+        ? availableStations
+        : [stationName, ...availableStations];
+
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppDimensions.spaceMd,
@@ -34,46 +39,50 @@ class AppHeaderBar extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Station Info & Status
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: isOnline ? AppColors.success : AppColors.warning,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: AppDimensions.spaceSm),
-                    Flexible(
-                      child: Text(
-                        stationName,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  DateTimeFormatter.formatLastUpdated(lastUpdated),
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+          // Station Dropdown Selector (gần sát tên trạm, không bị kéo xa)
+          Flexible(
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: stationName,
+                isExpanded: false,
+                icon: Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                    size: 22,
                   ),
                 ),
-              ],
+                borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+                dropdownColor: theme.cardTheme.color,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                ),
+                items: stations.map((String station) {
+                  return DropdownMenuItem<String>(
+                    value: station,
+                    child: Text(
+                      station,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  );
+                }).toList(),
+                onChanged: (newVal) {
+                  if (newVal != null && newVal != stationName) {
+                    onStationChanged?.call(newVal);
+                  }
+                },
+              ),
             ),
           ),
 
-          // Action Buttons
+          const SizedBox(width: AppDimensions.spaceSm),
+
+          // Action Buttons: Theme Toggle & Settings Button
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -95,7 +104,7 @@ class AppHeaderBar extends StatelessWidget {
                     Icons.settings_outlined,
                     size: AppDimensions.iconMd,
                   ),
-                  tooltip: 'Cài đặt trạm',
+                  tooltip: 'Cài đặt',
                   visualDensity: VisualDensity.compact,
                 ),
             ],

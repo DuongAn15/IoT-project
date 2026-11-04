@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
@@ -58,19 +57,17 @@ class SevenDayAverageChart extends StatelessWidget {
     final metricColor = _getMetricColor();
     final dayLabels = dailySummaries.map((s) => s.dayOfWeek).toList();
 
-    double minY = double.infinity;
-    double maxY = -double.infinity;
+    double dataMax = 0.0;
 
     for (final s in dailySummaries) {
       final val = _getValue(s);
-      if (val < minY) minY = val;
-      if (val > maxY) maxY = val;
+      if (val > dataMax) dataMax = val;
     }
 
-    final ySpan = (maxY - minY).abs();
-    final yPadding = ySpan == 0 ? 2.0 : ySpan * 0.2;
-    final chartMinY = max(0.0, (minY - yPadding).floorToDouble());
-    final chartMaxY = (maxY + yPadding).ceilToDouble();
+    final yConfig = WeatherUnitHelper.calculateYAxisConfig(
+      metricType: metricType,
+      dataMax: dataMax,
+    );
 
     final barGroups = <BarChartGroupData>[];
     for (int i = 0; i < dailySummaries.length; i++) {
@@ -98,7 +95,7 @@ class SevenDayAverageChart extends StatelessWidget {
               ),
               borderSide: isToday
                   ? BorderSide(
-                      color: isDark ? Colors.white : AppColors.primaryLight,
+                      color: isDark ? Colors.white : metricColor,
                       width: 1.5,
                     )
                   : BorderSide.none,
@@ -121,7 +118,7 @@ class SevenDayAverageChart extends StatelessWidget {
             gridData: FlGridData(
               show: true,
               drawVerticalLine: false,
-              horizontalInterval: max(1.0, (chartMaxY - chartMinY) / 4),
+              horizontalInterval: yConfig.interval,
               getDrawingHorizontalLine: (value) {
                 return FlLine(
                   color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
@@ -138,12 +135,21 @@ class SevenDayAverageChart extends StatelessWidget {
                 sideTitles: SideTitles(
                   showTitles: true,
                   reservedSize: 34,
-                  interval: max(1.0, (chartMaxY - chartMinY) / 4),
+                  interval: yConfig.interval,
                   getTitlesWidget: (value, meta) {
-                    return Text(
-                      value.toStringAsFixed(0),
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: isDark ? AppColors.textMutedDark : AppColors.textMutedLight,
+                    final remainder = (value - yConfig.minY) % yConfig.interval;
+                    final isMultiple = remainder.abs() < 0.01 || (yConfig.interval - remainder).abs() < 0.01;
+                    if (!isMultiple) {
+                      return const SizedBox.shrink();
+                    }
+                    return SideTitleWidget(
+                      meta: meta,
+                      space: 4,
+                      child: Text(
+                        value.round().toString(),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: isDark ? AppColors.textMutedDark : AppColors.textMutedLight,
+                        ),
                       ),
                     );
                   },
@@ -175,8 +181,8 @@ class SevenDayAverageChart extends StatelessWidget {
               ),
             ),
             borderData: FlBorderData(show: false),
-            minY: chartMinY,
-            maxY: chartMaxY,
+            minY: yConfig.minY,
+            maxY: yConfig.maxY,
             barGroups: barGroups,
           ),
         ),

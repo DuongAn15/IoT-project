@@ -1,4 +1,18 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
+
+/// Cấu hình trục tung (Y-axis) chuẩn hóa cho biểu đồ
+class YAxisConfig {
+  final double minY;
+  final double maxY;
+  final double interval;
+
+  const YAxisConfig({
+    required this.minY,
+    required this.maxY,
+    required this.interval,
+  });
+}
 
 /// Các loại cảm biến cốt lõi
 enum WeatherMetricType {
@@ -122,5 +136,81 @@ abstract class WeatherUnitHelper {
     if (temp >= 33.0) return Icons.wb_sunny_rounded;
     if (temp <= 22.0) return Icons.cloud_rounded;
     return Icons.wb_cloudy_rounded;
+  }
+
+  /// Tính toán cấu hình trục Y chuẩn hóa: luôn bắt đầu từ 0 và chia các khoảng đều chẵn
+  static YAxisConfig calculateYAxisConfig({
+    required WeatherMetricType metricType,
+    required double dataMax,
+    bool isCompact = false,
+  }) {
+    const minY = 0.0;
+    double interval = 10.0;
+    double maxY = 40.0;
+
+    switch (metricType) {
+      case WeatherMetricType.temperature:
+        if (dataMax <= 20) {
+          interval = 5.0;
+        } else if (dataMax <= 40) {
+          interval = 10.0;
+        } else {
+          interval = 10.0;
+        }
+        maxY = (dataMax / interval).ceil() * interval;
+        if (dataMax >= maxY - (interval * 0.2)) {
+          maxY += interval;
+        }
+        maxY = max(interval * 2, maxY);
+        break;
+
+      case WeatherMetricType.humidity:
+        // Độ ẩm luôn từ 0% đến 100%, chia đều 4 khoảng 25% (0, 25, 50, 75, 100)
+        interval = 25.0;
+        maxY = 100.0;
+        break;
+
+      case WeatherMetricType.windSpeed:
+        if (dataMax <= 15) {
+          interval = 5.0;
+        } else if (dataMax <= 35) {
+          interval = 10.0;
+        } else if (dataMax <= 70) {
+          interval = 20.0;
+        } else {
+          interval = 25.0;
+        }
+        maxY = (dataMax / interval).ceil() * interval;
+        if (dataMax >= maxY - (interval * 0.2)) {
+          maxY += interval;
+        }
+        maxY = max(interval * 2, maxY);
+        break;
+
+      case WeatherMetricType.rainfall:
+        if (dataMax <= 5) {
+          interval = 2.0;
+        } else if (dataMax <= 15) {
+          interval = 5.0;
+        } else if (dataMax <= 40) {
+          interval = 10.0;
+        } else if (dataMax <= 80) {
+          interval = 20.0;
+        } else {
+          interval = 25.0;
+        }
+        maxY = (dataMax / interval).ceil() * interval;
+        if (dataMax >= maxY - (interval * 0.2)) {
+          maxY += interval;
+        }
+        maxY = max(interval * 2, maxY);
+        break;
+    }
+
+    return YAxisConfig(
+      minY: minY,
+      maxY: maxY,
+      interval: interval,
+    );
   }
 }

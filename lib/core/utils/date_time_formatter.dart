@@ -96,6 +96,12 @@ abstract class DateTimeFormatter {
     return '$hStr:$mStr';
   }
 
+  /// Chuyển đổi số phút tính từ 00:00 thành nhãn giờ rút gọn cho biểu đồ (ví dụ: 0 -> "0h", 180 -> "3h")
+  static String minutesToHourLabel(int totalMinutes) {
+    final hour = (totalMinutes ~/ 60).clamp(0, 23);
+    return '${hour}h';
+  }
+
   /// Nhãn hiển thị cập nhật ("Cập nhật: 14:25 hôm nay")
   static String formatLastUpdated(DateTime dateTime) {
     final timeStr = formatTime(dateTime);

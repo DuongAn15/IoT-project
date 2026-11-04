@@ -32,9 +32,9 @@ abstract class AppColors {
   static const Color temperatureBg = Color(0xFFFEE2E2);
   static const Color temperatureBgDark = Color(0xFF451A1A);
 
-  static const Color humidity = Color(0xFF0284C7); // Xanh lam nước
-  static const Color humidityBg = Color(0xFFE0F2FE);
-  static const Color humidityBgDark = Color(0xFF0C2A44);
+  static const Color humidity = Color(0xFFC026D3); // Tím Magenta (Fuchsia / Magenta)
+  static const Color humidityBg = Color(0xFFFAE8FF);
+  static const Color humidityBgDark = Color(0xFF4A044E);
 
   static const Color rainfall = Color(0xFF06B6D4); // Xanh mây mưa / Cyan
   static const Color rainfallBg = Color(0xFFCFFAFE);
@@ -72,7 +72,7 @@ abstract class AppColors {
   static const LinearGradient humidityChartGradient = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
-    colors: [Color(0x990284C7), Color(0x050284C7)],
+    colors: [Color(0x99C026D3), Color(0x05C026D3)],
   );
 
   static const LinearGradient windChartGradient = LinearGradient(

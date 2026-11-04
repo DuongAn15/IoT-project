@@ -5,7 +5,7 @@ import '../../../core/utils/weather_unit_helper.dart';
 import '../../../data/models/weather_current_model.dart';
 
 /// Thẻ Anh Hùng Thời Tiết Hợp Nhất (Unified Hero Weather Card)
-/// Tích hợp toàn diện trạng thái thời tiết, nhiệt độ tức thời và cả 4 chỉ số cảm biến vào cùng một khối thống nhất.
+/// Nhiệt độ hiển thị lớn tại trung tâm, thông số Thấp/Cao cùng dòng bên dưới, cùng 3 chỉ số cảm biến.
 class HeroWeatherCard extends StatelessWidget {
   final WeatherCurrentModel current;
   final double? minTemp;
@@ -25,20 +25,12 @@ class HeroWeatherCard extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    final overallStatus = WeatherUnitHelper.getOverallWeatherStatus(
-      temp: current.temperature,
-      rain: current.rainfall,
-      wind: current.windSpeed,
-    );
-    final weatherIcon = WeatherUnitHelper.getOverallWeatherIcon(
-      temp: current.temperature,
-      rain: current.rainfall,
-      wind: current.windSpeed,
-    );
-
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(AppDimensions.spaceLg),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDimensions.spaceMd,
+        vertical: AppDimensions.spaceLg,
+      ),
       decoration: BoxDecoration(
         gradient: isDark ? AppColors.heroGradientDark : AppColors.heroGradientLight,
         borderRadius: BorderRadius.circular(AppDimensions.radiusXl),
@@ -51,95 +43,65 @@ class HeroWeatherCard extends StatelessWidget {
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // 1. Top row: Weather status badge + Icon
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppDimensions.spaceSm + 4,
-                  vertical: AppDimensions.spaceXs + 2,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      weatherIcon,
-                      color: AppColors.accentSunDark,
-                      size: AppDimensions.iconSm,
-                    ),
-                    const SizedBox(width: AppDimensions.spaceXs + 2),
-                    Text(
-                      overallStatus,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                weatherIcon,
-                color: Colors.white.withValues(alpha: 0.9),
-                size: AppDimensions.iconXl,
-              ),
-            ],
-          ),
-          const SizedBox(height: AppDimensions.spaceMd),
-
-          // 2. Main Temperature & Min/Max Info (Tapping navigates to Temperature chart)
+          // 1. Nhiệt độ lớn ở trung tâm card & Thấp / Cao ngay dưới cùng dòng
           Material(
             color: Colors.transparent,
             child: InkWell(
               onTap: () => onMetricTap?.call(WeatherMetricType.temperature),
               borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4.0),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
+                padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
+                child: Column(
                   children: [
-                    Text(
-                      current.temperature.toStringAsFixed(1),
-                      style: theme.textTheme.displayLarge?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 54,
-                      ),
+                    // Số nhiệt độ lớn ở chính giữa
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Text(
+                          current.temperature.toStringAsFixed(1),
+                          style: theme.textTheme.displayLarge?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 68,
+                            letterSpacing: -1.5,
+                          ),
+                        ),
+                        Text(
+                          '°C',
+                          style: theme.textTheme.headlineMedium?.copyWith(
+                            color: Colors.white.withValues(alpha: 0.85),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 28,
+                          ),
+                        ),
+                      ],
                     ),
-                    Text(
-                      '°C',
-                      style: theme.textTheme.headlineMedium?.copyWith(
-                        color: Colors.white.withValues(alpha: 0.85),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const Spacer(),
+                    const SizedBox(height: 6),
+
+                    // Thấp và Cao nằm ngay dưới nhiệt độ, cùng một dòng cách nhau một khoảng
                     if (minTemp != null && maxTemp != null)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        mainAxisSize: MainAxisSize.min,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
                             'Thấp: ${minTemp!.toStringAsFixed(1)}°',
-                            style: theme.textTheme.bodySmall?.copyWith(
+                            style: theme.textTheme.bodyMedium?.copyWith(
                               color: Colors.white.withValues(alpha: 0.85),
                               fontWeight: FontWeight.w500,
+                              fontSize: 15,
                             ),
                           ),
-                          const SizedBox(height: 2),
+                          const SizedBox(width: AppDimensions.spaceXl), // Khoảng cách giữa Thấp và Cao
                           Text(
                             'Cao: ${maxTemp!.toStringAsFixed(1)}°',
-                            style: theme.textTheme.bodySmall?.copyWith(
+                            style: theme.textTheme.bodyMedium?.copyWith(
                               color: Colors.white.withValues(alpha: 0.85),
                               fontWeight: FontWeight.w500,
+                              fontSize: 15,
                             ),
                           ),
                         ],
@@ -149,9 +111,9 @@ class HeroWeatherCard extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: AppDimensions.spaceMd),
+          const SizedBox(height: AppDimensions.spaceLg),
 
-          // 3. Embedded 3 Metrics Bar (Độ ẩm, Lượng mưa, Tốc độ gió) trong cùng khối
+          // 2. Khối 3 chỉ số cảm biến (Độ ẩm, Lượng mưa, Tốc độ gió) trong cùng khối
           Container(
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.12),
@@ -166,7 +128,7 @@ class HeroWeatherCard extends StatelessWidget {
                 // Độ ẩm
                 _buildMetricColumn(
                   context: context,
-                  icon: Icons.water_drop_rounded,
+                  icon: WeatherMetricType.humidity.icon,
                   label: 'Độ ẩm',
                   value: '${current.humidity.toStringAsFixed(0)}%',
                   subText: WeatherUnitHelper.getHumidityAssessment(current.humidity),
@@ -196,7 +158,7 @@ class HeroWeatherCard extends StatelessWidget {
                 // Tốc độ gió
                 _buildMetricColumn(
                   context: context,
-                  icon: Icons.air_rounded,
+                  icon: WeatherMetricType.windSpeed.icon,
                   label: 'Tốc độ gió',
                   value: '${current.windSpeed.toStringAsFixed(1)} km/h',
                   subText: WeatherUnitHelper.getWindAssessment(current.windSpeed),

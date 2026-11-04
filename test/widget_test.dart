@@ -35,7 +35,7 @@ void main() {
   });
 
   group('Widget Navigation & Render Tests', () {
-    testWidgets('App renders correctly with navigation bar', (WidgetTester tester) async {
+    testWidgets('App renders correctly with dashboard and header actions', (WidgetTester tester) async {
       await tester.pumpWidget(
         const ProviderScope(
           child: WeatherMonitoringApp(),
@@ -46,12 +46,10 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      // Verify NavigationBar destinations exist
-      expect(find.byType(NavigationBar), findsOneWidget);
-      expect(find.text('Tổng quan'), findsOneWidget);
-      expect(find.text('Trong ngày'), findsOneWidget);
-      expect(find.text('7 Ngày'), findsOneWidget);
-      expect(find.text('Cài đặt'), findsOneWidget);
+      // Verify Dashboard and AppHeaderBar actions exist
+      expect(find.byIcon(Icons.settings_outlined), findsOneWidget);
+      expect(find.text('Thời tiết hôm nay'), findsOneWidget);
+      expect(find.text('Lịch sử'), findsOneWidget);
     });
   });
 }
