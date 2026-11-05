@@ -38,6 +38,9 @@ env/
 *.egg-info/
 .pytest_cache/
 
+# Node / NPM
+package-lock.json
+
 # OS Files
 .DS_Store
 Thumbs.db
