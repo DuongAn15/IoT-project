@@ -67,11 +67,11 @@
 #define DEVICE_ID               "adht_weather_01"
 #endif
 
-// MQTT Topics
-#define TOPIC_TELEMETRY         "adht/weather/telemetry"
+// MQTT Topics (Định danh riêng theo từng trạm DEVICE_ID; Status dùng event stream chung)
+#define TOPIC_TELEMETRY         "adht/weather/" DEVICE_ID "/telemetry"
 #define TOPIC_STATUS            "adht/weather/status"
-#define TOPIC_COMMAND           "adht/weather/command"
-#define TOPIC_CONFIG            "adht/weather/config"
+#define TOPIC_COMMAND           "adht/weather/" DEVICE_ID "/command"
+#define TOPIC_CONFIG            "adht/weather/" DEVICE_ID "/config"
 
 // ==========================================
 // 5. TIMING INTERVALS

@@ -39,13 +39,14 @@ bool MqttManager::reconnect() {
     Serial.printf("[MQTT] Connecting to %s:%d...\n", MQTT_BROKER_HOST, MQTT_BROKER_PORT);
 
     // Last Will and Testament (LWT)
+    char willPayload[64];
+    snprintf(willPayload, sizeof(willPayload), "{\"status\":\"offline\",\"device\":\"%s\"}", DEVICE_ID);
     const char *willTopic = TOPIC_STATUS;
-    const char *willMessage = "{\"status\":\"offline\"}";
     int willQos = 1;
     bool willRetain = true;
 
     if (mqttClient.connect(DEVICE_ID, MQTT_USERNAME, MQTT_PASSWORD, 
-                           willTopic, willQos, willRetain, willMessage)) {
+                           willTopic, willQos, willRetain, willPayload)) {
         Serial.println("[MQTT] Connected successfully!");
 
         // Publish Online Status (Retained)
@@ -54,11 +55,13 @@ bool MqttManager::reconnect() {
                  "{\"status\":\"online\",\"device\":\"%s\",\"ip\":\"%s\"}",
                  DEVICE_ID, WiFi.localIP().toString().c_str());
         mqttClient.publish(TOPIC_STATUS, onlinePayload, true);
+        Serial.printf("[MQTT] Published online status to [%s]: %s\n", TOPIC_STATUS, onlinePayload);
 
-        // Subscribe to Command & Config topics
+        // Subscribe to Command & Config topics (Chỉ subscribe topic định danh riêng của trạm)
         mqttClient.subscribe(TOPIC_COMMAND, 1);
         mqttClient.subscribe(TOPIC_CONFIG, 1);
-        Serial.printf("[MQTT] Subscribed to %s and %s\n", TOPIC_COMMAND, TOPIC_CONFIG);
+        Serial.printf("[MQTT] Subscribed to device topics:\n  - %s\n  - %s\n", 
+                      TOPIC_COMMAND, TOPIC_CONFIG);
         return true;
     } else {
         Serial.printf("[MQTT] Failed, state = %d\n", mqttClient.state());
@@ -99,9 +102,10 @@ void MqttManager::publishTelemetry(const WeatherData &data, int rssi) {
     char buffer[384];
     serializeJson(doc, buffer, sizeof(buffer));
 
+    // Publish duy nhất lên topic định danh riêng của trạm (TOPIC_TELEMETRY: adht/weather/{DEVICE_ID}/telemetry)
     bool ok = mqttClient.publish(TOPIC_TELEMETRY, buffer);
     if (ok) {
-        Serial.printf("[MQTT] Published telemetry: %s\n", buffer);
+        Serial.printf("[MQTT] Published telemetry to [%s]: %s\n", TOPIC_TELEMETRY, buffer);
     } else {
         Serial.println("[MQTT] Publish telemetry failed!");
     }
@@ -112,23 +116,35 @@ void MqttManager::onMessageReceived(char *topic, byte *payload, unsigned int len
     for (unsigned int i = 0; i < length; i++) {
         msg += (char)payload[i];
     }
-    Serial.printf("[MQTT] Received on %s: %s\n", topic, msg.c_str());
+    Serial.printf("[MQTT] Received message on topic [%s]: %s\n", topic, msg.c_str());
 
-    // 1. Command handling
-    if (String(topic) == TOPIC_COMMAND) {
+    String t = String(topic);
+
+    // 1. Command handling (Chỉ nhận từ topic riêng của trạm: TOPIC_COMMAND)
+    if (t == TOPIC_COMMAND) {
         JsonDocument doc;
         DeserializationError err = deserializeJson(doc, msg);
-        if (!err) {
-            String cmd = doc["cmd"] | "";
-            String arg = doc["arg"] | "";
-            if (onCommand) onCommand(cmd, arg);
+        if (err) {
+            Serial.printf("[MQTT] JSON parse error for Command: %s\n", err.c_str());
+            return;
+        }
+
+        String cmd = doc["cmd"] | "";
+        String arg = doc["arg"] | "";
+        if (onCommand) {
+            onCommand(cmd, arg);
         }
     }
-    // 2. Config update handling
-    else if (String(topic) == TOPIC_CONFIG) {
+    // 2. Config update handling (Chỉ nhận từ topic riêng của trạm: TOPIC_CONFIG)
+    else if (t == TOPIC_CONFIG) {
         JsonDocument doc;
         DeserializationError err = deserializeJson(doc, msg);
-        if (!err && onConfig) {
+        if (err) {
+            Serial.printf("[MQTT] JSON parse error for Config: %s\n", err.c_str());
+            return;
+        }
+
+        if (onConfig) {
             SystemConfig cfg;
             cfg.temp_max_alert = doc["temp_max"] | 38.0f;
             cfg.temp_min_alert = doc["temp_min"] | 10.0f;
