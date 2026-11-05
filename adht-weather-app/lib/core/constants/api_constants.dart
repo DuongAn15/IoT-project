@@ -1,6 +1,3 @@
-import 'package:flutter/foundation.dart';
-import 'dart:io' show Platform;
-
 /// Cấu hình và hằng số kết nối cho Trạm Quan Trắc & Backend Gateway API
 abstract class ApiConstants {
   static const String defaultStationId = 'adht_weather_01';
@@ -20,22 +17,8 @@ abstract class ApiConstants {
     'Trạm IoT 03 - Hòa Vang',
   ];
 
-  /// Xác định Base URL linh hoạt:
-  /// - Android Emulator kết nối máy host qua 10.0.2.2:8000
-  /// - iOS Simulator / Web / Desktop kết nối qua localhost:8000
-  static String get defaultBaseUrl {
-    if (kIsWeb) {
-      return 'http://localhost:8000/api';
-    }
-    try {
-      if (Platform.isAndroid) {
-        return 'http://10.0.2.2:8000/api';
-      }
-    } catch (_) {
-      // Fallback khi không hỗ trợ dart:io
-    }
-    return 'http://localhost:8000/api';
-  }
+  /// Base URL kết nối Backend Gateway
+  static const String defaultBaseUrl = 'http://localhost:8000/api';
 
   static const Duration connectTimeout = Duration(seconds: 10);
   static const Duration receiveTimeout = Duration(seconds: 10);

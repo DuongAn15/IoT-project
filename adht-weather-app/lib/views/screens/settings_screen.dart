@@ -239,7 +239,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onPressed: () => notifier.sendInstantCommand(
                   'led',
                   arg: '1',
-                  labelVi: 'Bật LED',
+                  labelVi: 'bật đèn',
                 ),
               ),
             ),
@@ -256,7 +256,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onPressed: () => notifier.sendInstantCommand(
                   'buzzer',
                   arg: '500',
-                  labelVi: 'Còi Buzzer (500ms)',
+                  labelVi: 'bật còi',
                 ),
               ),
             ),
@@ -273,7 +273,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onPressed: () => notifier.sendInstantCommand(
                   'reboot',
                   arg: 'now',
-                  labelVi: 'Reset Phần Cứng',
+                  labelVi: 'reset',
                 ),
               ),
             ),

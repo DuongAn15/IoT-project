@@ -81,11 +81,11 @@ class DeviceCommandNotifier extends StateNotifier<DeviceCommandState> {
         command: DeviceCommandModel(cmd: cmd, arg: arg),
       );
 
-      final displayName = labelVi ?? cmd.toUpperCase();
+      final displayName = labelVi ?? cmd;
       if (success) {
         state = state.copyWith(
           clearActiveCommand: true,
-          lastSuccessMessage: 'Đã phát lệnh "$displayName" tới trạm $deviceId thành công!',
+          lastSuccessMessage: 'Đã gửi lệnh $displayName tới trạm $deviceId',
         );
         return true;
       } else {
@@ -225,7 +225,7 @@ class DeviceConfigNotifier extends StateNotifier<DeviceConfigState> {
       if (success) {
         state = state.copyWith(
           isSaving: false,
-          lastSuccessMessage: 'Cập nhật cấu hình trạm $deviceId thành công!',
+          lastSuccessMessage: 'Đã lưu cấu hình tới trạm $deviceId',
         );
         return true;
       } else {
