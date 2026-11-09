@@ -17,6 +17,8 @@ export interface AppConfig {
   };
   firebase: {
     credentialsPath: string;
+    /** FIREBASE_CREDENTIALS_JSON: nội dung service account (JSON thô hoặc base64), ưu tiên hơn credentialsPath. */
+    credentialsJson?: string;
     alertTopic: string;
   };
   openWeather: {
