@@ -1,0 +1,59 @@
+# Render Blueprint: deploy NestJS backend (adht-weather-backend) lên Render.
+# Hướng dẫn chi tiết: adht-weather-backend/DEPLOY_RENDER.md
+# Lưu ý: dockerfilePath / dockerContext / buildFilter đều tính từ gốc repo (không phải rootDir).
+services:
+  - type: web
+    name: adht-weather-backend
+    runtime: docker
+    plan: free                 # free: ngủ sau ~15 phút không có HTTP request → dùng UptimeRobot ping /api/health
+    region: singapore          # gần EMQX (asia-southeast1) và Supabase; không đổi được sau khi tạo
+    dockerContext: ./adht-weather-backend
+    dockerfilePath: ./adht-weather-backend/Dockerfile
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit  # tự deploy khi push lên branch đã nối
+    buildFilter:
+      paths:
+        - adht-weather-backend/**   # commit firmware/app không kích hoạt build lại backend
+    envVars:
+      # PORT do Render tự cấp, backend đã đọc process.env.PORT nên không khai báo ở đây.
+      - key: NODE_ENV
+        value: production
+      - key: API_PREFIX
+        value: api
+
+      # EMQX Cloud: client ID phải khác bản backend chạy local để không đá nhau.
+      - key: MQTT_BROKER_HOST
+        sync: false
+      - key: MQTT_BROKER_PORT
+        value: "8883"
+      - key: MQTT_USE_TLS
+        value: "true"
+      - key: MQTT_USERNAME
+        sync: false
+      - key: MQTT_PASSWORD
+        sync: false
+      - key: MQTT_CLIENT_ID
+        value: adht_backend_cloud
+
+      # Supabase: dùng service role key (bảng weather_logs bật RLS).
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_TABLE
+        value: weather_logs
+
+      # Firebase: dán nội dung file service account JSON (hoặc bản base64) vào đây.
+      - key: FIREBASE_CREDENTIALS_JSON
+        sync: false
+      - key: FIREBASE_ALERT_TOPIC
+        value: adht_weather_alerts
+
+      # OpenWeather (dự báo 3 ngày) + tọa độ mặc định của trạm.
+      - key: OPENWEATHER_API_KEY
+        sync: false
+      - key: DEFAULT_LAT
+        sync: false
+      - key: DEFAULT_LON
+        sync: false
+      # Ngưỡng cảnh báo ALERT_* dùng mặc định trong code; thêm trên dashboard nếu cần đổi.
