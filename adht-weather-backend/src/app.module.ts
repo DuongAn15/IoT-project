@@ -9,6 +9,7 @@ import { MqttModule } from './modules/mqtt/mqtt.module';
 import { TelemetryModule } from './modules/telemetry/telemetry.module';
 import { WeatherModule } from './modules/weather/weather.module';
 import { DevicesModule } from './modules/devices/devices.module';
+import { HealthModule } from './modules/health/health.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { DevicesModule } from './modules/devices/devices.module';
     TelemetryModule,
     WeatherModule,
     DevicesModule,
+    HealthModule, // GET /api/health cho Render health check + UptimeRobot
   ],
 })
 export class AppModule {}
