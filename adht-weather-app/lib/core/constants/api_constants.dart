@@ -18,8 +18,9 @@ abstract class ApiConstants {
   ];
 
   /// Base URL kết nối Backend Gateway
-  // static const String defaultBaseUrl = 'http://localhost:8000/api';
-  static const String defaultBaseUrl = 'http://192.168.100.29:8000/api';
+  // static const String defaultBaseUrl = 'https://adht-weather-backend-oo0a.onrender.com/api'; // Cloud Render (Online 24/7)
+  // static const String defaultBaseUrl = 'http://localhost:8000/api';                           // Localhost (Cáp USB adb reverse)
+  static const String defaultBaseUrl = 'http://192.168.100.29:8000/api';                       // Mạng LAN WiFi nội bộ
 
   static const Duration connectTimeout = Duration(seconds: 10);
   static const Duration receiveTimeout = Duration(seconds: 10);
