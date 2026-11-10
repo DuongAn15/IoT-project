@@ -1,58 +1,64 @@
 # 📋 KẾ HOẠCH TRIỂN KHAI PHƯƠNG ÁN A: THÔNG LUỒNG DỮ LIỆU CƠ BẢN (BE ➔ APP)
 ## (ADHT Weather Station - Phase A: Direct REST Data Flow & End-to-End Connectivity)
 
-> **Mục tiêu**: Xóa bỏ hoàn toàn Mock Data, đấu nối trực tiếp Flutter App vào NestJS Backend Gateway qua REST API (Dio) để lấy dữ liệu cảm biến thời gian thực và lịch sử từ Supabase hiển thị lên giao diện.  
-> **Nguyên tắc**: Đơn giản - Nhanh chóng - Thông luồng chuẩn xác (Thin Client Model).  
-> **Phiên bản tài liệu**: 1.0.0
+---
+
+## 1. MỤC TIÊU & BỐI CẢNH DỰ ÁN
+
+### 1.1. Bối cảnh
+* **Hiện trạng**: Ứng dụng di động Flutter đã hoàn thiện toàn bộ giao diện người dùng (UI), các biểu đồ thống kê và hiệu ứng động nhưng vẫn đang sử dụng dữ liệu giả lập (`MockWeatherRepository`).
+* **Phía máy chủ**: Backend Gateway (NestJS) và Cơ sở dữ liệu (Supabase) đã hoàn thiện 100% các API truy vấn chuỗi thời gian, tích hợp thuật toán làm mịn dữ liệu (Downsampling) và đã vượt qua toàn bộ 7/7 ca kiểm thử đơn vị (`test/supabase.service.test.cjs`).
+* **Vấn đề cần giải quyết**: Chiều truyền dữ liệu từ **Backend xuống Mobile App** hiện chưa được thông luồng, dẫn đến việc người dùng chưa xem được số liệu đo đạc thực tế từ trạm phần cứng.
+
+### 1.2. Mục tiêu cụ thể (Objectives)
+1. **Thông luồng dữ liệu 100%**: Thay thế hoàn toàn Mock Data bằng dữ liệu cảm biến thực tế từ Supabase thông qua 2 REST API của Backend.
+2. **Không làm gãy giao diện**: Tận dụng triệt để kiến trúc Clean Architecture và State Management (Riverpod) hiện có để đấu nối tầng dữ liệu mới mà không cần chỉnh sửa mã nguồn giao diện (Views/Screens).
+3. **Độ trễ thấp & Tải nhẹ**: Đảm bảo ứng dụng tải số đo tức thời trong dưới 500ms và biểu đồ lịch sử trong dưới 1s qua mạng LAN/Cloud.
+
+### 1.3. Tiêu chí hoàn thành (Definition of Done - DoD)
+- [ ] Thẻ Hero Weather Card hiển thị số đo thực tế (Nhiệt độ, Độ ẩm, Gió, Mưa) khớp với bản ghi mới nhất trong bảng `weather_logs` của Supabase.
+- [ ] Biểu đồ diễn biến trong ngày (Intra-day 24h) vẽ đúng các điểm đo thực tế.
+- [ ] Biểu đồ tổng quan 7 ngày (Weekly History) hiển thị đúng trung bình ngày thực tế.
+- [ ] Thao tác vuốt màn hình (Pull-to-refresh) tải lại dữ liệu mới thành công.
+- [ ] Xử lý ngoại lệ mạng êm dịu: Khi mất mạng hoặc server tắt, app hiện thông báo lỗi nhẹ nhàng và nút "Thử lại", không bị crash (văng ứng dụng).
 
 ---
 
-## 1. TỔNG QUAN LUỒNG DỮ LIỆU PHƯƠNG ÁN A
+## 2. PHÂN CÔNG TRÁCH NHIỆM & TRẠNG THÁI HỆ THỐNG
 
-Trong Phương án A, ứng dụng di động đóng vai trò là một **Thin Client** (máy khách tinh gọn). Mọi dữ liệu hiển thị trên màn hình đều được truy vấn trực tiếp từ Backend Gateway mỗi khi mở app, chuyển trạm hoặc người dùng thực hiện thao tác vuốt làm mới (Pull-to-refresh).
-
-```mermaid
-flowchart TD
-    subgraph BE["1. Backend Gateway (NestJS & Supabase)"]
-        direction TB
-        SB[("Supabase DB (weather_logs)")] <--> Srv["SupabaseService"]
-        Srv <--> Ctrl["WeatherController (/api/weather/*)"]
-        Ctrl <--> Interceptor["TransformInterceptor (Envelope)"]
-    end
-
-    subgraph NET["2. Flutter Network & Data Layer"]
-        direction TB
-        Interceptor <==>|"HTTP REST (JSON)"| Dio["DioClient (Timeout: 10s)"]
-        Dio <--> Api["WeatherApiService (Tầng gọi API)"]
-        Api <--> Repo["RemoteWeatherRepository (Adapter / Mapper)"]
-    end
-
-    subgraph UI["3. Flutter State & Presentation Layer"]
-        direction TB
-        Repo <--> Prov["weatherDashboardProvider (Riverpod AsyncNotifier)"]
-        Prov --> Screen["MainDashboardScreen & Charts"]
-    end
-```
+| Phân hệ | Thành phần phụ trách | Hiện trạng | Trách nhiệm trong Kế hoạch A |
+| :--- | :--- | :---: | :--- |
+| **Backend Gateway** | NestJS Controllers & Supabase Service | **ĐÃ HOÀN TẤT 100%** | Khởi chạy máy chủ (`bun run start:dev` hoặc Cloud Render), duy trì kết nối Supabase và cung cấp 2 REST API theo đúng đặc tả ở Mục 3. |
+| **Mobile App** | Flutter Network, Repository & Riverpod | **ĐANG CHỜ ĐẤU NỐI** | Xây dựng `WeatherApiService`, `RemoteWeatherRepository` (Data Mapper) và cập nhật `weatherRepositoryProvider`. |
 
 ---
 
-## 2. HỢP ĐỒNG API CHIỀU BE ➔ APP (API CONTRACTS)
+## 3. TÀI LIỆU ĐẶC TẢ API CHIỀU BE ➔ APP (API CONTRACTS)
 
-Toàn bộ response từ Backend đều được bọc trong Envelope chuẩn bởi `TransformInterceptor`:
-```json
-{
-  "statusCode": 200,
-  "data": { ... },
-  "timestamp": "2026-11-10T15:53:30.033Z"
-}
-```
+Dành cho đội ngũ phát triển Mobile App nắm rõ chuẩn dữ liệu từ Backend để xây dựng tầng mạng và bộ chuyển đổi (Adapter/Mapper).
 
-### 2.1. API 1: Số đo thời gian thực mới nhất (`GET /api/weather/latest`)
+### 3.1. Cấu hình kết nối chung
+* **Base URL**:
+  * Chạy máy thật qua Wi-Fi LAN: `http://192.168.100.29:8000/api`
+  * Chạy qua cáp USB Android (adb reverse): `http://localhost:8000/api`
+  * Chạy qua Cloud Render: `https://adht-weather-backend-oo0a.onrender.com/api`
+* **Cấu trúc Envelope chuẩn**:
+  Mọi response từ Backend đều được bọc trong đối tượng:
+  ```json
+  {
+    "statusCode": 200,
+    "data": { ... },
+    "timestamp": "2026-11-10T16:00:00.000Z"
+  }
+  ```
+
+---
+
+### 3.2. API 1: Số đo thời gian thực mới nhất (`GET /weather/latest`)
 * **Endpoint**: `GET /api/weather/latest?device_id={device_id}`
 * **Query Params**:
-  * `device_id` (tùy chọn, mặc định `adht_weather_01`).
-* **Backend Controller**: [`weather.controller.ts:17-22`](file:///home/duongan/Documents/Code/IoT-project/adht-weather-backend/src/modules/weather/weather.controller.ts#L17-L22)
-* **Response Body (`data`)**:
+  * `device_id` (tùy chọn, mặc định `adht_weather_01`): Mã trạm cần xem.
+* **Response Body (`data`) khi thành công**:
   ```json
   {
     "statusCode": 200,
@@ -67,22 +73,16 @@ Toàn bộ response từ Backend đều được bọc trong Envelope chuẩn b�
     "timestamp": "2026-11-10T16:00:00.000Z"
   }
   ```
-* **Ánh xạ vào Model App**:
-  * `temp` $\rightarrow$ `WeatherCurrentModel.temperature` (°C)
-  * `humi` $\rightarrow$ `WeatherCurrentModel.humidity` (%)
-  * `rain_rate` $\rightarrow$ `WeatherCurrentModel.rainfall` (mm/h)
-  * `wind_speed` $\rightarrow$ `WeatherCurrentModel.windSpeed` (km/h hoặc m/s quy đổi)
-  * `recorded_at` $\rightarrow$ `WeatherCurrentModel.timestamp` (`DateTime`)
-  * `device_id` $\rightarrow$ `WeatherCurrentModel.stationId`
+* **Khi trạm chưa có số liệu**: `data: null`.
 
 ---
 
-### 2.2. API 2: Lịch sử số đo 24h diễn biến trong ngày (`GET /api/weather/history?range=24h`)
-* **Endpoint**: `GET /api/weather/history?device_id={device_id}&range=24h`
+### 3.3. API 2: Lịch sử số đo đã làm mịn (`GET /weather/history`)
+* **Endpoint**: `GET /api/weather/history?device_id={device_id}&range={range}`
 * **Query Params**:
-  * `device_id`: bắt buộc (vd: `adht_weather_01`).
-  * `range`: `'24h'` (mặc định gom bucket 10 phút, trả về tối đa ~144-288 điểm đã làm mịn).
-* **Response Body (`data`)**:
+  * `device_id` (bắt buộc): `adht_weather_01`.
+  * `range` (bắt buộc): `'24h'` (xem trong ngày) hoặc `'7d'` (xem 7 ngày).
+* **Response Body (`data`) khi thành công**:
   ```json
   {
     "statusCode": 200,
@@ -105,52 +105,71 @@ Toàn bộ response từ Backend đều được bọc trong Envelope chuẩn b�
     "timestamp": "2026-11-10T16:00:00.000Z"
   }
   ```
-* **Ánh xạ vào Model App**:
-  * Mỗi phần tử trong mảng `data` được chuyển đổi thành một đối tượng [`WeatherPoint5m`](file:///home/duongan/Documents/Code/IoT-project/adht-weather-app/lib/data/models/weather_point_5m.dart).
 
 ---
 
-### 2.3. API 3: Lịch sử số đo 7 ngày (`GET /api/weather/history?range=7d`)
-* **Endpoint**: `GET /api/weather/history?device_id={device_id}&range=7d`
-* **Query Params**:
-  * `device_id`: bắt buộc.
-  * `range`: `'7d'` (gom bucket 1 giờ, trả về các điểm đo trong 7 ngày).
-* **Ánh xạ vào Model App**:
-  * App sẽ thực hiện gom nhóm (Group-by) các điểm theo từng ngày để tính `avgTemperature`, `minTemperature`, `maxTemperature`, `avgHumidity`, `totalRainfall`, `avgWindSpeed` $\rightarrow$ đưa vào [`WeatherDailySummary`](file:///home/duongan/Documents/Code/IoT-project/adht-weather-app/lib/data/models/weather_daily_summary.dart).
+### 3.4. Bảng quy tắc ánh xạ dữ liệu (Data Mapping Guide)
+
+| Trường JSON từ Backend | Trường Model trong Flutter | Kiểu dữ liệu | Quy tắc chuyển đổi trong Repository |
+| :--- | :--- | :--- | :--- |
+| `data.device_id` | `WeatherCurrentModel.stationId` | `String` | Gán trực tiếp. |
+| `data.device_id` | `WeatherCurrentModel.stationName` | `String` | Tra cứu tên qua `ApiConstants.deviceStationMap[id] ?? 'Trạm IoT'`. |
+| `data.temp` | `WeatherCurrentModel.temperature` | `double` | `(data['temp'] as num).toDouble()`. |
+| `data.humi` | `WeatherCurrentModel.humidity` | `double` | `(data['humi'] as num).toDouble()`. |
+| `data.rain_rate` | `WeatherCurrentModel.rainfall` | `double` | `(data['rain_rate'] as num).toDouble()`. |
+| `data.wind_speed` | `WeatherCurrentModel.windSpeed` | `double` | `(data['wind_speed'] as num).toDouble()`. |
+| `data.recorded_at`| `WeatherCurrentModel.timestamp` | `DateTime` | `DateTime.parse(data['recorded_at'] as String).toLocal()`. |
 
 ---
 
-## 3. CÁC BƯỚC THỰC THI CHI TIẾT
+## 4. KẾ HOẠCH HÀNH ĐỘNG & MÃ NGUỒN MẪU (ACTION PLAN & CODE SAMPLES)
+
+```mermaid
+flowchart LR
+    Step1["Bước 1: WeatherApiService<br/>(Gọi REST qua Dio)"] --> Step2["Bước 2: RemoteWeatherRepository<br/>(Data Mapping & Fallback)"]
+    Step2 --> Step3["Bước 3: Đấu nối Riverpod<br/>(weatherDashboardProvider)"]
+    Step3 --> Step4["Bước 4: Kiểm thử End-to-End<br/>(Khớp số đo Supabase)"]
+```
+
+---
 
 ### Bước 1: Xây dựng `WeatherApiService`
-* **Vị trí file**: `adht-weather-app/lib/data/network/weather_api_service.dart`
-* **Nhiệm vụ**:
-  * Nhận `DioClient` qua dependency injection.
-  * Thực hiện gọi 2 endpoint `ApiConstants.endpointWeatherLatest` và `ApiConstants.endpointWeatherHistory`.
-  * Bắt lỗi mạng qua hàm tiện ích `handleDioError(e)` trong `api_exceptions.dart`.
-* **Mẫu cài đặt**:
+* **Vị trí file**: [`adht-weather-app/lib/data/network/weather_api_service.dart`](file:///home/duongan/Documents/Code/IoT-project/adht-weather-app/lib/data/network/)
+* **Nhiệm vụ**: Đóng gói các lời gọi HTTP REST bằng `Dio`, quản lý tham số truy vấn và bắt lỗi mạng chuẩn hóa.
+* **Mã nguồn hoàn chỉnh**:
   ```dart
+  import 'package:dio/dio.dart';
+  import '../../core/constants/api_constants.dart';
+  import 'api_exceptions.dart';
+  import 'api_response.dart';
+  import 'dio_client.dart';
+
+  /// Dịch vụ giao tiếp API lấy số liệu thời tiết từ Backend Gateway
   class WeatherApiService {
     final DioClient _dioClient;
+
     WeatherApiService(this._dioClient);
 
     Dio get _dio => _dioClient.dio;
 
+    /// Gọi GET /api/weather/latest?device_id=...
     Future<ApiResponse<Map<String, dynamic>?>> fetchLatestWeather(String deviceId) async {
       try {
         final response = await _dio.get(
           ApiConstants.endpointWeatherLatest,
           queryParameters: {'device_id': deviceId},
         );
+
         return ApiResponse.fromJson(
           response.data as Map<String, dynamic>,
-          (data) => data as Map<String, dynamic>?,
+          (dataJson) => dataJson as Map<String, dynamic>?,
         );
       } on DioException catch (e) {
         throw handleDioError(e);
       }
     }
 
+    /// Gọi GET /api/weather/history?device_id=...&range=...
     Future<ApiResponse<Map<String, dynamic>>> fetchHistory({
       required String deviceId,
       required String range,
@@ -163,9 +182,10 @@ Toàn bộ response từ Backend đều được bọc trong Envelope chuẩn b�
             'range': range,
           },
         );
+
         return ApiResponse.fromJson(
           response.data as Map<String, dynamic>,
-          (data) => data as Map<String, dynamic>,
+          (dataJson) => dataJson as Map<String, dynamic>,
         );
       } on DioException catch (e) {
         throw handleDioError(e);
@@ -176,57 +196,265 @@ Toàn bộ response từ Backend đều được bọc trong Envelope chuẩn b�
 
 ---
 
-### Bước 2: Xây dựng `RemoteWeatherRepository`
+### Bước 2: Xây dựng `RemoteWeatherRepository` (Tầng Chuyển Đổi Dữ Liệu)
 * **Vị trí file**: `adht-weather-app/lib/data/repositories/remote_weather_repository.dart`
-* **Nhiệm vụ**:
-  * Triển khai interface [`WeatherRepository`](file:///home/duongan/Documents/Code/IoT-project/adht-weather-app/lib/data/repositories/weather_repository.dart).
-  * Gọi `WeatherApiService` để lấy JSON từ BE.
-  * Chuyển đổi JSON sang các Model hiển thị của UI (`WeatherCurrentModel`, `WeatherPoint5m`, `WeatherDailySummary`).
-  * Xử lý trường hợp dữ liệu rỗng (Fallback an toàn): nếu Backend mới khởi động hoặc chưa có bản ghi cho ngày hiện tại, trả về danh sách an toàn không làm crash UI.
+* **Nhiệm vụ**: Triển khai [`WeatherRepository`](file:///home/duongan/Documents/Code/IoT-project/adht-weather-app/lib/data/repositories/weather_repository.dart), bóc tách JSON từ `WeatherApiService` và chuyển đổi sang các thực thể Model của App.
+* **Mã nguồn hoàn chỉnh**:
+  ```dart
+  import '../../core/constants/api_constants.dart';
+  import '../../core/utils/date_time_formatter.dart';
+  import '../models/weather_current_model.dart';
+  import '../models/weather_daily_summary.dart';
+  import '../models/weather_point_5m.dart';
+  import '../network/weather_api_service.dart';
+  import 'weather_repository.dart';
+
+  /// Triển khai WeatherRepository kết nối dữ liệu thật từ Backend Gateway
+  class RemoteWeatherRepository implements WeatherRepository {
+    final WeatherApiService _apiService;
+    final String currentDeviceId;
+
+    RemoteWeatherRepository(
+      this._apiService, {
+      this.currentDeviceId = ApiConstants.defaultStationId,
+    });
+
+    @override
+    Future<WeatherCurrentModel> getCurrentWeather() async {
+      final response = await _apiService.fetchLatestWeather(currentDeviceId);
+      final data = response.data;
+
+      if (data == null) {
+        // Fallback an toàn khi trạm mới chưa phát bản ghi nào
+        return WeatherCurrentModel(
+          stationId: currentDeviceId,
+          stationName: ApiConstants.deviceStationMap[currentDeviceId] ?? 'Trạm IoT',
+          timestamp: DateTime.now(),
+          temperature: 0.0,
+          humidity: 0.0,
+          rainfall: 0.0,
+          windSpeed: 0.0,
+          isOnline: false,
+        );
+      }
+
+      return WeatherCurrentModel(
+        stationId: data['device_id'] as String? ?? currentDeviceId,
+        stationName: ApiConstants.deviceStationMap[data['device_id']] ?? 'Trạm IoT',
+        timestamp: data['recorded_at'] != null
+            ? DateTime.parse(data['recorded_at'] as String).toLocal()
+            : DateTime.now(),
+        temperature: (data['temp'] as num?)?.toDouble() ?? 0.0,
+        humidity: (data['humi'] as num?)?.toDouble() ?? 0.0,
+        rainfall: (data['rain_rate'] as num?)?.toDouble() ?? 0.0,
+        windSpeed: (data['wind_speed'] as num?)?.toDouble() ?? 0.0,
+        isOnline: true,
+      );
+    }
+
+    @override
+    Future<List<WeatherPoint5m>> getIntraDayData5m() async {
+      final response = await _apiService.fetchHistory(
+        deviceId: currentDeviceId,
+        range: '24h',
+      );
+
+      final rawList = response.data['data'] as List<dynamic>? ?? [];
+      return rawList.map((item) {
+        final map = item as Map<String, dynamic>;
+        return WeatherPoint5m(
+          timestamp: map['recorded_at'] != null
+              ? DateTime.parse(map['recorded_at'] as String).toLocal()
+              : DateTime.now(),
+          temperature: (map['temp'] as num?)?.toDouble() ?? 0.0,
+          humidity: (map['humi'] as num?)?.toDouble() ?? 0.0,
+          rainfall: (map['rain_rate'] as num?)?.toDouble() ?? 0.0,
+          windSpeed: (map['wind_speed'] as num?)?.toDouble() ?? 0.0,
+        );
+      }).toList();
+    }
+
+    @override
+    Future<List<WeatherDailySummary>> get7DaysSummary() async {
+      final response = await _apiService.fetchHistory(
+        deviceId: currentDeviceId,
+        range: '7d',
+      );
+
+      final rawList = response.data['data'] as List<dynamic>? ?? [];
+      if (rawList.isEmpty) return [];
+
+      // Gom nhóm các điểm theo từng ngày YYYY-MM-DD
+      final Map<String, List<Map<String, dynamic>>> groupedByDate = {};
+      for (final item in rawList) {
+        final map = item as Map<String, dynamic>;
+        final recordedAt = map['recorded_at'] as String?;
+        if (recordedAt != null) {
+          final dateKey = recordedAt.substring(0, 10);
+          groupedByDate.putIfAbsent(dateKey, () => []).add(map);
+        }
+      }
+
+      final List<WeatherDailySummary> summaries = [];
+      groupedByDate.forEach((dateStr, points) {
+        final date = DateTime.parse(dateStr).toLocal();
+        double sumTemp = 0, minTemp = 999, maxTemp = -999;
+        double sumHumi = 0, sumRain = 0, sumWind = 0;
+
+        for (final p in points) {
+          final t = (p['temp'] as num?)?.toDouble() ?? 0.0;
+          final h = (p['humi'] as num?)?.toDouble() ?? 0.0;
+          final r = (p['rain_rate'] as num?)?.toDouble() ?? 0.0;
+          final w = (p['wind_speed'] as num?)?.toDouble() ?? 0.0;
+
+          sumTemp += t;
+          if (t < minTemp) minTemp = t;
+          if (t > maxTemp) maxTemp = t;
+          sumHumi += h;
+          sumRain += r;
+          sumWind += w;
+        }
+
+        final count = points.length;
+        summaries.add(WeatherDailySummary(
+          date: date,
+          dayOfWeek: DateTimeFormatter.getDayOfWeekLabel(date),
+          avgTemperature: double.parse((sumTemp / count).toStringAsFixed(1)),
+          minTemperature: double.parse(minTemp.toStringAsFixed(1)),
+          maxTemperature: double.parse(maxTemp.toStringAsFixed(1)),
+          avgHumidity: double.parse((sumHumi / count).toStringAsFixed(1)),
+          totalRainfall: double.parse(sumRain.toStringAsFixed(1)),
+          avgWindSpeed: double.parse((sumWind / count).toStringAsFixed(1)),
+        ));
+      });
+
+      // Sắp xếp thứ tự theo ngày tăng dần
+      summaries.sort((a, b) => a.date.compareTo(b.date));
+      return summaries;
+    }
+
+    @override
+    Future<void> refreshAllData() async {
+      // Làm mới dữ liệu (tự động invalidate cache khi cần)
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+  }
+  ```
 
 ---
 
-### Bước 3: Đấu nối vào Riverpod State
-* **Vị trí file**: `adht-weather-app/lib/providers/weather_dashboard_provider.dart`
-* **Thay đổi**:
-  * Khai báo `weatherApiServiceProvider` dùng chung `dioClientProvider`.
-  * Thay thế `MockWeatherRepository()` bằng `RemoteWeatherRepository(apiService)`:
+### Bước 3: Đấu nối vào Riverpod State Provider
+* **Vị trí file**: [`adht-weather-app/lib/providers/weather_dashboard_provider.dart`](file:///home/duongan/Documents/Code/IoT-project/adht-weather-app/lib/providers/weather_dashboard_provider.dart)
+* **Nhiệm vụ**: Khai báo Provider cho `WeatherApiService` và thay thế `MockWeatherRepository` bằng `RemoteWeatherRepository`.
+* **Mã nguồn thay đổi**:
   ```dart
+  import 'dart:async';
+  import 'package:flutter_riverpod/flutter_riverpod.dart';
+  import '../data/network/weather_api_service.dart';
+  import '../data/repositories/remote_weather_repository.dart';
+  import '../data/repositories/weather_repository.dart';
+  import 'device_settings_provider.dart';
+  import 'weather_dashboard_state.dart';
+
+  /// Provider cung cấp WeatherApiService dùng chung DioClient
   final weatherApiServiceProvider = Provider<WeatherApiService>((ref) {
     final dioClient = ref.watch(dioClientProvider);
     return WeatherApiService(dioClient);
   });
 
+  /// Provider cung cấp WeatherRepository kết nối dữ liệu thật
   final weatherRepositoryProvider = Provider<WeatherRepository>((ref) {
     final apiService = ref.watch(weatherApiServiceProvider);
-    return RemoteWeatherRepository(apiService);
+    final selectedDeviceId = ref.watch(selectedDeviceIdProvider);
+    return RemoteWeatherRepository(apiService, currentDeviceId: selectedDeviceId);
   });
+
+  /// AsyncNotifier quản lý trạng thái tải và tự động làm mới
+  class WeatherDashboardNotifier extends AsyncNotifier<WeatherDashboardState> {
+    Timer? _refreshTimer;
+
+    @override
+    Future<WeatherDashboardState> build() async {
+      // Hủy timer cũ nếu có khi rebuild
+      _refreshTimer?.cancel();
+      // Thiết lập tự động polling số đo mới nhất mỗi 30 giây
+      _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        refresh();
+      });
+
+      ref.onDispose(() => _refreshTimer?.cancel());
+      return _fetchData();
+    }
+
+    Future<WeatherDashboardState> _fetchData() async {
+      final repo = ref.read(weatherRepositoryProvider);
+
+      final results = await Future.wait([
+        repo.getCurrentWeather(),
+        repo.getIntraDayData5m(),
+        repo.get7DaysSummary(),
+      ]);
+
+      return WeatherDashboardState(
+        current: results[0] as dynamic,
+        intraDayPoints: results[1] as dynamic,
+        weeklySummaries: results[2] as dynamic,
+        lastUpdated: DateTime.now(),
+        isOffline: false,
+      );
+    }
+
+    /// Làm mới khi người dùng vuốt Pull-to-refresh
+    Future<void> refresh() async {
+      state = await AsyncValue.guard(() async {
+        final repo = ref.read(weatherRepositoryProvider);
+        await repo.refreshAllData();
+        return _fetchData();
+      });
+    }
+
+    /// Đổi trạm quan trắc
+    Future<void> changeStation(String newStation) async {
+      state = const AsyncValue.loading();
+      state = await AsyncValue.guard(() async {
+        return _fetchData();
+      });
+    }
+  }
   ```
 
 ---
 
-### Bước 4: Thêm cơ chế Polling tự động nhẹ nhàng
-* Trong `WeatherDashboardNotifier`:
-  * Mặc định khi người dùng mở màn hình: Tải dữ liệu lần đầu.
-  * Khi người dùng kéo màn hình xuống (Pull-to-refresh): Gọi `refresh()`.
-  * Bổ sung `Timer.periodic(const Duration(seconds: 30), ...)`: Tự động tải lại số đo mới nhất của trạm để Hero Card luôn cập nhật số đo mà không cần người dùng thao tác bằng tay. Khi widget dispose, tự hủy timer để không rò rỉ bộ nhớ.
+### Bước 4: Kiểm thử và tinh chỉnh thực tế
+* Khởi chạy Backend Gateway local:
+  ```bash
+  cd adht-weather-backend && bun run start:dev
+  ```
+* Chạy ứng dụng Flutter trên điện thoại / máy ảo Android:
+  ```bash
+  cd adht-weather-app && flutter run
+  ```
+* Kiểm tra thẻ Hero Card, biểu đồ trong ngày và biểu đồ 7 ngày xem các điểm dữ liệu có ăn khớp với bảng `weather_logs` của Supabase hay không.
 
 ---
 
-## 4. DANH MỤC KIỂM THỬ THÔNG LUỒNG (TESTING & VERIFICATION)
+## 5. KỊCH BẢN KIỂM THỬ NGHIỆM THU (TESTING & VERIFICATION)
 
-| STT | Kịch bản kiểm thử | Thao tác thực hiện | Kết quả kỳ vọng |
+| Mã test | Kịch bản kiểm thử | Thao tác thực hiện | Kết quả kỳ vọng |
 | :--- | :--- | :--- | :--- |
-| **TC-01** | Kiểm tra kết nối API Backend | Chạy `curl http://localhost:8000/api/weather/latest?device_id=adht_weather_01` trên terminal. | Trả về HTTP 200, JSON chứa số đo mới nhất từ Supabase. |
-| **TC-02** | Khởi động App tải dữ liệu thật | Mở ứng dụng Flutter với Base URL LAN `http://192.168.100.29:8000/api`. | Màn hình Dashboard hiện số đo thật (khớp với bản ghi mới nhất trong bảng `weather_logs`). |
-| **TC-03** | Thao tác Pull-to-refresh | Vuốt kéo danh sách từ trên xuống trên màn hình chính. | Vòng xoay tải xuất hiện, biến mất sau ~0.5s và thời gian `Cập nhật lúc ...` nhảy lên thời điểm hiện tại. |
-| **TC-04** | Đổi trạm quan trắc | Bấm chọn trạm khác trên Header (`adht_weather_02`). | Request gửi lên Backend mang đúng tham số `device_id=adht_weather_02`. |
-| **TC-05** | Biểu đồ trong ngày (24h) | Kiểm tra tab Biểu đồ trong ngày. | Biểu đồ Spline Chart vẽ đúng số điểm nhận được từ Backend API. |
-| **TC-06** | Xử lý khi mất kết nối mạng | Tắt Wi-Fi hoặc tắt Backend rồi bấm làm mới. | Giao diện hiển thị trạng thái lỗi nhẹ nhàng kèm nút "Thử lại", app không bị văng (crash). |
+| **TC-A01** | Kiểm tra kết nối API Backend | Chạy curl `GET /api/weather/latest?device_id=adht_weather_01` trên terminal. | Trả về HTTP 200, JSON chứa số đo mới nhất từ Supabase. |
+| **TC-A02** | Khởi động App tải dữ liệu thật | Mở ứng dụng Flutter với Base URL LAN hoặc Localhost. | Màn hình Dashboard hiện số đo thật (khớp với bản ghi mới nhất trong Supabase). |
+| **TC-A03** | Thao tác Pull-to-refresh | Vuốt kéo danh sách từ trên xuống trên màn hình chính. | Vòng xoay xuất hiện, biến mất sau ~0.5s và thời gian `Cập nhật lúc ...` cập nhật thời gian hiện tại. |
+| **TC-A04** | Đổi trạm quan trắc | Chọn trạm khác trên Dropdown (`adht_weather_02`). | App gửi request với `device_id=adht_weather_02` và cập nhật dữ liệu của trạm đó. |
+| **TC-A05** | Biểu đồ trong ngày (24h) | Mở màn hình Diễn Biến Trong Ngày. | Biểu đồ Spline Chart vẽ đúng số điểm nhận được từ Backend. |
+| **TC-A06** | Xử lý khi mất mạng | Ngắt Wi-Fi / tắt backend rồi bấm làm mới. | Giao diện hiện trạng thái lỗi nhẹ nhàng kèm nút "Thử lại", app không bị crash. |
 
 ---
 
-## 5. ĐÁNH GIÁ KẾT QUẢ GIAI ĐOẠN A
-Sau khi hoàn thành Phương án A:
-* Hệ thống đạt cột mốc **Thông luồng hoàn chỉnh 100%**: Dữ liệu từ vi điều khiển ESP32 / Supabase đi qua Backend Gateway và cập nhật trực tiếp lên màn hình điện thoại người dùng.
-* Toàn bộ mã nguồn giả lập (`MockWeatherRepository`, `MockWeatherDataGenerator`) được đưa về chế độ lưu trữ/fallback, mã nguồn chính thức hoàn toàn chạy trên dữ liệu thời gian thực.
+## 6. PHÂN TÍCH RỦI RO & PHƯƠNG ÁN DỰ PHÒNG (RISK & CONTINGENCY)
+
+| Rủi ro tiềm ẩn | Mức độ | Biện pháp phòng ngừa & Xử lý |
+| :--- | :---: | :--- |
+| **Khác biệt dải IP LAN khi đổi mạng Wi-Fi** | Trung bình | `api_constants.dart` đã ghi chú sẵn cả 3 tùy chọn (LAN IP, Localhost adb reverse, Cloud Render). Dev chỉ cần đổi dòng comment URL khi đổi môi trường test. |
+| **Bảng Supabase chưa có dữ liệu của ngày hôm nay** | Thấp | Trong `RemoteWeatherRepository`, nếu `data` trả về rỗng, hệ thống sẽ fallback trả về đối tượng mặc định với giá trị an toàn thay vì ném ngoại lệ làm trắng màn hình. |
+| **Lệch múi giờ UTC vs Local (GMT+7)** | Thấp | Tất cả chuỗi `recorded_at` (ISO 8601 UTC) từ Backend đều được parse qua `DateTime.parse(...).toLocal()` để khớp chính xác giờ Việt Nam. |
