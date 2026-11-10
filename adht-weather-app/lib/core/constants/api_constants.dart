@@ -18,7 +18,8 @@ abstract class ApiConstants {
   ];
 
   /// Base URL kết nối Backend Gateway
-  static const String defaultBaseUrl = 'http://localhost:8000/api';
+  // static const String defaultBaseUrl = 'http://localhost:8000/api';
+  static const String defaultBaseUrl = 'http://192.168.100.29:8000/api';
 
   static const Duration connectTimeout = Duration(seconds: 10);
   static const Duration receiveTimeout = Duration(seconds: 10);
@@ -31,7 +32,8 @@ abstract class ApiConstants {
   static const String endpointWeatherLatest = '/weather/latest';
   static const String endpointWeatherHistory = '/weather/history';
   static const String endpointWeatherForecast = '/weather/forecast';
-  static const String endpointNotificationsRegister = '/notifications/register-token';
+  static const String endpointNotificationsRegister =
+      '/notifications/register-token';
 
   // Cấu hình lưu trữ SQLite
   static const String databaseName = 'weather_monitoring.db';
