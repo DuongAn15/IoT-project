@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, OnModuleDestroy, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { App, cert, deleteApp, getApps, initializeApp } from 'firebase-admin/app';
+import { App, cert, deleteApp, getApps, initializeApp, ServiceAccount } from 'firebase-admin/app';
 import { getMessaging, Messaging } from 'firebase-admin/messaging';
 import type { AppConfig } from '../../config/configuration.interface';
 import type { CreateTelemetryDto } from '../telemetry/dto/create-telemetry.dto';
@@ -39,11 +39,13 @@ export class NotificationsService implements OnModuleDestroy {
     this.ownsApp = !existingApp;
     try {
       this.app = existingApp || initializeApp({
-        credential: cert(this.config.getOrThrow<string>('firebase.credentialsPath')),
+        credential: cert(this.loadCredentials()),
       }, FIREBASE_APP_NAME);
       this.messaging = getMessaging(this.app);
     } catch {
-      throw new Error('Unable to initialize Firebase Admin; check FIREBASE_CREDENTIALS_PATH and service account credentials');
+      throw new Error(
+        'Unable to initialize Firebase Admin; check FIREBASE_CREDENTIALS_JSON / FIREBASE_CREDENTIALS_PATH and service account credentials',
+      );
     }
     this.logger.log('Firebase Admin messaging initialized');
   }
@@ -118,5 +120,18 @@ export class NotificationsService implements OnModuleDestroy {
   async onModuleDestroy(): Promise<void> {
     this.alerts.clear();
     if (this.ownsApp) await deleteApp(this.app);
+  }
+
+  /**
+   * Lấy credential cho Firebase Admin:
+   * - Cloud (Render...): không mount được file → đọc FIREBASE_CREDENTIALS_JSON (JSON thô hoặc base64).
+   * - Local: không có biến trên → dùng đường dẫn file FIREBASE_CREDENTIALS_PATH như trước.
+   */
+  private loadCredentials(): string | ServiceAccount {
+    const raw = this.config.get<string>('firebase.credentialsJson')?.trim();
+    if (!raw) return this.config.getOrThrow<string>('firebase.credentialsPath');
+    // JSON hợp lệ luôn bắt đầu bằng '{'; ngược lại coi là base64 (tránh lỗi xuống dòng của private_key khi dán vào ô env).
+    const json = raw.startsWith('{') ? raw : Buffer.from(raw, 'base64').toString('utf8');
+    return JSON.parse(json) as ServiceAccount;
   }
 }

@@ -27,6 +27,8 @@
 !.env.example
 secrets.h
 serviceAccountKey.json
+# Private key Firebase Admin tải từ Firebase Console
+*firebase-adminsdk*.json
 
 # Python
 __pycache__/
@@ -40,6 +42,8 @@ env/
 
 # Node / NPM
 package-lock.json
+
+CLAUDE.md
 
 # OS Files
 .DS_Store

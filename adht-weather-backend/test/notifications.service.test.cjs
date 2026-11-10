@@ -7,14 +7,17 @@ let initializationCount = 0;
 let deleted = [];
 let messaging;
 let credentialFailure = false;
+let certArgs = [];
 const originalLoad = Module._load;
 let NotificationsService;
 try {
   Module._load = function (name, ...args) {
     if (name === 'firebase-admin/app') return {
       getApps: () => apps,
-      cert: path => {
-        assert.equal(path, 'fake-credentials.json');
+      // credential là đường dẫn file (local) hoặc object service account (từ FIREBASE_CREDENTIALS_JSON).
+      cert: credential => {
+        certArgs.push(credential);
+        if (typeof credential === 'string') assert.equal(credential, 'fake-credentials.json');
         if (credentialFailure) throw new Error('private-key-material');
         return {};
       },
@@ -48,7 +51,8 @@ function setup(overrides = {}) {
     thresholds: { tempMax: 38, tempMin: 10, humiMax: 90, windMax: 15, rainMax: 30 },
     ...overrides,
   };
-  const config = { getOrThrow: key => values[key] };
+  // Service gọi cả get() (credentialsJson tùy chọn) lẫn getOrThrow() như ConfigService thật.
+  const config = { get: key => values[key], getOrThrow: key => values[key] };
   const service = new NotificationsService(config);
   const logs = [];
   service.logger = { warn: message => logs.push(message), error: message => logs.push(message) };
@@ -67,6 +71,18 @@ test('initializes Firebase, subscribes token and sends topic messages without re
   assert.deepEqual(sent[0], { topic: 'adht_weather_alerts', notification: { title: 'Title', body: 'Body' }, data: { device_id: 'station1' } });
   await service.onModuleDestroy();
   assert.equal(deleted.length, 1);
+});
+
+test('loads credentials from FIREBASE_CREDENTIALS_JSON as raw JSON or base64 before the file path', () => {
+  const account = { project_id: 'demo', client_email: 'a@demo.iam', private_key: 'key' };
+  for (const credentialsJson of [JSON.stringify(account), Buffer.from(JSON.stringify(account)).toString('base64')]) {
+    certArgs = [];
+    setup({ 'firebase.credentialsJson': credentialsJson });
+    assert.deepEqual(certArgs, [account]);
+  }
+  certArgs = [];
+  setup();
+  assert.deepEqual(certArgs, ['fake-credentials.json']);
 });
 
 test('normal readings send nothing; all configured threshold boundaries are inclusive', async () => {

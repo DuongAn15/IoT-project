@@ -14,11 +14,18 @@ export default (): AppConfig => ({
   },
   supabase: {
     url: process.env.SUPABASE_URL || '',
-    key: process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY || '',
+    // Backend cần service role key để vượt RLS; anon key chỉ là fallback cho dev.
+    key:
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      process.env.SUPABASE_KEY ||
+      process.env.SUPABASE_ANON_KEY ||
+      '',
     table: process.env.SUPABASE_TABLE || 'weather_logs',
   },
   firebase: {
     credentialsPath: process.env.FIREBASE_CREDENTIALS_PATH || 'serviceAccountKey.json',
+    // Nội dung service account (JSON thô hoặc base64) cho môi trường cloud không mount được file.
+    credentialsJson: process.env.FIREBASE_CREDENTIALS_JSON || undefined,
     alertTopic: process.env.FIREBASE_ALERT_TOPIC || 'adht_weather_alerts',
   },
   openWeather: {

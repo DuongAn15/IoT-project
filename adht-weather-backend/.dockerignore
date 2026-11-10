@@ -7,3 +7,6 @@ dist
 .env.*
 !.env.example
 
+# Secrets không được lọt vào build context / image (trên cloud truyền qua FIREBASE_CREDENTIALS_JSON)
+serviceAccountKey.json
+*firebase-adminsdk*.json
