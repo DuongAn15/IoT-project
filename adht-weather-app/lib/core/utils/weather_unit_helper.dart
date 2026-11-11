@@ -43,7 +43,7 @@ enum WeatherMetricType {
       case WeatherMetricType.rainfall:
         return 'mm';
       case WeatherMetricType.windSpeed:
-        return 'km/h';
+        return 'm/s';
     }
   }
 
@@ -66,7 +66,7 @@ abstract class WeatherUnitHelper {
   static const String tempUnit = '°C';
   static const String humidityUnit = '%';
   static const String rainUnit = 'mm';
-  static const String windUnit = 'km/h';
+  static const String windUnit = 'm/s';
 
   static String formatTemp(double temp) => '${temp.toStringAsFixed(1)}$tempUnit';
   static String formatHumidity(double humidity) => '${humidity.toStringAsFixed(0)}$humidityUnit';

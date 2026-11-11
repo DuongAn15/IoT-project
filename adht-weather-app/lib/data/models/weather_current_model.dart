@@ -1,5 +1,3 @@
-import '../models/weather_point_5m.dart';
-
 /// Thực thể dữ liệu thời tiết tức thời đo đạc mới nhất
 class WeatherCurrentModel {
   final String stationId;
@@ -41,25 +39,6 @@ class WeatherCurrentModel {
       rainfall: rainfall ?? this.rainfall,
       windSpeed: windSpeed ?? this.windSpeed,
       isOnline: isOnline ?? this.isOnline,
-    );
-  }
-
-  /// Chuyển đổi từ WeatherPoint5m
-  factory WeatherCurrentModel.fromPoint5m({
-    required WeatherPoint5m point,
-    String stationId = 'STATION_001',
-    String stationName = 'Trạm Quan Trắc IoT Trung Tâm',
-    bool isOnline = true,
-  }) {
-    return WeatherCurrentModel(
-      stationId: stationId,
-      stationName: stationName,
-      timestamp: point.timestamp,
-      temperature: point.temperature,
-      humidity: point.humidity,
-      rainfall: point.rainfall,
-      windSpeed: point.windSpeed,
-      isOnline: isOnline,
     );
   }
 

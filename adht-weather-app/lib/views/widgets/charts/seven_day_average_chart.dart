@@ -2,6 +2,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_dimensions.dart';
+import '../../../core/utils/date_time_formatter.dart';
 import '../../../core/utils/weather_unit_helper.dart';
 import '../../../data/models/weather_daily_summary.dart';
 import 'interactive_touch_tooltip.dart';
@@ -55,13 +56,18 @@ class SevenDayAverageChart extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final metricColor = _getMetricColor();
-    final dayLabels = dailySummaries.map((s) => s.dayOfWeek).toList();
+    // Hiển thị ngày cụ thể dd/MM (ví dụ 05/11, 06/11) thay vì T2, T3...
+    final dayLabels = dailySummaries
+        .map((s) => DateTimeFormatter.formatShortDate(s.date))
+        .toList();
 
     double dataMax = 0.0;
 
     for (final s in dailySummaries) {
-      final val = _getValue(s);
-      if (val > dataMax) dataMax = val;
+      if (s.hasData) {
+        final val = _getValue(s);
+        if (val > dataMax) dataMax = val;
+      }
     }
 
     final yConfig = WeatherUnitHelper.calculateYAxisConfig(
@@ -73,7 +79,7 @@ class SevenDayAverageChart extends StatelessWidget {
     for (int i = 0; i < dailySummaries.length; i++) {
       final summary = dailySummaries[i];
       final isToday = i == dailySummaries.length - 1;
-      final val = _getValue(summary);
+      final val = summary.hasData ? _getValue(summary) : 0.0;
 
       barGroups.add(
         BarChartGroupData(
@@ -81,19 +87,25 @@ class SevenDayAverageChart extends StatelessWidget {
           barRods: [
             BarChartRodData(
               toY: val,
-              gradient: LinearGradient(
-                begin: Alignment.bottomCenter,
-                end: Alignment.topCenter,
-                colors: isToday
-                    ? [metricColor, metricColor.withValues(alpha: 0.8)]
-                    : [metricColor.withValues(alpha: 0.4), metricColor.withValues(alpha: 0.65)],
-              ),
+              gradient: summary.hasData
+                  ? LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: isToday
+                          ? [metricColor, metricColor.withValues(alpha: 0.8)]
+                          : [
+                              metricColor.withValues(alpha: 0.4),
+                              metricColor.withValues(alpha: 0.65),
+                            ],
+                    )
+                  : null,
+              color: summary.hasData ? null : Colors.transparent,
               width: 20,
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(AppDimensions.radiusSm),
                 topRight: Radius.circular(AppDimensions.radiusSm),
               ),
-              borderSide: isToday
+              borderSide: (isToday && summary.hasData)
                   ? BorderSide(
                       color: isDark ? Colors.white : metricColor,
                       width: 1.5,
@@ -114,6 +126,7 @@ class SevenDayAverageChart extends StatelessWidget {
               context: context,
               metricType: metricType,
               dayLabels: dayLabels,
+              summaries: dailySummaries,
             ),
             gridData: FlGridData(
               show: true,

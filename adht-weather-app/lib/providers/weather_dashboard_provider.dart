@@ -1,11 +1,30 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../data/repositories/mock_weather_repository.dart';
+import '../data/network/weather_api_service.dart';
+import '../data/repositories/app_weather_repository.dart';
 import '../data/repositories/weather_repository.dart';
+import 'database_provider.dart';
+import 'device_settings_provider.dart';
 import 'weather_dashboard_state.dart';
 
-/// Provider cung cấp WeatherRepository (mặc định MockWeatherRepository ở giai đoạn UI-First)
+/// Provider cung cấp dịch vụ mạng WeatherApiService
+final weatherApiServiceProvider = Provider<WeatherApiService>((ref) {
+  final dioClient = ref.watch(dioClientProvider);
+  return WeatherApiService(dioClient);
+});
+
+/// Provider cung cấp WeatherRepository kết nối dữ liệu thực, SQLite cache và file cache
 final weatherRepositoryProvider = Provider<WeatherRepository>((ref) {
-  return MockWeatherRepository();
+  final apiService = ref.watch(weatherApiServiceProvider);
+  final dao = ref.watch(weatherMonitoringDaoProvider);
+  final fileStorage = ref.watch(latestWeatherFileStorageProvider);
+  final selectedStationId = ref.watch(selectedDeviceIdProvider);
+
+  return AppWeatherRepository(
+    apiService: apiService,
+    dao: dao,
+    fileStorage: fileStorage,
+    currentDeviceId: selectedStationId,
+  );
 });
 
 /// AsyncNotifier quản lý trạng thái tải dữ liệu và làm mới cho Dashboard
@@ -19,7 +38,7 @@ class WeatherDashboardNotifier extends AsyncNotifier<WeatherDashboardState> {
     final repo = ref.read(weatherRepositoryProvider);
 
     final currentFuture = repo.getCurrentWeather();
-    final intraDayFuture = repo.getIntraDayData5m();
+    final intraDayFuture = repo.getIntraDayData();
     final weeklyFuture = repo.get7DaysSummary();
 
     final results = await Future.wait([

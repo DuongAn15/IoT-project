@@ -5,6 +5,8 @@ import '../../../core/constants/app_dimensions.dart';
 import '../../../core/utils/date_time_formatter.dart';
 import '../../../core/utils/weather_unit_helper.dart';
 
+import '../../../data/models/weather_daily_summary.dart';
+
 /// Helper tạo Tooltip khi người dùng chạm và lướt tay trên biểu đồ fl_chart
 abstract class InteractiveTouchTooltipHelper {
   /// Cấu hình LineTouchData cho biểu đồ mốc 5 phút trong ngày
@@ -81,6 +83,7 @@ abstract class InteractiveTouchTooltipHelper {
     required BuildContext context,
     required WeatherMetricType metricType,
     required List<String> dayLabels,
+    List<WeatherDailySummary>? summaries,
   }) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -99,6 +102,30 @@ abstract class InteractiveTouchTooltipHelper {
           final dayLabel = (groupIndex >= 0 && groupIndex < dayLabels.length)
               ? dayLabels[groupIndex]
               : '';
+
+          final hasData = (summaries != null && groupIndex >= 0 && groupIndex < summaries.length)
+              ? summaries[groupIndex].hasData
+              : true;
+
+          if (!hasData) {
+            return BarTooltipItem(
+              '$dayLabel\n',
+              theme.textTheme.labelSmall!.copyWith(
+                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                fontWeight: FontWeight.w500,
+              ),
+              children: [
+                TextSpan(
+                  text: 'None',
+                  style: theme.textTheme.labelLarge!.copyWith(
+                    color: isDark ? AppColors.textMutedDark : AppColors.textMutedLight,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            );
+          }
+
           final valueStr = rod.toY.toStringAsFixed(metricType == WeatherMetricType.humidity ? 0 : 1);
 
           return BarTooltipItem(

@@ -8,6 +8,7 @@ class WeatherDailySummary {
   final double avgHumidity; // %
   final double totalRainfall; // mm (tổng tích lũy trong ngày)
   final double avgWindSpeed; // km/h
+  final bool hasData;
 
   const WeatherDailySummary({
     required this.date,
@@ -18,31 +19,24 @@ class WeatherDailySummary {
     required this.avgHumidity,
     required this.totalRainfall,
     required this.avgWindSpeed,
+    this.hasData = true,
   });
 
-  Map<String, dynamic> toMap() {
-    return {
-      'date': date.toIso8601String(),
-      'day_of_week': dayOfWeek,
-      'avg_temperature': avgTemperature,
-      'min_temperature': minTemperature,
-      'max_temperature': maxTemperature,
-      'avg_humidity': avgHumidity,
-      'total_rainfall': totalRainfall,
-      'avg_wind_speed': avgWindSpeed,
-    };
-  }
-
-  factory WeatherDailySummary.fromMap(Map<String, dynamic> map) {
+  /// Tạo bản ghi cho ngày không có dữ liệu đo đạc (None)
+  factory WeatherDailySummary.empty({
+    required DateTime date,
+    required String dayLabel,
+  }) {
     return WeatherDailySummary(
-      date: DateTime.parse(map['date'] as String),
-      dayOfWeek: map['day_of_week'] as String,
-      avgTemperature: (map['avg_temperature'] as num).toDouble(),
-      minTemperature: (map['min_temperature'] as num).toDouble(),
-      maxTemperature: (map['max_temperature'] as num).toDouble(),
-      avgHumidity: (map['avg_humidity'] as num).toDouble(),
-      totalRainfall: (map['total_rainfall'] as num).toDouble(),
-      avgWindSpeed: (map['avg_wind_speed'] as num).toDouble(),
+      date: date,
+      dayOfWeek: dayLabel,
+      avgTemperature: 0.0,
+      minTemperature: 0.0,
+      maxTemperature: 0.0,
+      avgHumidity: 0.0,
+      totalRainfall: 0.0,
+      avgWindSpeed: 0.0,
+      hasData: false,
     );
   }
 }

@@ -17,10 +17,11 @@ abstract class ApiConstants {
     'Trạm IoT 03 - Hòa Vang',
   ];
 
-  /// Base URL kết nối Backend Gateway
-  // static const String defaultBaseUrl = 'https://adht-weather-backend-oo0a.onrender.com/api'; // Cloud Render (Online 24/7)
-  // static const String defaultBaseUrl = 'http://localhost:8000/api';                           // Localhost (Cáp USB adb reverse)
-  static const String defaultBaseUrl = 'http://192.168.100.29:8000/api';                       // Mạng LAN WiFi nội bộ
+  /// Base URL kết nối Backend Gateway (Cloud Render Online 24/7)
+  static const String defaultBaseUrl =
+      'https://adht-weather-backend-oo0a.onrender.com/api';
+  // static const String defaultBaseUrl = 'http://localhost:8000/api';       // Localhost (Cáp USB adb reverse)
+  // static const String defaultBaseUrl = 'http://192.168.100.29:8000/api';   // Mạng LAN WiFi nội bộ
 
   static const Duration connectTimeout = Duration(seconds: 10);
   static const Duration receiveTimeout = Duration(seconds: 10);
@@ -32,12 +33,13 @@ abstract class ApiConstants {
   // Weather Endpoints
   static const String endpointWeatherLatest = '/weather/latest';
   static const String endpointWeatherHistory = '/weather/history';
-  static const String endpointWeatherForecast = '/weather/forecast';
-  static const String endpointNotificationsRegister =
-      '/notifications/register-token';
 
-  // Cấu hình lưu trữ SQLite
+  // Cấu hình lưu trữ SQLite (Tách riêng bảng trong ngày và bảng 7 ngày)
   static const String databaseName = 'weather_monitoring.db';
-  static const int databaseVersion = 1;
-  static const String tableReadings = 'weather_readings';
+  static const int databaseVersion = 2;
+  static const String tableWeatherInday = 'weather_inday';
+  static const String tableWeatherWeek = 'weather_week';
+  static const String latestWeatherFileName = 'latest_weather.json';
+  static const int cacheRetentionDays = 7;
+  static const int cacheRetentionHoursInday = 24;
 }

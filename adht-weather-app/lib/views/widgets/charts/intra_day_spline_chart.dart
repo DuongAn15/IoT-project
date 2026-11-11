@@ -5,13 +5,13 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_dimensions.dart';
 import '../../../core/utils/date_time_formatter.dart';
 import '../../../core/utils/weather_unit_helper.dart';
-import '../../../data/models/weather_point_5m.dart';
+import '../../../data/models/weather_point.dart';
 import 'interactive_touch_tooltip.dart';
 
-/// Biểu đồ đường cong mượt mà (Spline Line Chart) cho chuỗi mốc 5 phút trong ngày
+/// Biểu đồ đường cong mượt mà (Spline Line Chart) cho chuỗi mốc trong ngày
 /// Bọc RepaintBoundary đảm bảo 60fps khi chạm lướt tay.
 class IntraDaySplineChart extends StatelessWidget {
-  final List<WeatherPoint5m> points;
+  final List<WeatherPoint> points;
   final WeatherMetricType metricType;
   final bool isCompact;
 
@@ -48,7 +48,7 @@ class IntraDaySplineChart extends StatelessWidget {
     }
   }
 
-  double _getValue(WeatherPoint5m point) {
+  double _getValue(WeatherPoint point) {
     switch (metricType) {
       case WeatherMetricType.temperature:
         return point.temperature;
@@ -75,15 +75,19 @@ class IntraDaySplineChart extends StatelessWidget {
     final metricColor = _getMetricColor();
     final fillGradient = _getFillGradient();
 
-    // Tính toán FlSpots & dataMax
-    final spots = <FlSpot>[];
+    // Tính toán FlSpots & dataMax (đảm bảo không trùng mốc X và sắp xếp tăng dần)
+    final Map<double, double> spotMap = {};
     double dataMax = 0.0;
 
     for (final p in points) {
+      final x = p.minutesFromMidnight.toDouble().clamp(0.0, 1440.0);
       final val = _getValue(p);
-      spots.add(FlSpot(p.minutesFromMidnight.toDouble(), val));
+      spotMap[x] = val;
       if (val > dataMax) dataMax = val;
     }
+
+    final sortedKeys = spotMap.keys.toList()..sort();
+    final spots = sortedKeys.map((x) => FlSpot(x, spotMap[x]!)).toList();
 
     final yConfig = WeatherUnitHelper.calculateYAxisConfig(
       metricType: metricType,
@@ -91,14 +95,19 @@ class IntraDaySplineChart extends StatelessWidget {
       isCompact: isCompact,
     );
 
-    // Giới hạn trục X: từ 0h (0) đến hiện tại (hoặc tối thiểu 3h = 180)
-    final maxX = max(180.0, points.last.minutesFromMidnight.toDouble());
+    // Giới hạn trục X: làm tròn lên mốc 3 giờ (180 phút) kế tiếp bao trọn cả dữ liệu và thời điểm hiện tại
+    final now = DateTime.now();
+    final currentMinutes = (now.hour * 60 + now.minute).toDouble();
+    final maxDataX = sortedKeys.isNotEmpty ? sortedKeys.last : 180.0;
+    final targetMax = max(maxDataX, currentMinutes);
+    final double maxX = ((targetMax / 180).ceil() * 180.0).clamp(180.0, 1440.0);
 
     return RepaintBoundary(
       child: SizedBox(
         height: isCompact ? AppDimensions.chartHeightCompact : AppDimensions.chartHeightDefault,
         child: LineChart(
           LineChartData(
+            clipData: const FlClipData.all(),
             lineTouchData: InteractiveTouchTooltipHelper.create5mLineTouchData(
               context: context,
               metricType: metricType,
@@ -179,13 +188,23 @@ class IntraDaySplineChart extends StatelessWidget {
             lineBarsData: [
               LineChartBarData(
                 spots: spots,
-                isCurved: true,
-                curveSmoothness: 0.25,
+                isCurved: spots.length > 1,
+                curveSmoothness: 0.2,
                 preventCurveOverShooting: true,
                 color: metricColor,
                 barWidth: 2.5,
                 isStrokeCapRound: true,
-                dotData: const FlDotData(show: false),
+                dotData: FlDotData(
+                  show: spots.length <= 1,
+                  getDotPainter: (spot, percent, barData, index) {
+                    return FlDotCirclePainter(
+                      radius: 4,
+                      color: metricColor,
+                      strokeWidth: 2,
+                      strokeColor: Colors.white,
+                    );
+                  },
+                ),
                 belowBarData: BarAreaData(
                   show: true,
                   gradient: fillGradient,

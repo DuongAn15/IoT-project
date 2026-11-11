@@ -63,12 +63,8 @@ class MainDashboardScreen extends ConsumerWidget {
                   .reduce((a, b) => a > b ? a : b);
             }
 
-            // Mặc định hiển thị diễn biến thời tiết hôm nay theo mốc 15 phút
-            final intraDayPoints15m = state.intraDayPoints
-                .where((p) => p.minutesFromMidnight % 15 == 0)
-                .toList();
-            final displayIntraDayPoints =
-                intraDayPoints15m.length >= 2 ? intraDayPoints15m : state.intraDayPoints;
+            // Toàn bộ các điểm đo thời tiết hôm nay
+            final displayIntraDayPoints = state.intraDayPoints;
 
             return CustomPullRefresh(
               onRefresh: () => ref.read(weatherDashboardProvider.notifier).refresh(),

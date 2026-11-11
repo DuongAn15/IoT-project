@@ -6,6 +6,36 @@ abstract class DateTimeFormatter {
   static final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
   static final DateFormat _shortDateFormat = DateFormat('dd/MM');
 
+  /// Chuyển đổi một giá trị thời gian UTC (GMT+0) từ backend sang DateTime theo múi giờ thiết bị (Local Time)
+  static DateTime parseUtcToLocal(dynamic rawTime) {
+    if (rawTime == null) return DateTime.now();
+    if (rawTime is DateTime) {
+      return rawTime.isUtc ? rawTime.toLocal() : rawTime;
+    }
+    if (rawTime is int) {
+      return DateTime.fromMillisecondsSinceEpoch(rawTime).toLocal();
+    }
+
+    String timeStr = rawTime.toString().trim();
+    if (timeStr.isEmpty) return DateTime.now();
+
+    // Chuẩn hóa định dạng: Thay khoảng trắng bằng 'T'
+    timeStr = timeStr.replaceFirst(' ', 'T');
+
+    // Nếu chưa có đuôi múi giờ (Z hoặc offset), ép hiểu là UTC (GMT+0)
+    final hasTimezone = timeStr.endsWith('Z') ||
+        RegExp(r'[+-]\d{2}:?\d{2}$').hasMatch(timeStr);
+    if (!hasTimezone) {
+      timeStr = '${timeStr}Z';
+    }
+
+    try {
+      return DateTime.parse(timeStr).toLocal();
+    } catch (_) {
+      return DateTime.now();
+    }
+  }
+
   /// Định dạng giờ phút (ví dụ: "14:25")
   static String formatTime(DateTime dateTime) {
     return _timeFormat.format(dateTime);
