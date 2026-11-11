@@ -5,21 +5,27 @@ import '../database/weather_monitoring_dao.dart';
 import '../models/weather_current_model.dart';
 import '../models/weather_daily_summary.dart';
 import '../models/weather_monitoring_record.dart';
-import '../models/weather_point_5m.dart';
+import '../models/weather_point.dart';
 import '../network/weather_api_service.dart';
+import '../storage/latest_weather_file_storage.dart';
 import 'weather_repository.dart';
 
-/// Triển khai WeatherRepository kết nối dữ liệu thực từ Backend Gateway và lưu cache SQLite 7 ngày
+/// Triển khai WeatherRepository kết nối dữ liệu thực từ Backend Gateway:
+/// - Bản ghi mới nhất (Latest) lưu vào FILE cục bộ trên app (không lưu database)
+/// - Dữ liệu chuỗi 24h lưu vào bảng SQLite `weather_inday` (tự động xóa bản ghi quá 24h)
+/// - Dữ liệu chuỗi 7d lưu vào bảng SQLite `weather_week` (tự động xóa bản ghi quá 7 ngày)
 class AppWeatherRepository implements WeatherRepository {
   final WeatherApiService apiService;
   final WeatherMonitoringDao dao;
+  final LatestWeatherFileStorage fileStorage;
   final String currentDeviceId;
 
   AppWeatherRepository({
     required this.apiService,
     required this.dao,
+    LatestWeatherFileStorage? fileStorage,
     this.currentDeviceId = ApiConstants.defaultStationId,
-  });
+  }) : fileStorage = fileStorage ?? LatestWeatherFileStorage();
 
   @override
   Future<WeatherCurrentModel> getCurrentWeather() async {
@@ -33,10 +39,7 @@ class AppWeatherRepository implements WeatherRepository {
           defaultDeviceId: currentDeviceId,
         );
 
-        // Lưu bản ghi mới nhất vào SQLite
-        await dao.insertRecord(record);
-
-        return WeatherCurrentModel(
+        final current = WeatherCurrentModel(
           stationId: record.deviceId,
           stationName: ApiConstants.deviceStationMap[record.deviceId] ??
               ApiConstants.defaultStationName,
@@ -47,28 +50,27 @@ class AppWeatherRepository implements WeatherRepository {
           windSpeed: record.windSpeed,
           isOnline: true,
         );
+
+        // Lưu bản ghi mới nhất vào FILE cục bộ trên app (thay vì lưu database)
+        await fileStorage.saveLatest(current);
+
+        return current;
       }
     } catch (e) {
-      dev.log('Lỗi fetchLatestWeather từ API, chuyển sang SQLite: $e');
+      dev.log('Lỗi fetchLatestWeather từ API, đọc từ file cache: $e');
     }
 
-    // Fallback: Đọc bản ghi mới nhất từ SQLite khi mất mạng
-    final localLatest = await dao.getLatestRecord(deviceId: currentDeviceId);
-    if (localLatest != null) {
-      return WeatherCurrentModel(
-        stationId: localLatest.deviceId,
-        stationName: ApiConstants.deviceStationMap[localLatest.deviceId] ??
-            ApiConstants.defaultStationName,
-        timestamp: localLatest.recordedAt,
-        temperature: localLatest.temperature,
-        humidity: localLatest.humidity,
-        rainfall: localLatest.rainfall,
-        windSpeed: localLatest.windSpeed,
+    // Fallback: Đọc bản ghi mới nhất từ file cache khi mất mạng
+    final cachedLatest = await fileStorage.readLatest();
+    if (cachedLatest != null) {
+      return cachedLatest.copyWith(
+        stationName: ApiConstants.deviceStationMap[cachedLatest.stationId] ??
+            cachedLatest.stationName,
         isOnline: false,
       );
     }
 
-    // Trường hợp rỗng hoàn toàn
+    // Trường hợp chưa từng có dữ liệu
     return WeatherCurrentModel(
       stationId: currentDeviceId,
       stationName: ApiConstants.deviceStationMap[currentDeviceId] ??
@@ -83,9 +85,9 @@ class AppWeatherRepository implements WeatherRepository {
   }
 
   @override
-  Future<List<WeatherPoint5m>> getIntraDayData5m() async {
-    // Mốc thời gian hiện tại chuẩn hóa theo GMT+7
-    final nowGmt7 = DateTimeFormatter.currentGmt7Time();
+  Future<List<WeatherPoint>> getIntraDayData() async {
+    // Mốc thời gian hiện tại theo giờ thiết bị (Local Time)
+    final now = DateTime.now();
 
     try {
       final response = await apiService.fetchHistory(
@@ -102,36 +104,35 @@ class AppWeatherRepository implements WeatherRepository {
           .toList();
 
       if (records.isNotEmpty) {
-        // Lưu toàn bộ bản ghi vào SQLite để làm giàu kho dữ liệu 7 ngày
-        await dao.insertBatch(records);
-        await dao.purgeFutureRecords();
+        // Lưu vào bảng weather_inday và dọn dẹp các bản ghi quá 24h
+        await dao.saveIndayHistoryAndCleanup(records);
 
         // Chỉ lọc các điểm từ 00:00 sáng hôm nay đến hiện tại cho biểu đồ trong ngày
         final todayRecords = records.where((r) {
           final d = r.recordedAt;
-          return d.year == nowGmt7.year &&
-                 d.month == nowGmt7.month &&
-                 d.day == nowGmt7.day;
+          return d.year == now.year &&
+                 d.month == now.month &&
+                 d.day == now.day;
         }).toList();
         todayRecords.sort((a, b) => a.recordedAt.compareTo(b.recordedAt));
 
-        return todayRecords.map((r) => r.toWeatherPoint5m()).toList();
+        return todayRecords.map((r) => r.toWeatherPoint()).toList();
       }
     } catch (e) {
-      dev.log('Lỗi fetchHistory 24h, đọc từ SQLite: $e');
+      dev.log('Lỗi fetchHistory 24h, đọc từ bảng weather_inday: $e');
     }
 
-    // Đọc từ SQLite các điểm đo từ 00:00 sáng hôm nay
-    final all = await dao.getAllRecords(deviceId: currentDeviceId);
+    // Đọc từ SQLite bảng weather_inday các điểm đo từ 00:00 sáng hôm nay
+    final all = await dao.getIndayRecords(deviceId: currentDeviceId);
     final todayRecords = all.where((r) {
       final d = r.recordedAt;
-      return d.year == nowGmt7.year &&
-             d.month == nowGmt7.month &&
-             d.day == nowGmt7.day;
+      return d.year == now.year &&
+             d.month == now.month &&
+             d.day == now.day;
     }).toList();
     todayRecords.sort((a, b) => a.recordedAt.compareTo(b.recordedAt));
 
-    return todayRecords.map((r) => r.toWeatherPoint5m()).toList();
+    return todayRecords.map((r) => r.toWeatherPoint()).toList();
   }
 
   @override
@@ -150,14 +151,14 @@ class AppWeatherRepository implements WeatherRepository {
               ))
           .toList();
 
-      // Lưu vào SQLite & tự động dọn dẹp các bản ghi quá 7 ngày
-      await dao.saveHistoryAndCleanup(records);
+      // Lưu vào bảng weather_week & tự động dọn dẹp các bản ghi quá 7 ngày
+      await dao.saveWeekHistoryAndCleanup(records);
     } catch (e) {
-      dev.log('Lỗi fetchHistory 7d từ mạng, sử dụng dữ liệu SQLite: $e');
+      dev.log('Lỗi fetchHistory 7d từ mạng, sử dụng dữ liệu bảng weather_week: $e');
     }
 
-    // Đọc toàn bộ các bản ghi trong 7 ngày gần nhất từ SQLite
-    final localRecords = await dao.getHistory7Days(deviceId: currentDeviceId);
+    // Đọc toàn bộ các bản ghi trong 7 ngày gần nhất từ bảng weather_week
+    final localRecords = await dao.getWeekHistory7Days(deviceId: currentDeviceId);
 
     // Xây dựng danh sách chuẩn xác đủ 7 ngày liên tiếp từ (now - 6 ngày) đến hôm nay
     return buildContinuous7DaysSummary(localRecords);
@@ -169,7 +170,7 @@ class AppWeatherRepository implements WeatherRepository {
     List<WeatherMonitoringRecord> records, {
     DateTime? referenceDate,
   }) {
-    final now = referenceDate ?? DateTimeFormatter.currentGmt7Time();
+    final now = referenceDate ?? DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
     // 1. Gom nhóm các bản ghi theo ngày dạng 'YYYY-MM-DD'
@@ -238,7 +239,7 @@ class AppWeatherRepository implements WeatherRepository {
   Future<void> refreshAllData() async {
     // Làm mới tuần tự
     await getCurrentWeather();
-    await getIntraDayData5m();
+    await getIntraDayData();
     await get7DaysSummary();
   }
 }

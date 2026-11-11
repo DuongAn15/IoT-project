@@ -43,8 +43,9 @@ class AppDatabase {
   }
 
   Future<void> _onCreate(Database db, int version) async {
+    // 1. Bảng weather_inday: Lưu dữ liệu trong ngày (chuỗi 24h, tự động xóa bản ghi quá 24h)
     await db.execute('''
-      CREATE TABLE IF NOT EXISTS ${ApiConstants.tableWeatherMonitoring} (
+      CREATE TABLE IF NOT EXISTS ${ApiConstants.tableWeatherInday} (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         device_id TEXT NOT NULL,
         temperature REAL NOT NULL,
@@ -58,13 +59,35 @@ class AppDatabase {
     ''');
 
     await db.execute('''
-      CREATE INDEX IF NOT EXISTS idx_weather_monitoring_device_time 
-      ON ${ApiConstants.tableWeatherMonitoring} (device_id, timestamp);
+      CREATE INDEX IF NOT EXISTS idx_weather_inday_device_time 
+      ON ${ApiConstants.tableWeatherInday} (device_id, timestamp);
+    ''');
+
+    // 2. Bảng weather_week: Lưu lịch sử 7 ngày (tự động xóa bản ghi quá 7 ngày)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ${ApiConstants.tableWeatherWeek} (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_id TEXT NOT NULL,
+        temperature REAL NOT NULL,
+        humidity REAL NOT NULL,
+        rainfall REAL NOT NULL,
+        wind_speed REAL NOT NULL,
+        recorded_at TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        UNIQUE(device_id, recorded_at) ON CONFLICT REPLACE
+      );
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_weather_week_device_time 
+      ON ${ApiConstants.tableWeatherWeek} (device_id, timestamp);
     ''');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Migration nếu sau này tăng databaseVersion
+    if (oldVersion < 2) {
+      await _onCreate(db, newVersion);
+    }
   }
 
   /// Đóng cơ sở dữ liệu

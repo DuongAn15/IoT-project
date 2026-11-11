@@ -4,7 +4,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_dimensions.dart';
 import '../../core/utils/date_time_formatter.dart';
 import '../../core/utils/weather_unit_helper.dart';
-import '../../data/models/weather_point_5m.dart';
+import '../../data/models/weather_point.dart';
 import '../../providers/intra_day_provider.dart';
 import '../../providers/weather_dashboard_provider.dart';
 import '../widgets/charts/intra_day_spline_chart.dart';
@@ -24,7 +24,6 @@ class IntraDayDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final dashboardAsync = ref.watch(weatherDashboardProvider);
     final selectedMetric = ref.watch(intraDaySelectedMetricProvider);
-    final selectedInterval = ref.watch(intraDayIntervalProvider);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
@@ -54,10 +53,6 @@ class IntraDayDetailScreen extends ConsumerWidget {
         ),
         data: (state) {
           final points = state.intraDayPoints;
-          final filteredPoints = WeatherPoint5m.sampleByInterval(
-            points,
-            selectedInterval.minutes,
-          );
 
           return CustomPullRefresh(
             onRefresh: () => ref.read(weatherDashboardProvider.notifier).refresh(),
@@ -96,39 +91,13 @@ class IntraDayDetailScreen extends ConsumerWidget {
                       }).toList(),
                     ),
                   ),
-                  const SizedBox(height: AppDimensions.spaceSm),
-
-                  // 2. Interval Selector (15 phút, 30 phút, 1 tiếng)
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: IntraDayInterval.values.map((interval) {
-                        final isSelected = interval == selectedInterval;
-                        return Padding(
-                          padding: const EdgeInsets.only(right: AppDimensions.spaceSm),
-                          child: ChoiceChip(
-                            selected: isSelected,
-                            label: Text(interval.label),
-                            labelStyle: theme.textTheme.labelMedium?.copyWith(
-                              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                              color: isSelected ? Colors.white : null,
-                            ),
-                            selectedColor: isDark ? AppColors.primaryDark : AppColors.primaryLight,
-                            onSelected: (_) {
-                              ref.read(intraDayIntervalProvider.notifier).state = interval;
-                            },
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
                   const SizedBox(height: AppDimensions.spaceMd),
 
-                  // 3. Summary Stat Cards (Hiện tại, Cao nhất, Thấp nhất)
+                  // 2. Summary Stat Cards (Hiện tại, Cao nhất, Thấp nhất)
                   _buildStatCardsRow(context, points, selectedMetric),
                   const SizedBox(height: AppDimensions.spaceLg),
 
-                  // 4. Interactive Spline Chart Card
+                  // 3. Interactive Spline Chart Card (Hiển thị tất cả bản ghi có trong ngày)
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(AppDimensions.spaceMd),
@@ -159,7 +128,7 @@ class IntraDayDetailScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: AppDimensions.spaceMd),
                           IntraDaySplineChart(
-                            points: filteredPoints.length >= 2 ? filteredPoints : points,
+                            points: points,
                             metricType: selectedMetric,
                             isCompact: false,
                           ),
@@ -169,10 +138,10 @@ class IntraDayDetailScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: AppDimensions.spaceLg),
 
-                  // 5. Recent Readings Table Preview
+                  // 4. Recent Readings Table Preview
                   _buildRecentReadingsList(
                     context,
-                    filteredPoints.isNotEmpty ? filteredPoints : points,
+                    points,
                     selectedMetric,
                   ),
                 ],
@@ -186,7 +155,7 @@ class IntraDayDetailScreen extends ConsumerWidget {
 
   Widget _buildStatCardsRow(
     BuildContext context,
-    List<WeatherPoint5m> points,
+    List<WeatherPoint> points,
     WeatherMetricType metric,
   ) {
     final theme = Theme.of(context);
@@ -311,7 +280,7 @@ class IntraDayDetailScreen extends ConsumerWidget {
 
   Widget _buildRecentReadingsList(
     BuildContext context,
-    List<WeatherPoint5m> points,
+    List<WeatherPoint> points,
     WeatherMetricType metric,
   ) {
     final theme = Theme.of(context);

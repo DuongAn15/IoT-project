@@ -12,15 +12,17 @@ final weatherApiServiceProvider = Provider<WeatherApiService>((ref) {
   return WeatherApiService(dioClient);
 });
 
-/// Provider cung cấp WeatherRepository kết nối dữ liệu thực và SQLite offline cache
+/// Provider cung cấp WeatherRepository kết nối dữ liệu thực, SQLite cache và file cache
 final weatherRepositoryProvider = Provider<WeatherRepository>((ref) {
   final apiService = ref.watch(weatherApiServiceProvider);
   final dao = ref.watch(weatherMonitoringDaoProvider);
+  final fileStorage = ref.watch(latestWeatherFileStorageProvider);
   final selectedStationId = ref.watch(selectedDeviceIdProvider);
 
   return AppWeatherRepository(
     apiService: apiService,
     dao: dao,
+    fileStorage: fileStorage,
     currentDeviceId: selectedStationId,
   );
 });
@@ -36,7 +38,7 @@ class WeatherDashboardNotifier extends AsyncNotifier<WeatherDashboardState> {
     final repo = ref.read(weatherRepositoryProvider);
 
     final currentFuture = repo.getCurrentWeather();
-    final intraDayFuture = repo.getIntraDayData5m();
+    final intraDayFuture = repo.getIntraDayData();
     final weeklyFuture = repo.get7DaysSummary();
 
     final results = await Future.wait([

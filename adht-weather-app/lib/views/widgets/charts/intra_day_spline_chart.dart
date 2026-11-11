@@ -5,13 +5,13 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_dimensions.dart';
 import '../../../core/utils/date_time_formatter.dart';
 import '../../../core/utils/weather_unit_helper.dart';
-import '../../../data/models/weather_point_5m.dart';
+import '../../../data/models/weather_point.dart';
 import 'interactive_touch_tooltip.dart';
 
-/// Biểu đồ đường cong mượt mà (Spline Line Chart) cho chuỗi mốc 5 phút trong ngày
+/// Biểu đồ đường cong mượt mà (Spline Line Chart) cho chuỗi mốc trong ngày
 /// Bọc RepaintBoundary đảm bảo 60fps khi chạm lướt tay.
 class IntraDaySplineChart extends StatelessWidget {
-  final List<WeatherPoint5m> points;
+  final List<WeatherPoint> points;
   final WeatherMetricType metricType;
   final bool isCompact;
 
@@ -48,7 +48,7 @@ class IntraDaySplineChart extends StatelessWidget {
     }
   }
 
-  double _getValue(WeatherPoint5m point) {
+  double _getValue(WeatherPoint point) {
     switch (metricType) {
       case WeatherMetricType.temperature:
         return point.temperature;
@@ -96,8 +96,8 @@ class IntraDaySplineChart extends StatelessWidget {
     );
 
     // Giới hạn trục X: làm tròn lên mốc 3 giờ (180 phút) kế tiếp bao trọn cả dữ liệu và thời điểm hiện tại
-    final nowGmt7 = DateTimeFormatter.currentGmt7Time();
-    final currentMinutes = (nowGmt7.hour * 60 + nowGmt7.minute).toDouble();
+    final now = DateTime.now();
+    final currentMinutes = (now.hour * 60 + now.minute).toDouble();
     final maxDataX = sortedKeys.isNotEmpty ? sortedKeys.last : 180.0;
     final targetMax = max(maxDataX, currentMinutes);
     final double maxX = ((targetMax / 180).ceil() * 180.0).clamp(180.0, 1440.0);

@@ -1,5 +1,5 @@
 import '../../core/utils/date_time_formatter.dart';
-import 'weather_point_5m.dart';
+import 'weather_point.dart';
 
 /// Đại diện cho một bản ghi quan trắc lưu trong bảng SQLite `weather_monitoring`
 class WeatherMonitoringRecord {
@@ -32,27 +32,24 @@ class WeatherMonitoringRecord {
       'humidity': humidity,
       'rainfall': rainfall,
       'wind_speed': windSpeed,
-      'recorded_at': recordedAt.toIso8601String(),
+      // Lưu ISO8601 chuẩn UTC nguyên bản vào SQLite
+      'recorded_at': recordedAt.toUtc().toIso8601String(),
       'timestamp': timestamp,
     };
   }
 
-  /// Khởi tạo từ Map đọc từ SQLite (recorded_at trong SQLite đã là chuỗi ISO chuẩn GMT+7)
+  /// Khởi tạo từ Map đọc từ SQLite (tự động chuyển đổi UTC sang giờ thiết bị qua .toLocal())
   factory WeatherMonitoringRecord.fromMap(Map<String, dynamic> map) {
     final recordedAtRaw = map['recorded_at'];
     final tsRaw = map['timestamp'] as int?;
 
     DateTime parsedDate;
     if (recordedAtRaw != null) {
-      try {
-        parsedDate = DateTime.parse(recordedAtRaw.toString());
-      } catch (_) {
-        parsedDate = DateTimeFormatter.parseUtcToGmt7(recordedAtRaw);
-      }
+      parsedDate = DateTimeFormatter.parseUtcToLocal(recordedAtRaw);
     } else if (tsRaw != null) {
-      parsedDate = DateTime.fromMillisecondsSinceEpoch(tsRaw, isUtc: true);
+      parsedDate = DateTime.fromMillisecondsSinceEpoch(tsRaw).toLocal();
     } else {
-      parsedDate = DateTimeFormatter.currentGmt7Time();
+      parsedDate = DateTime.now();
     }
 
     return WeatherMonitoringRecord(
@@ -68,12 +65,12 @@ class WeatherMonitoringRecord {
   }
 
   /// Khởi tạo từ phần tử JSON của Backend API (`/api/weather/history` hoặc `/api/weather/latest`)
-  /// Dữ liệu Backend là UTC (GMT+0) -> tự động chuẩn hóa sang GMT+7 (giờ Việt Nam)
+  /// Dữ liệu Backend là UTC (GMT+0) -> tự động chuyển đổi sang múi giờ thiết bị qua .toLocal()
   factory WeatherMonitoringRecord.fromJson(
     Map<String, dynamic> json, {
     String defaultDeviceId = 'adht_weather_01',
   }) {
-    final date = DateTimeFormatter.parseUtcToGmt7(json['recorded_at']);
+    final date = DateTimeFormatter.parseUtcToLocal(json['recorded_at']);
 
     return WeatherMonitoringRecord(
       deviceId: json['device_id'] as String? ?? defaultDeviceId,
@@ -86,36 +83,14 @@ class WeatherMonitoringRecord {
     );
   }
 
-  /// Chuyển đổi sang WeatherPoint5m cho các biểu đồ fl_chart
-  WeatherPoint5m toWeatherPoint5m() {
-    return WeatherPoint5m(
+  /// Chuyển đổi sang WeatherPoint cho các biểu đồ fl_chart
+  WeatherPoint toWeatherPoint() {
+    return WeatherPoint(
       timestamp: recordedAt,
       temperature: temperature,
       humidity: humidity,
       rainfall: rainfall,
       windSpeed: windSpeed,
-    );
-  }
-
-  WeatherMonitoringRecord copyWith({
-    int? id,
-    String? deviceId,
-    double? temperature,
-    double? humidity,
-    double? rainfall,
-    double? windSpeed,
-    DateTime? recordedAt,
-    int? timestamp,
-  }) {
-    return WeatherMonitoringRecord(
-      id: id ?? this.id,
-      deviceId: deviceId ?? this.deviceId,
-      temperature: temperature ?? this.temperature,
-      humidity: humidity ?? this.humidity,
-      rainfall: rainfall ?? this.rainfall,
-      windSpeed: windSpeed ?? this.windSpeed,
-      recordedAt: recordedAt ?? this.recordedAt,
-      timestamp: timestamp ?? this.timestamp,
     );
   }
 

@@ -33,14 +33,13 @@ abstract class ApiConstants {
   // Weather Endpoints
   static const String endpointWeatherLatest = '/weather/latest';
   static const String endpointWeatherHistory = '/weather/history';
-  static const String endpointWeatherForecast = '/weather/forecast';
-  static const String endpointNotificationsRegister =
-      '/notifications/register-token';
 
-  // Cấu hình lưu trữ SQLite
+  // Cấu hình lưu trữ SQLite (Tách riêng bảng trong ngày và bảng 7 ngày)
   static const String databaseName = 'weather_monitoring.db';
-  static const int databaseVersion = 1;
-  static const String tableWeatherMonitoring = 'weather_monitoring';
-  static const String tableReadings = 'weather_monitoring';
+  static const int databaseVersion = 2;
+  static const String tableWeatherInday = 'weather_inday';
+  static const String tableWeatherWeek = 'weather_week';
+  static const String latestWeatherFileName = 'latest_weather.json';
   static const int cacheRetentionDays = 7;
+  static const int cacheRetentionHoursInday = 24;
 }

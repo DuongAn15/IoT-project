@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:weather_monitoring/core/utils/weather_unit_helper.dart';
 import 'package:weather_monitoring/data/models/weather_current_model.dart';
 import 'package:weather_monitoring/data/models/weather_daily_summary.dart';
-import 'package:weather_monitoring/data/models/weather_point_5m.dart';
+import 'package:weather_monitoring/data/models/weather_point.dart';
 import 'package:weather_monitoring/data/repositories/weather_repository.dart';
 import 'package:weather_monitoring/main.dart';
 import 'package:weather_monitoring/providers/weather_dashboard_provider.dart';
@@ -28,10 +28,10 @@ class _TestStubWeatherRepository implements WeatherRepository {
   }
 
   @override
-  Future<List<WeatherPoint5m>> getIntraDayData5m() async {
+  Future<List<WeatherPoint>> getIntraDayData() async {
     final now = DateTime.now();
     return List.generate(12, (index) {
-      return WeatherPoint5m(
+      return WeatherPoint(
         timestamp: now.subtract(Duration(minutes: (11 - index) * 5)),
         temperature: 28.0 + (index * 0.1),
         humidity: 65.0,
@@ -115,7 +115,7 @@ void main() {
       expect(find.text('Nhiệt độ TB'), findsWidgets);
     });
 
-    testWidgets('IntraDayDetailScreen renders interval chips and "Bản ghi gần nhất"', (WidgetTester tester) async {
+    testWidgets('IntraDayDetailScreen renders metric chips, chart and "Bản ghi gần nhất" without interval chips', (WidgetTester tester) async {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
@@ -130,12 +130,16 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      // Verify interval chips exist (15 phút, 30 phút, 1 tiếng)
-      expect(find.text('15 phút'), findsOneWidget);
-      expect(find.text('30 phút'), findsOneWidget);
-      expect(find.text('1 tiếng'), findsOneWidget);
+      // Verify interval chips are removed completely
+      expect(find.text('15 phút'), findsNothing);
+      expect(find.text('30 phút'), findsNothing);
+      expect(find.text('1 tiếng'), findsNothing);
       expect(find.text('5 phút'), findsNothing);
       expect(find.text('Bước đo:'), findsNothing);
+
+      // Verify metric chips exist
+      expect(find.text('Nhiệt độ'), findsOneWidget);
+      expect(find.text('Độ ẩm'), findsOneWidget);
 
       // Verify section header
       expect(find.text('Bản ghi gần nhất'), findsOneWidget);

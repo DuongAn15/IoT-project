@@ -1,11 +1,13 @@
+import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:weather_monitoring/core/constants/api_constants.dart';
 import 'package:weather_monitoring/data/database/app_database.dart';
 import 'package:weather_monitoring/data/database/weather_monitoring_dao.dart';
+import 'package:weather_monitoring/data/models/weather_current_model.dart';
 import 'package:weather_monitoring/data/models/weather_monitoring_record.dart';
-import 'package:weather_monitoring/data/models/weather_point_5m.dart';
 import 'package:weather_monitoring/data/repositories/app_weather_repository.dart';
+import 'package:weather_monitoring/data/storage/latest_weather_file_storage.dart';
 
 void main() {
   // Khởi tạo SQLite FFI cho môi trường test trên Desktop/CLI
@@ -89,7 +91,7 @@ void main() {
       expect(record.recordedAt.minute, equals(0));
     });
 
-    test('parseUtcToGmt7 handles day rollover correctly (e.g. 19:00 UTC to 02:00 next day GMT+7)', () {
+    test('parseUtcToLocal handles day rollover correctly (e.g. 19:00 UTC to next day local time)', () {
       // 19:00 UTC ngày 10/11 -> cộng 7 tiếng = 02:00 ngày 11/11 GMT+7
       final json = {
         'device_id': 'adht_weather_01',
@@ -103,10 +105,10 @@ void main() {
       final record = WeatherMonitoringRecord.fromJson(json);
       expect(record.recordedAt.day, equals(11));
       expect(record.recordedAt.hour, equals(2));
-      expect(record.toWeatherPoint5m().minutesFromMidnight, equals(2 * 60));
+      expect(record.toWeatherPoint().minutesFromMidnight, equals(2 * 60));
     });
 
-    test('toWeatherPoint5m converts record for chart consumption', () {
+    test('toWeatherPoint converts record for chart consumption', () {
       final now = DateTime.now();
       final record = WeatherMonitoringRecord(
         deviceId: 'adht_weather_01',
@@ -117,7 +119,7 @@ void main() {
         recordedAt: now,
       );
 
-      final point = record.toWeatherPoint5m();
+      final point = record.toWeatherPoint();
       expect(point.temperature, 25.0);
       expect(point.humidity, 70.0);
       expect(point.rainfall, 0.0);
@@ -138,8 +140,9 @@ void main() {
         options: OpenDatabaseOptions(
           version: ApiConstants.databaseVersion,
           onCreate: (db, version) async {
+            // 1. Bảng weather_inday
             await db.execute('''
-              CREATE TABLE IF NOT EXISTS ${ApiConstants.tableWeatherMonitoring} (
+              CREATE TABLE IF NOT EXISTS ${ApiConstants.tableWeatherInday} (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 device_id TEXT NOT NULL,
                 temperature REAL NOT NULL,
@@ -151,10 +154,28 @@ void main() {
                 UNIQUE(device_id, recorded_at) ON CONFLICT REPLACE
               );
             ''');
-
             await db.execute('''
-              CREATE INDEX IF NOT EXISTS idx_weather_monitoring_device_time 
-              ON ${ApiConstants.tableWeatherMonitoring} (device_id, timestamp);
+              CREATE INDEX IF NOT EXISTS idx_weather_inday_device_time 
+              ON ${ApiConstants.tableWeatherInday} (device_id, timestamp);
+            ''');
+
+            // 2. Bảng weather_week
+            await db.execute('''
+              CREATE TABLE IF NOT EXISTS ${ApiConstants.tableWeatherWeek} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                temperature REAL NOT NULL,
+                humidity REAL NOT NULL,
+                rainfall REAL NOT NULL,
+                wind_speed REAL NOT NULL,
+                recorded_at TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                UNIQUE(device_id, recorded_at) ON CONFLICT REPLACE
+              );
+            ''');
+            await db.execute('''
+              CREATE INDEX IF NOT EXISTS idx_weather_week_device_time 
+              ON ${ApiConstants.tableWeatherWeek} (device_id, timestamp);
             ''');
           },
         ),
@@ -366,6 +387,90 @@ void main() {
       final history = await dao.getHistory7Days(deviceId: 'adht_weather_01');
       expect(history.length, equals(2));
     });
+
+    test('weather_inday table supports insert, query and autoDeleteIndayOlderThan24Hours', () async {
+      final now = DateTime.now();
+
+      final indayRecent = WeatherMonitoringRecord(
+        deviceId: 'adht_weather_01',
+        temperature: 25.0,
+        humidity: 60.0,
+        rainfall: 0.0,
+        windSpeed: 2.0,
+        recordedAt: now.subtract(const Duration(hours: 3)), // 3h trước
+      );
+
+      final indayOld = WeatherMonitoringRecord(
+        deviceId: 'adht_weather_01',
+        temperature: 22.0,
+        humidity: 70.0,
+        rainfall: 0.0,
+        windSpeed: 1.0,
+        recordedAt: now.subtract(const Duration(hours: 28)), // 28h trước (> 24h)
+      );
+
+      await dao.insertIndayBatch([indayRecent, indayOld]);
+      expect(await dao.countInday(), equals(2));
+
+      // Dọn dẹp quá 24h
+      final deleted = await dao.autoDeleteIndayOlderThan24Hours();
+      expect(deleted, equals(1));
+      expect(await dao.countInday(), equals(1));
+
+      final remaining = await dao.getIndayRecords(deviceId: 'adht_weather_01');
+      expect(remaining.length, equals(1));
+      expect(remaining.first.temperature, equals(25.0));
+    });
+  });
+
+  group('LatestWeatherFileStorage Tests', () {
+    late Directory tempDir;
+    late LatestWeatherFileStorage fileStorage;
+
+    setUp(() async {
+      tempDir = await Directory.systemTemp.createTemp('latest_weather_test_');
+      fileStorage = LatestWeatherFileStorage(
+        fileName: 'test_latest_weather.json',
+        customDirectoryPath: tempDir.path,
+      );
+    });
+
+    tearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    test('saveLatest writes JSON to file and readLatest reads it back correctly with isOnline=false', () async {
+      final now = DateTime.now();
+      final current = WeatherCurrentModel(
+        stationId: 'adht_weather_01',
+        stationName: 'Trạm IoT 01 - Trung Tâm',
+        timestamp: now,
+        temperature: 28.5,
+        humidity: 65.0,
+        rainfall: 1.2,
+        windSpeed: 3.5,
+        isOnline: true,
+      );
+
+      await fileStorage.saveLatest(current);
+
+      final readModel = await fileStorage.readLatest();
+      expect(readModel, isNotNull);
+      expect(readModel!.stationId, equals('adht_weather_01'));
+      expect(readModel.temperature, equals(28.5));
+      expect(readModel.humidity, equals(65.0));
+      expect(readModel.rainfall, equals(1.2));
+      expect(readModel.windSpeed, equals(3.5));
+      // Khi đọc từ file offline cache, isOnline phải là false
+      expect(readModel.isOnline, isFalse);
+    });
+
+    test('readLatest returns null when file does not exist', () async {
+      final readModel = await fileStorage.readLatest();
+      expect(readModel, isNull);
+    });
   });
 
   group('Continuous 7 Days Aggregation Tests', () {
@@ -515,11 +620,11 @@ void main() {
       expect(todayRecords.last.recordedAt.hour, equals(17));
       expect(todayRecords.last.recordedAt.minute, equals(53));
 
-      // Test interval sampling
-      final points = todayRecords.map((r) => r.toWeatherPoint5m()).toList();
-      final sampled15m = WeatherPoint5m.sampleByInterval(points, 15);
-      expect(sampled15m.isNotEmpty, isTrue);
-      expect(sampled15m.last.minutesFromMidnight, points.last.minutesFromMidnight);
+      // Kiểm tra toàn bộ điểm đo trong ngày được chuyển sang WeatherPoint
+      final points = todayRecords.map((r) => r.toWeatherPoint()).toList();
+      expect(points.length, equals(9));
+      expect(points.first.minutesFromMidnight, equals(12 * 60 + 43));
+      expect(points.last.minutesFromMidnight, equals(17 * 60 + 53));
     });
   });
 }

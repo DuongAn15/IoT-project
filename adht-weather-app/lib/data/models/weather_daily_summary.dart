@@ -39,32 +39,4 @@ class WeatherDailySummary {
       hasData: false,
     );
   }
-
-  Map<String, dynamic> toMap() {
-    return {
-      'date': date.toIso8601String(),
-      'day_of_week': dayOfWeek,
-      'avg_temperature': avgTemperature,
-      'min_temperature': minTemperature,
-      'max_temperature': maxTemperature,
-      'avg_humidity': avgHumidity,
-      'total_rainfall': totalRainfall,
-      'avg_wind_speed': avgWindSpeed,
-      'has_data': hasData,
-    };
-  }
-
-  factory WeatherDailySummary.fromMap(Map<String, dynamic> map) {
-    return WeatherDailySummary(
-      date: DateTime.parse(map['date'] as String),
-      dayOfWeek: map['day_of_week'] as String,
-      avgTemperature: (map['avg_temperature'] as num).toDouble(),
-      minTemperature: (map['min_temperature'] as num).toDouble(),
-      maxTemperature: (map['max_temperature'] as num).toDouble(),
-      avgHumidity: (map['avg_humidity'] as num).toDouble(),
-      totalRainfall: (map['total_rainfall'] as num).toDouble(),
-      avgWindSpeed: (map['avg_wind_speed'] as num).toDouble(),
-      hasData: map['has_data'] as bool? ?? true,
-    );
-  }
 }
