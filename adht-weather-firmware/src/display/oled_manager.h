@@ -11,11 +11,12 @@ class OledManager {
 public:
     OledManager();
     void begin();
-    void update(const WeatherData &weather, const NetworkStatus &net, const String &alertMessage = "");
+    void update(const WeatherData &weather, const NetworkStatus &net, const char *alertMessage = "");
     void showBootScreen(const String &statusText);
 
 private:
     Adafruit_SH1106G display;
+    bool oledReady;
     bool isAlertState;
     uint32_t lastBlinkTime;
 };

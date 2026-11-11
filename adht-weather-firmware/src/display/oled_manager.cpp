@@ -4,19 +4,26 @@ OledManager oledMgr;
 
 OledManager::OledManager() 
     : display(128, 64, &Wire, -1),
+      oledReady(false),
       isAlertState(false),
       lastBlinkTime(0)
 {}
 
 void OledManager::begin() {
     Wire.begin(PIN_OLED_SDA, PIN_OLED_SCL);
-    display.begin(OLED_I2C_ADDR, true);
+    Wire.setTimeOut(50);
+    oledReady = display.begin(OLED_I2C_ADDR, true);
+    if (!oledReady) {
+        Serial.println("[OLED] Display initialization failed (check I2C wiring)");
+        return;
+    }
     display.clearDisplay();
     display.setTextColor(SH110X_WHITE);
     display.display();
 }
 
 void OledManager::showBootScreen(const String &statusText) {
+    if (!oledReady) return;
     display.clearDisplay();
     display.setTextSize(1);
     display.setCursor(18, 10);
@@ -29,7 +36,8 @@ void OledManager::showBootScreen(const String &statusText) {
     display.display();
 }
 
-void OledManager::update(const WeatherData &weather, const NetworkStatus &net, const String &alertMessage) {
+void OledManager::update(const WeatherData &weather, const NetworkStatus &net, const char *alertMessage) {
+    if (!oledReady) return;
     display.clearDisplay();
 
     // 1. Header Bar
@@ -59,11 +67,19 @@ void OledManager::update(const WeatherData &weather, const NetworkStatus &net, c
     display.setCursor(0, 14);
     display.print("T: ");
     display.setTextSize(1);
-    display.printf("%.1f C", weather.temperature);
+    if (!weather.dht_ok) {
+        display.print("ERR");
+    } else {
+        display.printf("%.1f C", weather.temperature);
+    }
 
     display.setCursor(0, 26);
     display.print("H: ");
-    display.printf("%.1f %%", weather.humidity);
+    if (!weather.dht_ok) {
+        display.print("ERR");
+    } else {
+        display.printf("%.1f %%", weather.humidity);
+    }
 
     // Right: Wind & Rain
     display.setCursor(68, 14);
@@ -82,9 +98,11 @@ void OledManager::update(const WeatherData &weather, const NetworkStatus &net, c
 
     // 3. Footer / Alerts
     display.setCursor(0, 42);
-    if (alertMessage.length() > 0) {
+    if (alertMessage != nullptr && alertMessage[0] != '\0') {
         display.print("! ");
         display.print(alertMessage);
+    } else if (!weather.dht_ok) {
+        display.print("! DHT11 ERR");
     } else {
         display.print("IP: ");
         display.print(net.ip_address);

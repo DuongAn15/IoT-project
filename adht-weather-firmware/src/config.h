@@ -14,8 +14,10 @@
 #define PIN_OLED_SCL      22    // I2C OLED SCL
 #define OLED_I2C_ADDR     0x3C  // OLED SH1106 / SSD1306 128x64
 
-#define PIN_LED           33    // Status LED
-#define PIN_BUZZER        2     // Alert Buzzer
+#define PIN_LED           33    // Status LED (Active-LOW: LOW = Sáng, HIGH = Tắt)
+#define LED_ON_LEVEL      LOW
+#define LED_OFF_LEVEL     HIGH
+#define PIN_BUZZER        2     // Alert Buzzer (Active-HIGH)
 
 #define PIN_BTN_SET       32    // Button SET
 #define PIN_BTN_UP        35    // Button UP
@@ -74,10 +76,15 @@
 #define TOPIC_CONFIG            "adht/weather/" DEVICE_ID "/config"
 
 // ==========================================
-// 5. TIMING INTERVALS
+// 5. TIMING INTERVALS & PROTECTION
 // ==========================================
-#define SENSOR_READ_INTERVAL_MS 2000     // 2 giây đọc cảm biến 1 lần
-#define MQTT_PUBLISH_INTERVAL_MS 5000    // 5 giây publish MQTT 1 lần (EMQX tự forward sang Supabase)
-#define DISPLAY_UPDATE_MS       500      // 500ms cập nhật màn hình OLED
+#define WIND_DEBOUNCE_MS         3        // 3ms debounce (> 65 m/s)
+#define RAIN_DEBOUNCE_MS         150      // 150ms debounce for tipping bucket
+#define SENSOR_READ_INTERVAL_MS  2500     // 2.5s đọc DHT11 (tránh trượt MIN_INTERVAL 2000ms của DHT.cpp)
+#define DHT_ERROR_TIMEOUT_MS     15000    // 15s không đọc được DHT11 -> báo lỗi OLED
+#define MQTT_PUBLISH_INTERVAL_MS 5000     // 5 giây publish MQTT 1 lần (giữ nguyên hợp đồng Backend)
+#define DISPLAY_UPDATE_MS        500      // 500ms cập nhật màn hình OLED
+#define WDT_TIMEOUT_MS           30000    // 30s Task Watchdog Timer
+#define WIFI_FORCE_RECONNECT_MS  45000    // 45s mất WiFi liên tục mới ép reconnect lại
 
 #endif // CONFIG_H

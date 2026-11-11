@@ -12,6 +12,7 @@ public:
     void begin();
     void update();
     WeatherData getData();
+    void resetRainTotal();
 
     // ISR handlers (called from static ISR wrapper)
     void handleRainInterrupt();
@@ -21,6 +22,7 @@ private:
     DHT dht;
     SimpleKalmanFilter tempFilter;
     SimpleKalmanFilter humiFilter;
+    bool kalmanSeeded;
 
     portMUX_TYPE isrMux;
     volatile uint32_t rainPulseCount;
@@ -35,6 +37,7 @@ private:
     uint32_t lastRainCalcTime;
     uint32_t lastWindCalcTime;
     uint32_t lastDhtReadTime;
+    uint32_t lastValidDhtTime;
 
     WeatherData currentData;
     portMUX_TYPE dataMux;
