@@ -3,8 +3,8 @@
 > **Dự án**: Trạm Quan trắc Thời tiết Thông minh ADHT  
 > **Phân hệ trọng tâm**: Phần mềm nhúng ESP32 (`adht-weather-firmware`) & Đồng bộ hợp đồng với Backend / Flutter App  
 > **Tiêu chuẩn đối chiếu**: Tổ chức Khí tượng Thế giới (WMO), Trạm thời tiết Davis Vantage Pro2, Chuẩn kiến trúc FreeRTOS 24/7  
-> **Cập nhật lần cuối**: 11/11/2026 (Đối chiếu trực tiếp với mã nguồn `master` sau PR Backend Render Deploy `#9`, Flutter Settings `#7`, `DEVICE_CONTROL_AND_CONFIG_SPEC.md`, `PLAN_A` & `PLAN_B`)  
-> **Trạng thái**: Bản kế hoạch đã hiệu chỉnh theo hiện trạng thực tế (Sẵn sàng triển khai tinh chỉnh trên `adht-weather-firmware`)
+> **Cập nhật lần cuối**: 11/11/2026 (Đã hoàn thành Giai đoạn 1 trên nhánh `feat/firmware-refinement-phase1`, commit `af2b31f`; loại bỏ NTP theo chuẩn Thin Edge Node — UTC ở Backend, Local ở App)  
+> **Trạng thái**: Giai đoạn 1 đã hoàn tất & nghiệm thu mạch thật; sẵn sàng triển khai Giai đoạn 2 & 3
 
 > [!CAUTION]
 > **NGUYÊN TẮC BẤT BIẾN — BẢO TOÀN LUỒNG GIAO TIẾP ĐANG THÔNG (`ESP32 ➔ EMQX ➔ Backend Render ➔ Supabase ➔ Flutter App`)**  
@@ -32,7 +32,7 @@
    - [2.8. Chưa lập trình 3 nút nhấn phần cứng & Lưu ý điện trở kéo GPIO 34/35](#28-chưa-lập-trình-3-nút-nhấn-phần-cứng--lưu-ý-điện-trở-kéo-gpio-3435)
    - [2.9. Watchdog TWDT, Bẫy `WL_DISCONNECTED`, Data Race WiFi, TLS/I2C & Heap MQTT](#29-watchdog-twdt-bẫy-wl_disconnected-data-race-wifi-tlsi2c--heap-mqtt)
    - [2.10. Tần suất 5s/lần, Kiến trúc Cloud Backend Render & Bẫy LWT đa trạm](#210-tần-suất-5slần-kiến-trúc-cloud-backend-render--bẫy-lwt-đa-trạm)
-   - [2.11. Thiếu đồng bộ thời gian thực qua NTP](#211-thiếu-đồng-bộ-thời-gian-thực-qua-ntp)
+   - [2.11. Đánh giá đồng bộ NTP trên ESP32 (Đã loại bỏ — Dùng UTC ở Cloud)](#211-đánh-giá-đồng-bộ-ntp-trên-esp32-đã-loại-bỏ--dùng-utc-ở-cloud)
    - [2.12. Nâng cấp Giao diện OLED, Sửa đơn vị mưa & Chống Burn-in](#212-nâng-cấp-giao-diện-oled-sửa-đơn-vị-mưa--chống-burn-in)
 3. [Lộ trình Tinh chỉnh Firmware (3 Giai đoạn Ưu tiên)](#3-lộ-trình-tinh-chỉnh-firmware-3-giai-đoạn-ưu-tiên)
 4. [Bảng Tiêu chí Nghiệm thu Kỹ thuật (Acceptance Criteria)](#4-bảng-tiêu-chí-nghiệm-thu-kỹ-thuật-acceptance-criteria)
@@ -59,20 +59,20 @@ So với thời điểm lập bản kế hoạch ban đầu, toàn hệ thống 
 
 ### 1.2. Bảng đối chiếu trạng thái các vấn đề kỹ thuật
 
-| Mục | Nội dung kỹ thuật | Hiện trạng trong code (`11/11/2026`) | Ghi chú điều chỉnh theo dự án |
+| Mục | Nội dung kỹ thuật | Trạng thái (`af2b31f`) | Ghi chú cập nhật theo dự án |
 | :--- | :--- | :---: | :--- |
-| **2.1** | Debounce gió `50ms` & lỗi thiếu `IRAM_ATTR` trong ISR | 🔴 **Chưa sửa** | `sensor_manager.cpp:51-69` vẫn debounce `50ms` và handler không có `IRAM_ATTR` (dễ panic khi ghi NVS). |
-| **2.2** | Gió giật `wind_max` không có chu kỳ reset | 🔴 **Chưa sửa** | `sensor_manager.cpp:108-110` tích lũy vô hạn từ lúc bật nguồn. |
-| **2.3** | Chu kỳ tính `rain_rate` (60s) & cộng dồn `rain_total` | 🟡 **Chưa sửa + Ràng buộc mới** | Phải **giữ nguyên key JSON `rain_total`** để không gãy validation của Backend (`CreateTelemetryDto`). |
-| **2.4** | Kalman Filter `q = 0.001`, API thiếu `seed()`, nhịp `DHT::read()` & lỗi `NaN` | 🔴 **Chưa sửa** | `SimpleKalmanFilter.h` không có `setEstimate()`; `SENSOR_READ_INTERVAL_MS=2000` dễ trượt nhịp `MIN_INTERVAL=2000` của `DHT.cpp`. |
-| **2.5** | `delay()` trong `handleMqttCommand` chặn Core 0 | 🟡 **Đã thêm `reboot`, vẫn `delay()`** | `main.cpp:28, 37` vẫn blocking. Bổ sung đồng bộ `led` (`arg`) và `reset_rain`. |
-| **2.6** | Xung đột Còi/LED, bỏ sót `temp_min`/`humi_max` & Race `sysConfig` | 🔴 **Chưa sửa** | `manualBuzzer` chưa dùng; `taskAlert` thiếu 2 ngưỡng; `sysConfig` & `currentAlertMsg` thiếu đồng bộ giữa 2 Core. |
-| **2.7** | Ghi đè mất NVS khi nhận Partial Config Update | 🆕 **Mới phát hiện** | `mqtt_manager.cpp:148-156` reset các field không có trong JSON về mặc định. |
-| **2.8** | Chưa lập trình 3 nút nhấn `SET`, `UP`, `DOWN` | 🔴 **Chưa sửa** | Bổ sung lưu ý phần cứng: `GPIO 34, 35` trên ESP32 **không có `INPUT_PULLUP` nội**. |
-| **2.9** | Thiếu TWDT, kẹt `WL_DISCONNECTED`, Data Race `String ip_address`, TLS/I2C | 🔴 **Chưa sửa** | `wifi_manager.cpp:34` kẹt khi mất router; `NetworkStatus` copy `String` qua 2 Core; cần `setSocketTimeout(5)` & `Wire.setTimeOut(50)`. |
-| **2.10** | Tần suất ghi DB & Kiến trúc Topic | 🟢 **Đã ổn / Giữ nguyên hợp đồng** | Đã là `5s` (`5000ms`), dùng `adht/weather/{DEVICE_ID}/telemetry` & `adht/weather/status`. **Không sửa topic hay Backend** trong đợt tinh chỉnh Firmware. |
-| **2.11** | Thiếu đồng bộ giờ thực NTP | 🔴 **Chưa sửa** | Phục vụ reset mưa ngày `00:00` & hiển thị giờ OLED; **giữ nguyên TLS `setInsecure()` & Telemetry JSON**. |
-| **2.12** | Giao diện OLED đơn giản, nhầm đơn vị `mm` & Burn-in | 🔴 **Chưa sửa** | `oled_manager.cpp:79` in `mm` cho `rain_rate` thay vì `mm/h`. |
+| **2.1** | Debounce gió `3ms` & `IRAM_ATTR` trong ISR | 🟢 **Đã xong (GĐ 1)** | `WIND_DEBOUNCE_MS=3`, ISR nằm hoàn toàn trong IRAM (`0x4008xxxx`), an toàn khi ghi NVS. |
+| **2.2** | Gió giật `wind_max` chưa có cửa sổ trượt | 🟡 **Giai đoạn 2** | Sẽ dùng cửa sổ trượt `10 phút` bằng `millis()` nội bộ, giữ nguyên key `wind_max`. |
+| **2.3** | Chu kỳ `rain_rate` (60s) & `rain_total` | 🟡 **Giai đoạn 2** | Cải thiện độ nhạy `rain_rate` theo $\Delta t$; giữ nguyên `rain_total` theo phiên + lệnh `reset_rain` (không reset `00:00` bằng NTP). |
+| **2.4** | Kalman `q=0.04`, priming cold-start, DHT `2500ms` & báo `ERR` | 🟢 **Đã xong (GĐ 1)** | Đã nghiệm thu trên mạch: lên thẳng giá trị thật ở gói đầu, không gửi `-999`. |
+| **2.5** | Non-blocking MQTT command, LED Active-LOW Toggle & `reset_rain` | 🟢 **Đã xong (GĐ 1)** | Bỏ toàn bộ `delay()`, `led` `arg:"1"` toggle chuẩn trên `GPIO 33` Active-LOW, đã test `buzzer`/`led`/`reboot`. |
+| **2.6** | Gom quyền GPIO về `taskAlert`, đủ 5 ngưỡng & Mutex đa nhân | 🟢 **Đã xong (GĐ 1)** | `taskAlert` 50ms kiểm tra đủ 5 ngưỡng (kèm `has_valid_dht && dht_ok`), `stateMux` bảo vệ đa nhân. |
+| **2.7** | Partial Config NVS & đồng bộ `rain_max = 30.0` | 🟢 **Đã xong (GĐ 1)** | Dùng `ConfigUpdatePatch` giữ nguyên các ngưỡng cũ khi nhận JSON từng phần. |
+| **2.8** | Lập trình 3 nút nhấn `SET`, `UP`, `DOWN` | 🟡 **Giai đoạn 2** | `GPIO 32` dùng `INPUT_PULLUP` nội; `GPIO 34, 35` chỉ bật sau khi xác nhận có pull-up ngoài. |
+| **2.9** | TWDT `30s`, fix `WL_DISCONNECTED`, Data Race WiFi, TLS/I2C | 🟢 **Đã xong (GĐ 1)** | `esp_task_wdt_reconfigure` 30s (`err=0`), `NetworkStatus` POD + `statusMux`, timeout TLS/I2C. |
+| **2.10** | Giữ Topic, chu kỳ `5s` & không sửa Backend | 🟢 **Đã xong (GĐ 1)** | Đã kiểm chứng luồng `ESP32 ➔ EMQX ➔ Backend ➔ App` chạy đều 5s/lần. |
+| **2.11** | Đồng bộ giờ thực NTP trên ESP32 | ⚪ **Loại bỏ (Không cần)** | Backend đóng dấu **UTC**, App `.toLocal()`; bỏ NTP để ESP32 thành Thin Edge Node gọn nhẹ, không phụ thuộc UDP 123. |
+| **2.12** | OLED đa trang, sửa đơn vị `mm/h` & Screen Saver | 🟡 **Giai đoạn 3** | Sẽ dùng `setContrast` / `SH110X_DISPLAYOFF` và hiển thị `Uptime` thay cho giờ NTP. |
 
 ---
 
@@ -116,23 +116,23 @@ So với thời điểm lập bản kế hoạch ban đầu, toàn hệ thống 
   ```
 * **Hậu quả**:
   * Biến `wind_max` tích lũy từ lúc khởi động trạm và không bao giờ reset nếu không rút nguồn. Sau một cơn gió lớn, chỉ số này giữ nguyên vĩnh viễn dù trời lặng gió nhiều ngày sau đó.
-* **Giải pháp chuẩn khí tượng WMO (giữ nguyên hợp đồng Backend)**:
-  * Áp dụng cửa sổ trượt **10 phút** (hoặc ring buffer gồm 120 mẫu mỗi 5 giây) để `wind_max` phản ánh **gió giật cực đại trong 10 phút gần nhất**, kết hợp lưu riêng biến `daily_wind_max` (reset lúc `00:00`) để hiển thị trang Cực trị trên OLED.
+* **Giải pháp chuẩn khí tượng WMO (dùng `millis()` nội bộ, giữ nguyên hợp đồng Backend)**:
+  * Áp dụng cửa sổ trượt **10 phút** (ring buffer gồm 120 mẫu mỗi 5 giây dựa trên `millis()`) để `wind_max` phản ánh **gió giật cực đại trong 10 phút gần nhất**, kết hợp giữ thêm biến `session_wind_max` (tích lũy trong phiên) nếu cần hiển thị trang Cực trị trên OLED.
   * Giữ nguyên tên trường `"wind_max"` trong payload MQTT gửi lên Backend (`CreateTelemetryDto` đã hỗ trợ trường này ở dạng optional).
 
 ---
 
 ### 2.3. Lượng mưa tích lũy, Cường độ mưa và Ràng buộc Hợp đồng Backend
-* **Hiện trạng trong mã nguồn (`config.h` dòng 30, `sensor_manager.cpp` dòng 115–133)**:
+* **Hiện trạng trong mã nguồn (`config.h` dòng 30, `sensor_manager.cpp` dòng 147–166)**:
   * `RAIN_SAMPLE_PERIOD_SEC = 60`: Cường độ mưa (`rain_rate`) chỉ tính lại mỗi 60 giây một lần, khiến khi trời vừa mưa to hoặc vừa tạnh, số liệu gửi mỗi 5 giây bị trễ tối đa 1 phút.
-  * `rain_total` cộng dồn liên tục từ khi khởi động (`millis() = 0`) và bị mất sạch về `0.0` mỗi khi ESP32 reboot.
+  * `rain_total` cộng dồn theo phiên từ lúc khởi động (`millis() = 0`); đã hỗ trợ lệnh `reset_rain` từ Giai đoạn 1.
 * **⚠️ Ràng buộc bắt buộc với Backend (`DEVELOPMENT_GUIDE.md` & `CreateTelemetryDto`)**:
-  * DTO của Backend (`adht-weather-backend/src/modules/telemetry/dto/create-telemetry.dto.ts`, dòng 37–40) **bắt buộc trường `rain_total`** (`@IsNumber()`, `@Min(0)`). Trước đây đã có sự cố lệch tên `rain_daily` làm Backend từ chối toàn bộ gói telemetry.
-  * Hiện tại `SupabaseService` chỉ lưu 4 cột (`temperature`, `humidity`, `rain_rate`, `wind_speed`) vào bảng `weather_logs`, nhưng WebSocket `/ws/telemetry` vẫn truyền nguyên vẹn `rain_total`.
+  * DTO của Backend (`adht-weather-backend/src/modules/telemetry/dto/create-telemetry.dto.ts`, dòng 37–40) **bắt buộc trường `rain_total`** (`@IsNumber()`, `@Min(0)`). Theo `DEVELOPMENT_GUIDE.md`, `rain_total` là lượng mưa tích lũy theo phiên từ lúc khởi động (không đổi tên sang `rain_daily`).
+  * Việc thống kê tổng lượng mưa theo ngày/tuần (theo giờ UTC / Local) do tầng Backend & Database đảm nhiệm trên chuỗi thời gian.
 * **Giải pháp hiệu chỉnh**:
   1. **Giữ nguyên tên trường JSON `rain_total`** trong `mqtt_manager.cpp` để không phá vỡ validation Backend.
-  2. **Cải thiện độ nhạy `rain_rate`**: Đo khoảng thời gian $\Delta t$ giữa 2 lần lật gàu liên tiếp (hoặc đếm xung trên cửa sổ trượt 60s cập nhật mỗi 5s) kèm cơ chế tự giảm/reset về `0.0 mm/h` khi quá ngưỡng timeout (ví dụ 3–5 phút không có xung mới).
-  3. **Bền vững hóa `rain_total` & Reset ngày (khi có NTP)**: Lưu `rain_total` định kỳ (hoặc mỗi lần tăng có kiểm soát tần suất ghi Flash để tránh mòn NVS, ví dụ mỗi 60s nếu có thay đổi) và reset về `0.0` lúc `00:00:00`, hoặc hỗ trợ lệnh `cmd == "reset_rain"` từ App/Backend.
+  2. **Cải thiện độ nhạy `rain_rate`**: Đo khoảng thời gian $\Delta t$ giữa 2 lần lật gàu liên tiếp (hoặc đếm xung trên cửa sổ trượt 60s cập nhật mỗi 5s dựa trên `millis()`) kèm cơ chế tự giảm/reset về `0.0 mm/h` khi quá ngưỡng timeout (ví dụ 3–5 phút không có xung mới).
+  3. **Bảo toàn `rain_total` (tùy chọn)**: Có thể lưu `rain_total` vào NVS khi tăng thêm $\ge 0.5\text{ mm}$ và cách lần ghi trước $\ge 60\text{s}$ (tránh mòn Flash) để không mất số đo phiên khi reboot; khi muốn reset về `0.0` dùng lệnh `cmd == "reset_rain"`.
 
 ---
 
@@ -258,26 +258,24 @@ So với thời điểm lập bản kế hoạch ban đầu, toàn hệ thống 
 
 ---
 
-### 2.11. Thiếu đồng bộ thời gian thực qua NTP
-* **Hiện trạng**: ESP32 mới chỉ dùng `millis()` và `uptime`.
-* **Giá trị thực tiễn (bảo toàn TLS & Payload đang thông)**:
-  1. Hỗ trợ reset `rain_total` / cực trị ngày đúng `00:00:00` (GMT+7) và hiển thị giờ thực trên màn hình OLED.
-  2. **Không cần thêm trường `timestamp` vào Telemetry JSON** (Backend `SupabaseService` đã tự đóng dấu `new Date()` theo giờ server chuẩn UTC, tránh rủi ro sai lệch nếu NTP chưa kịp đồng bộ lúc mới khởi động).
-  3. **Giữ nguyên `secureClient.setInsecure()`** như hiện tại để đảm bảo kết nối MQTTS tới EMQX Cloud không bị gián đoạn (chỉ cân nhắc chuyển sang `setCACert()` ở giai đoạn bảo mật nâng cao riêng sau này).
-* **Giải pháp**: Khi WiFi kết nối lần đầu, gọi `configTime(7 * 3600, 0, "pool.ntp.org", "time.google.com")` không chặn luồng (non-blocking).
+### 2.11. Đánh giá đồng bộ NTP trên ESP32 *(Đã loại bỏ — Dùng UTC ở Cloud)*
+* **Quyết định kiến trúc**: **Không triển khai NTP trên ESP32**.
+* **Lý do kỹ thuật**:
+  1. **UTC là trách nhiệm của tầng Backend & App**: `SupabaseService` tự đóng dấu `created_at` bằng giờ **UTC** chuẩn trên máy chủ; Flutter App tự chuyển về giờ địa phương qua `.toLocal()` (theo `PLAN_A_BASIC_DATA_FLOW.md`).
+  2. **Không cần cho TLS hay đo đạc cục bộ**: Firmware giữ `secureClient.setInsecure()`, `rain_total` là lượng mưa tích lũy theo phiên (đã có lệnh `reset_rain`), còn `Wind Gust 10 phút` và `rain_rate` theo $\Delta t$ chỉ dùng `millis()` nội bộ.
+  3. **Gọn nhẹ & ổn định hơn**: Tránh phụ thuộc UDP cổng 123 (dễ bị chặn trên một số mạng WiFi) và giữ ESP32 đúng vai trò **Thin Edge Node**.
 
 ---
 
 ### 2.12. Nâng cấp Giao diện OLED, Sửa đơn vị mưa & Chống Burn-in
-* **Hiện trạng trong mã nguồn (`oled_manager.cpp` & `main.cpp`)**:
-  * Dòng 75–79 trong `oled_manager.cpp` hiển thị giá trị `weather.rain_rate` (mm/h) nhưng nhãn in bên cạnh lại ghi là `"mm"` thay vì `"mm/h"`.
+* **Hiện trạng trong mã nguồn (`oled_manager.cpp`)**:
+  * Mục hiển thị `weather.rain_rate` (mm/h) trên OLED đang in nhãn `"mm"` thay vì `"mm/h"`.
   * Màn hình sáng cố định 100% 24/7 với bố cục tĩnh, dễ gây cháy điểm ảnh (Burn-in).
-  * `main.cpp:151` vẫn in log khởi động cũ `"MQTT + SUPABASE + FREERTOS"`.
+  * *(Lưu ý: log boot ở `main.cpp` đã cập nhật thành `"MQTT + GATEWAY + FREERTOS"` từ Giai đoạn 1)*.
 * **Giải pháp (đã xác minh API trên `Adafruit_SH110X.h` & `Adafruit_GrayOLED.h`)**:
-  * Sửa đơn vị hiển thị `rain_rate` thành `mm/h` (hoặc điều chỉnh tọa độ X cho vừa màn hình 128px).
-  * Thiết kế 3 trang hiển thị chuyển qua nút `SET`: Trang 1 (Tổng quan số đo + giờ NTP), Trang 2 (Cực trị ngày: Wind Gust / Total Rain / Cảnh báo), Trang 3 (Hệ thống: IP, RSSI, MQTT status, ngưỡng cảnh báo).
+  * Sửa đơn vị hiển thị `rain_rate` thành `mm/h` (điều chỉnh tọa độ X cho vừa màn hình 128px).
+  * Thiết kế 3 trang hiển thị chuyển qua nút `SET`: Trang 1 (Tổng quan số đo + Uptime), Trang 2 (Cực trị phiên / Wind Gust 10 phút / Total Rain / Cảnh báo), Trang 3 (Hệ thống: IP, RSSI, MQTT status, ngưỡng cảnh báo).
   * Bổ sung **Screen Saver**: Sử dụng các phương thức có sẵn trên `Adafruit_SH1106G` (kế thừa `Adafruit_GrayOLED`) là `display.setContrast(1)` và `display.oled_command(SH110X_DISPLAYOFF)` sau 2 phút không tương tác; tự gọi `display.oled_command(SH110X_DISPLAYON)` / khôi phục độ sáng ngay khi bấm nút hoặc có cảnh báo nguy hiểm (`alertMessage[0] != '\0'`).
-  * Cập nhật log boot `main.cpp:151` thành `"MQTT + GATEWAY + FREERTOS"` cho đúng hiện trạng.
 
 ---
 
@@ -285,19 +283,18 @@ So với thời điểm lập bản kế hoạch ban đầu, toàn hệ thống 
 
 ```mermaid
 flowchart TD
-    subgraph G1["GIAI ĐOẠN 1: Vá Lỗi Vật Lý, Chống Crash/Treo & Bảo Toàn Giao Tiếp (Bắt Buộc)"]
-        A1["1.1. Giảm Debounce Gió xuống 3ms + Gắn IRAM_ATTR cho ISR<br/>(Dùng esp_timer_get_time trong critical ISR; tránh Panic khi ghi NVS)"]
-        A2["1.2. Non-blocking Buzzer/Reboot, đủ 5 ngưỡng Alert & Mutex đa nhân<br/>(Gom quyền GPIO về taskAlert; hỗ trợ arg LED & reset_rain)"]
-        A3["1.3. Sửa Merge Partial Config NVS & đồng bộ rain_max = 30.0<br/>(Tránh ghi đè mất cấu hình cũ khi App cập nhật từng phần)"]
-        A4["1.4. TWDT >=30s, Fix kẹt WL_DISCONNECTED (>=45s), Mutex WiFi & Timeout<br/>(setSocketTimeout 5s, Wire.setTimeOut 50ms; giữ nguyên TLS setInsecure)"]
-        A5["1.5. Seed Kalman Filter (q=0.03-0.05), DHT 2500ms & Báo lỗi OLED<br/>(Tránh trượt MIN_INTERVAL 2000ms; giữ nguyên 9 trường Telemetry JSON)"]
+    subgraph G1["GIAI ĐOẠN 1: Vá Lỗi Vật Lý, Chống Crash/Treo & Bảo Toàn Giao Tiếp (ĐÃ XONG - af2b31f)"]
+        A1["1.1. Giảm Debounce Gió 3ms + IRAM_ATTR cho ISR (esp_timer_get_time)"]
+        A2["1.2. Non-blocking Buzzer/Reboot, LED Active-LOW Toggle, 5 ngưỡng Alert & reset_rain"]
+        A3["1.3. Merge Partial Config NVS (ConfigUpdatePatch) & rain_max = 30.0"]
+        A4["1.4. TWDT 30s, Fix kẹt WL_DISCONNECTED (>=45s), Mutex WiFi & Timeout TLS/I2C"]
+        A5["1.5. Seed Kalman Filter (q=0.04), DHT 2500ms & Báo lỗi OLED T:/H: ERR"]
     end
 
-    subgraph G2["GIAI ĐOẠN 2: Chuẩn Hóa Khí Tượng, NTP & Nút Bấm (Quan Trọng)"]
-        B1["2.1. Tích hợp NTP GMT+7 (configTime)<br/>(Hiển thị giờ thực & mốc reset 00:00:00; không sửa TLS/Payload)"]
-        B2["2.2. Cửa sổ trượt Wind Gust 10 phút & Tính nhanh Rain Rate theo delta-t<br/>(Giữ nguyên key JSON rain_total để khớp Backend)"]
-        B3["2.3. Lập trình 3 Nút Bấm (SET/UP/DOWN)<br/>(Chống rung 50ms; lưu ý pull-up ngoài cho GPIO 34, 35)"]
-        B4["2.4. Giữ nguyên Topic & Chu kỳ 5s trên Firmware<br/>(Không sửa Backend trong đợt Firmware; chỉ throttle tại Backend về sau nếu cần)"]
+    subgraph G2["GIAI ĐOẠN 2: Chuẩn Hóa Khí Tượng (millis) & Nút Bấm Phần Cứng (Tiếp Theo)"]
+        B1["2.1. Cửa sổ trượt Wind Gust 10 phút dùng millis()<br/>(Giữ nguyên key JSON wind_max cho Backend)"]
+        B2["2.2. Tính nhanh Rain Rate theo delta-t & Timeout tự về 0<br/>(Giữ nguyên rain_total theo phiên + lệnh reset_rain; không dùng NTP)"]
+        B3["2.3. Lập trình nút bấm cứng (Chống rung 50ms)<br/>(SET GPIO 32 dùng INPUT_PULLUP; UP/DOWN GPIO 34,35 chỉ bật nếu có pull-up ngoài)"]
     end
 
     subgraph G3["GIAI ĐOẠN 3: Nâng Cấp Giao Diện OLED & Bảo Vệ Màn Hình (Hoàn Thiện)"]
@@ -312,18 +309,17 @@ flowchart TD
 
 ## 4. BẢNG TIÊU CHÍ NGHIỆM THU KỸ THUẬT (ACCEPTANCE CRITERIA)
 
-| Hạng mục | Hiện trạng (`11/11/2026`) | Tiêu chuẩn sau Tinh chỉnh | Cách thức Đo kiểm / Nghiệm thu |
+| Hạng mục | Trạng thái (`af2b31f`) | Tiêu chuẩn Hoàn thiện | Cách thức Đo kiểm / Nghiệm thu |
 | :--- | :--- | :--- | :--- |
-| **Bảo toàn luồng giao tiếp (Zero-Regression)** | Đã thông từ ESP32 ➔ EMQX ➔ Backend ➔ Supabase ➔ App | Giữ nguyên 100% 4 Topic, 9 trường JSON, chu kỳ `5000ms`, `setInsecure()` | Sau khi nạp Firmware mới, kiểm tra Backend log nhận đều bản tin 5s, Supabase có dòng mới và Flutter App hiển thị & điều khiển bình thường. |
-| **Giới hạn tốc độ gió & An toàn ISR** | $\le 13.07\text{ m/s}$; handler ISR thiếu `IRAM_ATTR` | $\ge 50.0\text{ m/s}$ ($> 180\text{ km/h}$); ISR an toàn tuyệt đối khi ghi NVS | Phát xung $100\text{ Hz}$ vào GPIO 13 ($\approx 65.3\text{ m/s}$) đồng thời gọi `PUT /config` ghi NVS liên tục, không crash/reboot. |
-| **Độ trễ Callback MQTT** | Bị `delay()` block tới hàng trăm ms | $0\text{ ms}$ (Non-blocking hoàn toàn) | Gửi liên tiếp `POST /api/devices/adht_weather_01/command` (`buzzer`, `led`), `taskNetwork` không rớt kết nối MQTT. |
-| **Đồng bộ lệnh & 5 Ngưỡng Alert** | `led` bỏ qua `arg`; thiếu `reset_rain`, `temp_min`, `humi_max`; Race Condition Còi/LED | Hỗ trợ đủ `buzzer`, `led` (`1`/`0`/toggle), `reboot`, `reset_rain` và đủ 5 ngưỡng | Bấm các nút trên `SettingsScreen`; test hạ `temp_min`/tăng `humi_max` kiểm tra `taskAlert` báo đúng, không báo giả ở `0°C`. |
-| **Partial Config NVS** | Gửi thiếu field sẽ bị reset về mặc định | Chỉ cập nhật field có trong JSON, giữ nguyên field cũ | Gửi `PUT /config` chỉ gồm `{"temp_max": 41.0}` rồi gửi `{"buzzer": false}`, kiểm tra `temp_max` vẫn là `41.0` sau reboot. |
-| **Phục hồi WiFi, WDT & I2C** | Kẹt `WL_DISCONNECTED` khi mất router; Data Race `String` 2 Core; treo khi kẹt I2C | Tự kết nối lại sau tắt/bật router ($\ge 45\text{s}$); hết Race; tự reset tối đa $30\text{ s}$ | Tắt router 2 phút rồi bật lại; rút dây SDA/SCL OLED hoặc tạo deadlock task để kiểm tra tự phục hồi, không reset oan khi bắt tay TLS. |
-| **Kalman, Nhịp đọc & Lỗi DHT11** | Cold-start bò từ `0°C`; trượt nhịp `MIN_INTERVAL`; đóng băng khi đứt dây | Bám giá trị đầu ngay; đọc đều mỗi $2.5\text{ s}$; báo `ERR` sau $15\text{ s}$ | Đo Serial log thấy đọc mới mỗi $2.5\text{ s}$; rút dây GPIO 26 thấy OLED báo `ERR` và Backend vẫn nhận đều `wind`/`rain`. |
-| **Chu kỳ Gió giật & Mưa** | `wind_max` và `rain_total` cộng dồn vô hạn; `rain_rate` trễ 60s | Wind Gust cửa sổ trượt $10\text{ phút}$; `rain_rate` phản ứng theo xung; `rain_total` reset `00:00` (giữ nguyên key JSON) | Theo dõi qua mốc 10 phút và nửa đêm có NTP; kiểm tra Swagger/Log Backend không báo lỗi thiếu `rain_total`. |
-| **Thao tác nút bấm cứng** | Chưa có code xử lý | Chuyển 3 trang OLED, Snooze còi mượt mà | Kiểm tra mức logic GPIO 32 (`INPUT_PULLUP`) và GPIO 34/35 (pull-up ngoài), bấm chuyển trang ổn định. |
-| **OLED & Burn-in** | Hiển thị nhầm `mm` thay vì `mm/h`; sáng $100\%$ 24/7 | Đúng đơn vị `mm/h`; tự ngủ sau $2\text{ phút}$, thức khi bấm nút/có bão | Để trạm chạy 2 phút không tác động, kiểm tra OLED tắt/giảm sáng và tự sáng lại khi có cảnh báo. |
+| **Bảo toàn luồng giao tiếp (Zero-Regression)** | 🟢 **Đã đạt** | Giữ nguyên 100% 4 Topic, 9 trường JSON, chu kỳ `5000ms`, `setInsecure()` | Đã kiểm chứng thực tế ESP32 ➔ EMQX ➔ Backend NestJS ➔ App chạy thông mỗi `5s`. |
+| **Giới hạn tốc độ gió & An toàn ISR** | 🟢 **Đã đạt** | $\ge 50.0\text{ m/s}$ ($> 180\text{ km/h}$); 4 hàm ISR nằm trong IRAM (`0x4008xxxx`) | Test xung $100\text{ Hz}$ vào GPIO 13 ($\approx 65.3\text{ m/s}$) đồng thời ghi NVS `PUT /config`, không crash/reboot. |
+| **Độ trễ Callback MQTT & LED/Buzzer/Reboot** | 🟢 **Đã đạt** | $0\text{ ms}$ (Non-blocking); LED Active-LOW Toggle chuẩn với App (`arg:"1"`) | Đã kiểm chứng thực tế `buzzer`, `led`, `reboot` từ Flutter App mượt mà. |
+| **Partial Config NVS & 5 Ngưỡng Alert** | 🟡 **Code xong, chờ test `PUT /config`** | Cập nhật từng phần không mất ngưỡng cũ; báo đủ 5 ngưỡng | Gửi `PUT /config` chỉ gồm `{"temp_max": 41.0}` rồi `{"buzzer": false}`, kiểm tra `temp_max` vẫn là `41.0` sau reboot. |
+| **Phục hồi WiFi, WDT & I2C** | 🟢 **TWDT 30s đạt; chờ test cắt mạng** | Tự reconnect sau tắt router ($\ge 45\text{s}$); hết Race; tự reset tối đa $30\text{ s}$ | Tắt router 2 phút rồi bật lại; tháo OLED kiểm tra mạch vẫn chạy không treo. |
+| **Kalman, Nhịp đọc & Lỗi DHT11** | 🟢 **Cold-start đạt; chờ test rút DHT** | Bám giá trị đầu ngay; đọc đều mỗi $2.5\text{ s}$; báo `ERR` sau $15\text{ s}$ | Đã thấy `23.7°C` ngay gói đầu; rút dây GPIO 26 thấy OLED báo `ERR` và Backend vẫn nhận đều `wind`/`rain`. |
+| **Chu kỳ Gió giật & Mưa (Giai đoạn 2)** | 🔴 **Chờ Giai đoạn 2** | Wind Gust cửa sổ trượt $10\text{ phút}$; `rain_rate` phản ứng theo xung; giữ nguyên key `rain_total` | Tạo gió mạnh rồi ngưng 10 phút kiểm tra `wind_max` tự hạ; gạt gàu mưa thấy `rain_rate` nhảy ngay và tự về `0` khi tạnh. |
+| **Thao tác nút bấm cứng (Giai đoạn 2)** | 🔴 **Chờ Giai đoạn 2** | Chuyển trang OLED (`SET` GPIO 32); Snooze còi (`UP`/`DOWN` nếu có pull-up ngoài) | Xác minh điện trở kéo ngoài cho GPIO 34/35 trước khi bật; bấm `SET` chuyển trang OLED mượt mà. |
+| **OLED & Burn-in (Giai đoạn 3)** | 🔴 **Chờ Giai đoạn 3** | Đúng đơn vị `mm/h`; 3 trang OLED; tự ngủ sau $2\text{ phút}$, thức khi bấm nút/có bão | Để trạm chạy 2 phút không tác động, kiểm tra OLED tắt/giảm sáng và tự sáng lại khi có cảnh báo. |
 
 ---
 *Tài liệu này là bản đặc tả phân tích kỹ thuật cập nhật theo hiện trạng thực tế ngày 11/11/2026 của toàn bộ Monorepo `IoT-project`.*
