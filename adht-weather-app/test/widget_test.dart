@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:weather_monitoring/core/utils/weather_unit_helper.dart';
 import 'package:weather_monitoring/data/mock/mock_weather_data.dart';
+import 'package:weather_monitoring/data/repositories/mock_weather_repository.dart';
 import 'package:weather_monitoring/main.dart';
+import 'package:weather_monitoring/providers/weather_dashboard_provider.dart';
 import 'package:weather_monitoring/views/screens/history_7d_screen.dart';
 import 'package:weather_monitoring/views/screens/intra_day_detail_screen.dart';
 
@@ -39,8 +41,11 @@ void main() {
   group('Widget Navigation & Render Tests', () {
     testWidgets('App renders correctly with dashboard and header actions', (WidgetTester tester) async {
       await tester.pumpWidget(
-        const ProviderScope(
-          child: WeatherMonitoringApp(),
+        ProviderScope(
+          overrides: [
+            weatherRepositoryProvider.overrideWithValue(MockWeatherRepository()),
+          ],
+          child: const WeatherMonitoringApp(),
         ),
       );
 
@@ -56,8 +61,11 @@ void main() {
 
     testWidgets('History7dScreen renders "Lịch sử các ngày" and concise temperature metric', (WidgetTester tester) async {
       await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(
+        ProviderScope(
+          overrides: [
+            weatherRepositoryProvider.overrideWithValue(MockWeatherRepository()),
+          ],
+          child: const MaterialApp(
             home: History7dScreen(),
           ),
         ),
@@ -75,8 +83,11 @@ void main() {
 
     testWidgets('IntraDayDetailScreen renders interval chips and "Bản ghi gần nhất"', (WidgetTester tester) async {
       await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(
+        ProviderScope(
+          overrides: [
+            weatherRepositoryProvider.overrideWithValue(MockWeatherRepository()),
+          ],
+          child: const MaterialApp(
             home: IntraDayDetailScreen(),
           ),
         ),

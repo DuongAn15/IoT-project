@@ -160,21 +160,25 @@ class History7dScreen extends ConsumerWidget {
             separatorBuilder: (_, _) => const Divider(),
             itemBuilder: (context, index) {
               final summary = summaries[summaries.length - 1 - index]; // Mới nhất lên đầu
-              final isToday = summary.dayOfWeek == 'Hôm nay';
+              final now = DateTime.now();
+              final isToday = summary.date.year == now.year &&
+                  summary.date.month == now.month &&
+                  summary.date.day == now.day;
+              final shortDateStr = DateTimeFormatter.formatShortDate(summary.date);
 
               return Padding(
                 padding: const EdgeInsets.all(AppDimensions.spaceMd),
                 child: Row(
                   children: [
-                    // Day of week & date
+                    // Ngày tháng cụ thể dd/MM (ví dụ 05/11)
                     SizedBox(
-                      width: 72,
+                      width: 76,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            summary.dayOfWeek,
-                            style: theme.textTheme.titleSmall?.copyWith(
+                            shortDateStr,
+                            style: theme.textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.w700,
                               color: isToday
                                   ? (isDark ? AppColors.primaryDark : AppColors.primaryLight)
@@ -183,50 +187,65 @@ class History7dScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            DateTimeFormatter.formatShortDate(summary.date),
-                            style: theme.textTheme.labelSmall,
+                            isToday ? 'Hôm nay' : '${summary.date.year}',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: isToday
+                                  ? (isDark ? AppColors.primaryDark : AppColors.primaryLight)
+                                  : (isDark ? AppColors.textMutedDark : AppColors.textMutedLight),
+                              fontWeight: isToday ? FontWeight.w600 : FontWeight.normal,
+                            ),
                           ),
                         ],
                       ),
                     ),
 
-                    // Metrics breakdown
+                    // Metrics breakdown (Hiển thị None nếu ngày không có dữ liệu)
                     Expanded(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          // Temp
-                          _buildColumnMetric(
-                            theme: theme,
-                            label: 'Nhiệt độ TB',
-                            value: '${summary.avgTemperature.toStringAsFixed(1)}°C',
-                          ),
+                      child: summary.hasData
+                          ? Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              children: [
+                                // Temp
+                                _buildColumnMetric(
+                                  theme: theme,
+                                  label: 'Nhiệt độ TB',
+                                  value: '${summary.avgTemperature.toStringAsFixed(1)}°C',
+                                ),
 
-                          // Humidity
-                          _buildColumnMetric(
-                            theme: theme,
-                            label: 'Độ ẩm TB',
-                            value: '${summary.avgHumidity.toStringAsFixed(0)}%',
-                          ),
+                                // Humidity
+                                _buildColumnMetric(
+                                  theme: theme,
+                                  label: 'Độ ẩm TB',
+                                  value: '${summary.avgHumidity.toStringAsFixed(0)}%',
+                                ),
 
-                          // Rainfall
-                          _buildColumnMetric(
-                            theme: theme,
-                            label: 'Mưa',
-                            value: summary.totalRainfall > 0
-                                ? '${summary.totalRainfall.toStringAsFixed(1)} mm'
-                                : '0 mm',
-                            valueColor: summary.totalRainfall > 0 ? AppColors.rainfall : null,
-                          ),
+                                // Rainfall
+                                _buildColumnMetric(
+                                  theme: theme,
+                                  label: 'Mưa',
+                                  value: summary.totalRainfall > 0
+                                      ? '${summary.totalRainfall.toStringAsFixed(1)} mm'
+                                      : '0 mm',
+                                  valueColor: summary.totalRainfall > 0 ? AppColors.rainfall : null,
+                                ),
 
-                          // Wind
-                          _buildColumnMetric(
-                            theme: theme,
-                            label: 'Gió TB',
-                            value: '${summary.avgWindSpeed.toStringAsFixed(1)} km/h',
-                          ),
-                        ],
-                      ),
+                                // Wind
+                                _buildColumnMetric(
+                                  theme: theme,
+                                  label: 'Gió TB',
+                                  value: '${summary.avgWindSpeed.toStringAsFixed(1)} km/h',
+                                ),
+                              ],
+                            )
+                          : Center(
+                              child: Text(
+                                'None (Không có dữ liệu)',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: isDark ? AppColors.textMutedDark : AppColors.textMutedLight,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
                     ),
                   ],
                 ),

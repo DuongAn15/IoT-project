@@ -8,6 +8,7 @@ class WeatherDailySummary {
   final double avgHumidity; // %
   final double totalRainfall; // mm (tổng tích lũy trong ngày)
   final double avgWindSpeed; // km/h
+  final bool hasData;
 
   const WeatherDailySummary({
     required this.date,
@@ -18,7 +19,26 @@ class WeatherDailySummary {
     required this.avgHumidity,
     required this.totalRainfall,
     required this.avgWindSpeed,
+    this.hasData = true,
   });
+
+  /// Tạo bản ghi cho ngày không có dữ liệu đo đạc (None)
+  factory WeatherDailySummary.empty({
+    required DateTime date,
+    required String dayLabel,
+  }) {
+    return WeatherDailySummary(
+      date: date,
+      dayOfWeek: dayLabel,
+      avgTemperature: 0.0,
+      minTemperature: 0.0,
+      maxTemperature: 0.0,
+      avgHumidity: 0.0,
+      totalRainfall: 0.0,
+      avgWindSpeed: 0.0,
+      hasData: false,
+    );
+  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -30,6 +50,7 @@ class WeatherDailySummary {
       'avg_humidity': avgHumidity,
       'total_rainfall': totalRainfall,
       'avg_wind_speed': avgWindSpeed,
+      'has_data': hasData,
     };
   }
 
@@ -43,6 +64,7 @@ class WeatherDailySummary {
       avgHumidity: (map['avg_humidity'] as num).toDouble(),
       totalRainfall: (map['total_rainfall'] as num).toDouble(),
       avgWindSpeed: (map['avg_wind_speed'] as num).toDouble(),
+      hasData: map['has_data'] as bool? ?? true,
     );
   }
 }

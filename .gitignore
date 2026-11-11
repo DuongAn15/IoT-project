@@ -48,3 +48,8 @@ CLAUDE.md
 # OS Files
 .DS_Store
 Thumbs.db
+
+# Postman
+.postman/
+postman/
+
