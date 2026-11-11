@@ -2,34 +2,70 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:weather_monitoring/core/utils/weather_unit_helper.dart';
-import 'package:weather_monitoring/data/mock/mock_weather_data.dart';
-import 'package:weather_monitoring/data/repositories/mock_weather_repository.dart';
+import 'package:weather_monitoring/data/models/weather_current_model.dart';
+import 'package:weather_monitoring/data/models/weather_daily_summary.dart';
+import 'package:weather_monitoring/data/models/weather_point_5m.dart';
+import 'package:weather_monitoring/data/repositories/weather_repository.dart';
 import 'package:weather_monitoring/main.dart';
 import 'package:weather_monitoring/providers/weather_dashboard_provider.dart';
 import 'package:weather_monitoring/views/screens/history_7d_screen.dart';
 import 'package:weather_monitoring/views/screens/intra_day_detail_screen.dart';
 
+/// Fake repository dùng riêng cho việc cô lập môi trường Widget Tests
+class _TestStubWeatherRepository implements WeatherRepository {
+  @override
+  Future<WeatherCurrentModel> getCurrentWeather() async {
+    return WeatherCurrentModel(
+      stationId: 'adht_weather_01',
+      stationName: 'Trạm IoT 01 - Trung Tâm',
+      timestamp: DateTime.now(),
+      temperature: 28.5,
+      humidity: 70.0,
+      rainfall: 0.0,
+      windSpeed: 10.0,
+      isOnline: true,
+    );
+  }
+
+  @override
+  Future<List<WeatherPoint5m>> getIntraDayData5m() async {
+    final now = DateTime.now();
+    return List.generate(12, (index) {
+      return WeatherPoint5m(
+        timestamp: now.subtract(Duration(minutes: (11 - index) * 5)),
+        temperature: 28.0 + (index * 0.1),
+        humidity: 65.0,
+        rainfall: 0.0,
+        windSpeed: 8.0,
+      );
+    });
+  }
+
+  @override
+  Future<List<WeatherDailySummary>> get7DaysSummary() async {
+    final now = DateTime.now();
+    return List.generate(7, (i) {
+      final date = now.subtract(Duration(days: 6 - i));
+      return WeatherDailySummary(
+        date: date,
+        dayOfWeek: '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}',
+        avgTemperature: 28.0 + (i * 0.2),
+        minTemperature: 25.0,
+        maxTemperature: 31.0,
+        avgHumidity: 70.0,
+        totalRainfall: 0.0,
+        avgWindSpeed: 10.0,
+        hasData: true,
+      );
+    });
+  }
+
+  @override
+  Future<void> refreshAllData() async {}
+}
+
 void main() {
-  group('MockWeatherDataGenerator Tests', () {
-    test('generateIntraDay5m produces valid points from 00:00 to now', () {
-      final points = MockWeatherDataGenerator.generateIntraDay5m();
-      expect(points, isNotEmpty);
-      expect(points.first.minutesFromMidnight, equals(0)); // Start at 00:00
-      expect(points.last.minutesFromMidnight, greaterThanOrEqualTo(0));
-      for (final p in points) {
-        expect(p.temperature, inInclusiveRange(10.0, 45.0));
-        expect(p.humidity, inInclusiveRange(0.0, 100.0));
-        expect(p.windSpeed, greaterThanOrEqualTo(0.0));
-        expect(p.rainfall, greaterThanOrEqualTo(0.0));
-      }
-    });
-
-    test('generate7DaysSummary generates exactly 7 items', () {
-      final summaries = MockWeatherDataGenerator.generate7DaysSummary();
-      expect(summaries.length, equals(7));
-      expect(summaries.last.dayOfWeek, equals('Hôm nay'));
-    });
-
+  group('WeatherUnitHelper Tests', () {
     test('WeatherUnitHelper qualitative assessments return valid strings', () {
       expect(WeatherUnitHelper.getTemperatureAssessment(28.0), contains('Ấm áp'));
       expect(WeatherUnitHelper.getHumidityAssessment(65.0), equals('Dễ chịu'));
@@ -43,13 +79,12 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            weatherRepositoryProvider.overrideWithValue(MockWeatherRepository()),
+            weatherRepositoryProvider.overrideWithValue(_TestStubWeatherRepository()),
           ],
           child: const WeatherMonitoringApp(),
         ),
       );
 
-      // Wait for mock delay and shimmer
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
@@ -63,7 +98,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            weatherRepositoryProvider.overrideWithValue(MockWeatherRepository()),
+            weatherRepositoryProvider.overrideWithValue(_TestStubWeatherRepository()),
           ],
           child: const MaterialApp(
             home: History7dScreen(),
@@ -71,7 +106,6 @@ void main() {
         ),
       );
 
-      // Wait for mock delay
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
@@ -85,7 +119,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            weatherRepositoryProvider.overrideWithValue(MockWeatherRepository()),
+            weatherRepositoryProvider.overrideWithValue(_TestStubWeatherRepository()),
           ],
           child: const MaterialApp(
             home: IntraDayDetailScreen(),
@@ -93,11 +127,10 @@ void main() {
         ),
       );
 
-      // Wait for mock delay
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      // Verify interval chips exist (15 phút, 30 phút, 1 tiếng; không có 5 phút hay chữ bước đo)
+      // Verify interval chips exist (15 phút, 30 phút, 1 tiếng)
       expect(find.text('15 phút'), findsOneWidget);
       expect(find.text('30 phút'), findsOneWidget);
       expect(find.text('1 tiếng'), findsOneWidget);
