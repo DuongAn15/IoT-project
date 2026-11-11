@@ -6,6 +6,47 @@ abstract class DateTimeFormatter {
   static final DateFormat _dateFormat = DateFormat('dd/MM/yyyy');
   static final DateFormat _shortDateFormat = DateFormat('dd/MM');
 
+  /// Độ lệch múi giờ Việt Nam (UTC+7 / GMT+7)
+  static const Duration vietnamTimezoneOffset = Duration(hours: 7);
+
+  /// Thời điểm hiện tại theo giờ Việt Nam GMT+7
+  static DateTime currentGmt7Time() {
+    return DateTime.now().toUtc().add(vietnamTimezoneOffset);
+  }
+
+  /// Chuyển đổi một giá trị thời gian UTC (GMT+0) từ backend sang DateTime GMT+7 (giờ Việt Nam)
+  static DateTime parseUtcToGmt7(dynamic rawTime) {
+    if (rawTime == null) return currentGmt7Time();
+    if (rawTime is DateTime) {
+      final utc = rawTime.isUtc ? rawTime : rawTime.toUtc();
+      return utc.add(vietnamTimezoneOffset);
+    }
+    if (rawTime is int) {
+      final utc = DateTime.fromMillisecondsSinceEpoch(rawTime, isUtc: true);
+      return utc.add(vietnamTimezoneOffset);
+    }
+
+    String timeStr = rawTime.toString().trim();
+    if (timeStr.isEmpty) return currentGmt7Time();
+
+    // Chuẩn hóa định dạng: Thay khoảng trắng bằng 'T'
+    timeStr = timeStr.replaceFirst(' ', 'T');
+
+    // Nếu chưa có đuôi múi giờ (Z hoặc offset), ép hiểu là UTC (GMT+0)
+    final hasTimezone = timeStr.endsWith('Z') ||
+        RegExp(r'[+-]\d{2}:?\d{2}$').hasMatch(timeStr);
+    if (!hasTimezone) {
+      timeStr = '${timeStr}Z';
+    }
+
+    try {
+      final utc = DateTime.parse(timeStr).toUtc();
+      return utc.add(vietnamTimezoneOffset);
+    } catch (_) {
+      return currentGmt7Time();
+    }
+  }
+
   /// Định dạng giờ phút (ví dụ: "14:25")
   static String formatTime(DateTime dateTime) {
     return _timeFormat.format(dateTime);

@@ -84,6 +84,9 @@ class AppWeatherRepository implements WeatherRepository {
 
   @override
   Future<List<WeatherPoint5m>> getIntraDayData5m() async {
+    // Mốc thời gian hiện tại chuẩn hóa theo GMT+7
+    final nowGmt7 = DateTimeFormatter.currentGmt7Time();
+
     try {
       final response = await apiService.fetchHistory(
         deviceId: currentDeviceId,
@@ -99,23 +102,36 @@ class AppWeatherRepository implements WeatherRepository {
           .toList();
 
       if (records.isNotEmpty) {
-        // Lưu cache vào SQLite
+        // Lưu toàn bộ bản ghi vào SQLite để làm giàu kho dữ liệu 7 ngày
         await dao.insertBatch(records);
-        return records.map((r) => r.toWeatherPoint5m()).toList();
+        await dao.purgeFutureRecords();
+
+        // Chỉ lọc các điểm từ 00:00 sáng hôm nay đến hiện tại cho biểu đồ trong ngày
+        final todayRecords = records.where((r) {
+          final d = r.recordedAt;
+          return d.year == nowGmt7.year &&
+                 d.month == nowGmt7.month &&
+                 d.day == nowGmt7.day;
+        }).toList();
+        todayRecords.sort((a, b) => a.recordedAt.compareTo(b.recordedAt));
+
+        return todayRecords.map((r) => r.toWeatherPoint5m()).toList();
       }
     } catch (e) {
       dev.log('Lỗi fetchHistory 24h, đọc từ SQLite: $e');
     }
 
-    // Đọc từ SQLite các điểm trong 24 giờ qua
-    final cutoff = DateTime.now()
-        .subtract(const Duration(hours: 24))
-        .millisecondsSinceEpoch;
+    // Đọc từ SQLite các điểm đo từ 00:00 sáng hôm nay
     final all = await dao.getAllRecords(deviceId: currentDeviceId);
-    final in24h = all.where((r) => r.timestamp >= cutoff).toList();
-    in24h.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    final todayRecords = all.where((r) {
+      final d = r.recordedAt;
+      return d.year == nowGmt7.year &&
+             d.month == nowGmt7.month &&
+             d.day == nowGmt7.day;
+    }).toList();
+    todayRecords.sort((a, b) => a.recordedAt.compareTo(b.recordedAt));
 
-    return in24h.map((r) => r.toWeatherPoint5m()).toList();
+    return todayRecords.map((r) => r.toWeatherPoint5m()).toList();
   }
 
   @override
@@ -153,7 +169,7 @@ class AppWeatherRepository implements WeatherRepository {
     List<WeatherMonitoringRecord> records, {
     DateTime? referenceDate,
   }) {
-    final now = referenceDate ?? DateTime.now();
+    final now = referenceDate ?? DateTimeFormatter.currentGmt7Time();
     final today = DateTime(now.year, now.month, now.day);
 
     // 1. Gom nhóm các bản ghi theo ngày dạng 'YYYY-MM-DD'

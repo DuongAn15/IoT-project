@@ -54,9 +54,10 @@ class IntraDayDetailScreen extends ConsumerWidget {
         ),
         data: (state) {
           final points = state.intraDayPoints;
-          final filteredPoints = points
-              .where((p) => p.minutesFromMidnight % selectedInterval.minutes == 0)
-              .toList();
+          final filteredPoints = WeatherPoint5m.sampleByInterval(
+            points,
+            selectedInterval.minutes,
+          );
 
           return CustomPullRefresh(
             onRefresh: () => ref.read(weatherDashboardProvider.notifier).refresh(),

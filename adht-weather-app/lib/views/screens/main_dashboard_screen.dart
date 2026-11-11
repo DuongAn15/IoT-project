@@ -4,6 +4,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_dimensions.dart';
 import '../../core/utils/date_time_formatter.dart';
 import '../../core/utils/weather_unit_helper.dart';
+import '../../data/models/weather_point_5m.dart';
 import '../../providers/history_7d_provider.dart';
 import '../../providers/intra_day_provider.dart';
 import '../../providers/theme_mode_provider.dart';
@@ -63,12 +64,9 @@ class MainDashboardScreen extends ConsumerWidget {
                   .reduce((a, b) => a > b ? a : b);
             }
 
-            // Mặc định hiển thị diễn biến thời tiết hôm nay theo mốc 15 phút
-            final intraDayPoints15m = state.intraDayPoints
-                .where((p) => p.minutesFromMidnight % 15 == 0)
-                .toList();
+            // Lấy mẫu hiển thị thời tiết hôm nay theo khoảng 15 phút (hoặc giữ nguyên nếu ít điểm)
             final displayIntraDayPoints =
-                intraDayPoints15m.length >= 2 ? intraDayPoints15m : state.intraDayPoints;
+                WeatherPoint5m.sampleByInterval(state.intraDayPoints, 15);
 
             return CustomPullRefresh(
               onRefresh: () => ref.read(weatherDashboardProvider.notifier).refresh(),

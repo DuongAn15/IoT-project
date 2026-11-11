@@ -301,7 +301,7 @@ class _HeroWeatherCardState extends State<HeroWeatherCard>
                           context: context,
                           icon: WeatherMetricType.windSpeed.icon,
                           label: 'Tốc độ gió',
-                          value: '${widget.current.windSpeed.toStringAsFixed(1)} km/h',
+                          value: '${widget.current.windSpeed.toStringAsFixed(1)} m/s',
                           subText: WeatherUnitHelper.getWindAssessment(widget.current.windSpeed),
                         ),
                       ],

@@ -18,6 +18,28 @@ class WeatherPoint5m {
   /// Sử dụng làm tọa độ X trên fl_chart LineChart/BarChart
   int get minutesFromMidnight => timestamp.hour * 60 + timestamp.minute;
 
+  /// Lọc lấy mẫu danh sách điểm đo theo khoảng thời gian phút (ví dụ 15, 30, 60 phút)
+  /// Đảm bảo luôn giữ điểm cuối cùng để biểu đồ hiển thị đến thời điểm gần nhất
+  static List<WeatherPoint5m> sampleByInterval(
+    List<WeatherPoint5m> points,
+    int intervalMinutes,
+  ) {
+    if (points.length <= 2 || intervalMinutes <= 5) return points;
+    final List<WeatherPoint5m> sampled = [];
+    int? lastMinute;
+    for (final p in points) {
+      if (lastMinute == null ||
+          (p.minutesFromMidnight - lastMinute).abs() >= intervalMinutes - 2) {
+        sampled.add(p);
+        lastMinute = p.minutesFromMidnight;
+      }
+    }
+    if (points.isNotEmpty && sampled.isNotEmpty && sampled.last != points.last) {
+      sampled.add(points.last);
+    }
+    return sampled;
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'timestamp': timestamp.millisecondsSinceEpoch,

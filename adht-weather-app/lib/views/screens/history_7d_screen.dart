@@ -233,7 +233,7 @@ class History7dScreen extends ConsumerWidget {
                                 _buildColumnMetric(
                                   theme: theme,
                                   label: 'Gió TB',
-                                  value: '${summary.avgWindSpeed.toStringAsFixed(1)} km/h',
+                                  value: '${summary.avgWindSpeed.toStringAsFixed(1)} m/s',
                                 ),
                               ],
                             )

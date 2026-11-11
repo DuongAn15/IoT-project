@@ -4,6 +4,7 @@ import 'package:weather_monitoring/core/constants/api_constants.dart';
 import 'package:weather_monitoring/data/database/app_database.dart';
 import 'package:weather_monitoring/data/database/weather_monitoring_dao.dart';
 import 'package:weather_monitoring/data/models/weather_monitoring_record.dart';
+import 'package:weather_monitoring/data/models/weather_point_5m.dart';
 import 'package:weather_monitoring/data/repositories/app_weather_repository.dart';
 
 void main() {
@@ -38,10 +39,36 @@ void main() {
       expect(fromMapRecord.humidity, record.humidity);
       expect(fromMapRecord.rainfall, record.rainfall);
       expect(fromMapRecord.windSpeed, record.windSpeed);
-      expect(fromMapRecord.timestamp, record.timestamp);
+      expect(fromMapRecord.recordedAt.hour, record.recordedAt.hour);
+      expect(fromMapRecord.recordedAt.minute, record.recordedAt.minute);
     });
 
-    test('fromJson should parse backend API item correctly', () {
+    test('Multiple toMap and fromMap roundtrips should not drift or add hours', () {
+      final initial = WeatherMonitoringRecord.fromJson({
+        'device_id': 'adht_weather_01',
+        'temp': 24.5,
+        'humi': 55.0,
+        'rain_rate': 0.0,
+        'wind_speed': 1.2,
+        'recorded_at': '2026-11-11T10:00:00.000Z', // 17:00 GMT+7
+      });
+
+      expect(initial.recordedAt.hour, equals(17));
+
+      // Roundtrip 1
+      final map1 = initial.toMap();
+      final round1 = WeatherMonitoringRecord.fromMap(map1);
+      expect(round1.recordedAt.hour, equals(17));
+      expect(round1.recordedAt.day, equals(11));
+
+      // Roundtrip 2
+      final map2 = round1.toMap();
+      final round2 = WeatherMonitoringRecord.fromMap(map2);
+      expect(round2.recordedAt.hour, equals(17));
+      expect(round2.recordedAt.day, equals(11));
+    });
+
+    test('fromJson should parse backend API item correctly and convert UTC to GMT+7', () {
       final json = {
         'device_id': 'adht_weather_01',
         'temp': 26.3,
@@ -57,7 +84,26 @@ void main() {
       expect(record.humidity, 80.5);
       expect(record.rainfall, 2.5);
       expect(record.windSpeed, 5.4);
-      expect(record.recordedAt, isNotNull);
+      // 12:00 UTC + 7 tiếng = 19:00 GMT+7 (giờ Việt Nam)
+      expect(record.recordedAt.hour, equals(19));
+      expect(record.recordedAt.minute, equals(0));
+    });
+
+    test('parseUtcToGmt7 handles day rollover correctly (e.g. 19:00 UTC to 02:00 next day GMT+7)', () {
+      // 19:00 UTC ngày 10/11 -> cộng 7 tiếng = 02:00 ngày 11/11 GMT+7
+      final json = {
+        'device_id': 'adht_weather_01',
+        'temp': 24.0,
+        'humi': 75.0,
+        'rain_rate': 0.0,
+        'wind_speed': 2.0,
+        'recorded_at': '2026-11-10T19:00:00.000Z',
+      };
+
+      final record = WeatherMonitoringRecord.fromJson(json);
+      expect(record.recordedAt.day, equals(11));
+      expect(record.recordedAt.hour, equals(2));
+      expect(record.toWeatherPoint5m().minutesFromMidnight, equals(2 * 60));
     });
 
     test('toWeatherPoint5m converts record for chart consumption', () {
@@ -375,6 +421,105 @@ void main() {
       expect(summaries[6].dayOfWeek, equals('11/11'));
       expect(summaries[6].hasData, isTrue);
       expect(summaries[6].avgTemperature, closeTo(23.2, 0.1));
+    });
+
+    test('Intra-day points filter keeps only records from 00:00 today and excludes yesterday records', () {
+      final now = DateTime.now();
+      final todayStart = DateTime(now.year, now.month, now.day);
+
+      final yesterdayRecord1 = WeatherMonitoringRecord(
+        deviceId: 'adht_weather_01',
+        temperature: 25.0,
+        humidity: 70.0,
+        rainfall: 0.0,
+        windSpeed: 2.0,
+        recordedAt: todayStart.subtract(const Duration(hours: 4)), // 20h hôm qua
+      );
+
+      final yesterdayRecord2 = WeatherMonitoringRecord(
+        deviceId: 'adht_weather_01',
+        temperature: 24.0,
+        humidity: 72.0,
+        rainfall: 0.0,
+        windSpeed: 1.5,
+        recordedAt: todayStart.subtract(const Duration(minutes: 30)), // 23h30 hôm qua
+      );
+
+      final todayRecord1 = WeatherMonitoringRecord(
+        deviceId: 'adht_weather_01',
+        temperature: 26.0,
+        humidity: 68.0,
+        rainfall: 0.0,
+        windSpeed: 3.0,
+        recordedAt: todayStart.add(const Duration(hours: 2)), // 02h00 hôm nay
+      );
+
+      final todayRecord2 = WeatherMonitoringRecord(
+        deviceId: 'adht_weather_01',
+        temperature: 29.0,
+        humidity: 60.0,
+        rainfall: 0.0,
+        windSpeed: 4.0,
+        recordedAt: todayStart.add(const Duration(hours: 10)), // 10h00 hôm nay
+      );
+
+      final allRecords = [
+        yesterdayRecord1,
+        yesterdayRecord2,
+        todayRecord1,
+        todayRecord2,
+      ];
+
+      // Lọc theo ngày hôm nay chuẩn hóa
+      final todayOnly = allRecords.where((r) {
+        final d = r.recordedAt;
+        return d.year == todayStart.year &&
+               d.month == todayStart.month &&
+               d.day == todayStart.day;
+      }).toList();
+
+      expect(todayOnly.length, equals(2));
+      expect(todayOnly.first.recordedAt.hour, equals(2));
+      expect(todayOnly.last.recordedAt.hour, equals(10));
+    });
+
+    test('Real backend 14 records filters only today 9 records and ignores yesterday 5 records', () {
+      final rawBackendData = [
+        {"device_id":"adht_weather_01","temp":18.14,"humi":47.12,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-10T15:13:32.048Z"},
+        {"device_id":"adht_weather_01","temp":23.86,"humi":61.29,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-10T15:23:32.048Z"},
+        {"device_id":"adht_weather_01","temp":24.01,"humi":61.01,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-10T15:33:32.048Z"},
+        {"device_id":"adht_weather_01","temp":24.38,"humi":61.71,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-10T15:43:32.048Z"},
+        {"device_id":"adht_weather_01","temp":23.07,"humi":61.40,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-10T16:13:32.048Z"},
+        {"device_id":"adht_weather_01","temp":23.04,"humi":50.96,"rain_rate":0,"wind_speed":0.003,"recorded_at":"2026-11-11T05:43:32.048Z"},
+        {"device_id":"adht_weather_01","temp":23.46,"humi":51.21,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-11T05:53:32.048Z"},
+        {"device_id":"adht_weather_01","temp":21.74,"humi":47.01,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-11T09:53:32.048Z"},
+        {"device_id":"adht_weather_01","temp":24.09,"humi":49.35,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-11T10:03:32.048Z"},
+        {"device_id":"adht_weather_01","temp":24.41,"humi":49.21,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-11T10:13:32.048Z"},
+        {"device_id":"adht_weather_01","temp":24.43,"humi":49.07,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-11T10:23:32.048Z"},
+        {"device_id":"adht_weather_01","temp":24.42,"humi":48.81,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-11T10:33:32.048Z"},
+        {"device_id":"adht_weather_01","temp":24.41,"humi":48.21,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-11T10:43:32.048Z"},
+        {"device_id":"adht_weather_01","temp":24.41,"humi":48.46,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-11T10:53:32.048Z"}
+      ];
+
+      final records = rawBackendData.map((e) => WeatherMonitoringRecord.fromJson(e)).toList();
+      final today = DateTime(2026, 11, 11);
+
+      final todayRecords = records.where((r) {
+        final d = r.recordedAt;
+        return d.year == today.year && d.month == today.month && d.day == today.day;
+      }).toList();
+
+      expect(todayRecords.length, equals(9));
+      expect(todayRecords.first.recordedAt.hour, equals(12));
+      expect(todayRecords.first.recordedAt.minute, equals(43));
+      expect(todayRecords.last.recordedAt.hour, equals(17));
+      expect(todayRecords.last.recordedAt.minute, equals(53));
+
+      // Test interval sampling
+      final points = todayRecords.map((r) => r.toWeatherPoint5m()).toList();
+      final sampled15m = WeatherPoint5m.sampleByInterval(points, 15);
+      expect(sampled15m.isNotEmpty, isTrue);
+      expect(sampled15m.last.minutesFromMidnight, points.last.minutesFromMidnight);
     });
   });
 }

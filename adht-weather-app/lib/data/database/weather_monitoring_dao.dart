@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import '../../core/constants/api_constants.dart';
+import '../../core/utils/date_time_formatter.dart';
 import '../models/weather_monitoring_record.dart';
 import 'app_database.dart';
 
@@ -46,7 +47,7 @@ class WeatherMonitoringDao {
     String deviceId = ApiConstants.defaultStationId,
   }) async {
     final db = await _appDatabase.database;
-    final cutoffTimestamp = DateTime.now()
+    final cutoffTimestamp = DateTimeFormatter.currentGmt7Time()
         .subtract(const Duration(days: ApiConstants.cacheRetentionDays))
         .millisecondsSinceEpoch;
 
@@ -74,7 +75,7 @@ class WeatherMonitoringDao {
   }) async {
     final db = await _appDatabase.database;
     final cutoffTimestamp =
-        DateTime.now().subtract(duration).millisecondsSinceEpoch;
+        DateTimeFormatter.currentGmt7Time().subtract(duration).millisecondsSinceEpoch;
 
     final deletedCount = await db.delete(
       _tableName,
@@ -85,6 +86,19 @@ class WeatherMonitoringDao {
     return deletedCount;
   }
 
+  /// Xóa các bản ghi có timestamp trong tương lai (đề phòng sai lệch dữ liệu cũ)
+  Future<int> purgeFutureRecords() async {
+    final db = await _appDatabase.database;
+    final nowGmt7Epoch =
+        DateTimeFormatter.currentGmt7Time().millisecondsSinceEpoch;
+    // Cho phép dung sai 10 phút trôi đồng hồ
+    return await db.delete(
+      _tableName,
+      where: 'timestamp > ?',
+      whereArgs: [nowGmt7Epoch + 600000],
+    );
+  }
+
   /// Đồng bộ lưu danh sách bản ghi mới và tự động thực thi dọn dẹp các bản ghi quá 7 ngày
   Future<void> saveHistoryAndCleanup(
     List<WeatherMonitoringRecord> records,
@@ -93,6 +107,7 @@ class WeatherMonitoringDao {
       await insertBatch(records);
     }
     await autoDeleteOlderThan7Days();
+    await purgeFutureRecords();
   }
 
   /// Lấy bản ghi mới nhất của trạm

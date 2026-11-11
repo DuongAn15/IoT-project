@@ -1,3 +1,4 @@
+import '../../core/utils/date_time_formatter.dart';
 import 'weather_point_5m.dart';
 
 /// Đại diện cho một bản ghi quan trắc lưu trong bảng SQLite `weather_monitoring`
@@ -31,23 +32,27 @@ class WeatherMonitoringRecord {
       'humidity': humidity,
       'rainfall': rainfall,
       'wind_speed': windSpeed,
-      'recorded_at': recordedAt.toUtc().toIso8601String(),
+      'recorded_at': recordedAt.toIso8601String(),
       'timestamp': timestamp,
     };
   }
 
-  /// Khởi tạo từ Map đọc từ SQLite
+  /// Khởi tạo từ Map đọc từ SQLite (recorded_at trong SQLite đã là chuỗi ISO chuẩn GMT+7)
   factory WeatherMonitoringRecord.fromMap(Map<String, dynamic> map) {
     final recordedAtRaw = map['recorded_at'];
     final tsRaw = map['timestamp'] as int?;
 
     DateTime parsedDate;
-    if (recordedAtRaw is String) {
-      parsedDate = DateTime.parse(recordedAtRaw).toLocal();
+    if (recordedAtRaw != null) {
+      try {
+        parsedDate = DateTime.parse(recordedAtRaw.toString());
+      } catch (_) {
+        parsedDate = DateTimeFormatter.parseUtcToGmt7(recordedAtRaw);
+      }
     } else if (tsRaw != null) {
-      parsedDate = DateTime.fromMillisecondsSinceEpoch(tsRaw);
+      parsedDate = DateTime.fromMillisecondsSinceEpoch(tsRaw, isUtc: true);
     } else {
-      parsedDate = DateTime.now();
+      parsedDate = DateTimeFormatter.currentGmt7Time();
     }
 
     return WeatherMonitoringRecord(
@@ -63,14 +68,12 @@ class WeatherMonitoringRecord {
   }
 
   /// Khởi tạo từ phần tử JSON của Backend API (`/api/weather/history` hoặc `/api/weather/latest`)
+  /// Dữ liệu Backend là UTC (GMT+0) -> tự động chuẩn hóa sang GMT+7 (giờ Việt Nam)
   factory WeatherMonitoringRecord.fromJson(
     Map<String, dynamic> json, {
     String defaultDeviceId = 'adht_weather_01',
   }) {
-    final recordedAtStr = json['recorded_at'] as String?;
-    final date = recordedAtStr != null
-        ? DateTime.parse(recordedAtStr).toLocal()
-        : DateTime.now();
+    final date = DateTimeFormatter.parseUtcToGmt7(json['recorded_at']);
 
     return WeatherMonitoringRecord(
       deviceId: json['device_id'] as String? ?? defaultDeviceId,
