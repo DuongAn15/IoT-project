@@ -25,6 +25,9 @@ bool manualLedState = false;
 bool pendingReboot = false;
 uint32_t pendingRebootRequestedMs = 0;
 
+// Alarm Snooze (activated via SET button long-press or remote command)
+uint32_t alarmSnoozedUntilMs = 0;
+
 // Task handles
 TaskHandle_t taskSensorsHandle = NULL;
 TaskHandle_t taskNetworkHandle = NULL;
@@ -209,14 +212,61 @@ void taskDisplay(void *pvParameters) {
 }
 
 // ----------------------------------------------------------------
-// TASK 4: Alert Monitor & Single Hardware GPIO Owner (Buzzer & LED) - Core 1
+// TASK 4: Alert Monitor, Hardware Buttons & Single GPIO Owner - Core 1
 // ----------------------------------------------------------------
 void taskAlert(void *pvParameters) {
     bool alarmPulseOn = false;
     uint32_t lastPulseToggleMs = millis();
 
+    // Button SET debounce state variables
+    int lastRawSetPin = HIGH;
+    uint32_t setPressStartMs = 0;
+    bool setLongPressHandled = false;
+
     while (1) {
         uint32_t now = millis();
+
+        // 1. Scan Hardware Button SET (GPIO 32, Active-LOW with internal INPUT_PULLUP)
+        int rawSet = digitalRead(PIN_BTN_SET);
+        if (rawSet == LOW) {
+            if (lastRawSetPin == HIGH) {
+                // Button just pressed down
+                setPressStartMs = now;
+                setLongPressHandled = false;
+                oledMgr.wakeScreen();
+            } else if (!setLongPressHandled && static_cast<uint32_t>(now - setPressStartMs) >= BTN_LONG_PRESS_MS) {
+                // Long press threshold reached (2 seconds) -> Snooze alarm buzzer for 5 minutes
+                setLongPressHandled = true;
+                alarmSnoozedUntilMs = now + ALARM_SNOOZE_DURATION_MS;
+
+                // Beep 100ms to acknowledge snooze
+                portENTER_CRITICAL(&stateMux);
+                manualBuzzerActive = true;
+                manualBuzzerStartMs = now;
+                manualBuzzerDurationMs = 100;
+                portEXIT_CRITICAL(&stateMux);
+
+                Serial.println("[BUTTON] SET Long-press: Alarm buzzer snoozed for 5 minutes!");
+            }
+        } else {
+            if (lastRawSetPin == LOW) {
+                // Button just released
+                if (!setLongPressHandled && static_cast<uint32_t>(now - setPressStartMs) >= BTN_DEBOUNCE_MS) {
+                    // Valid short press: Cycle OLED display page
+                    oledMgr.wakeScreen();
+                    oledMgr.nextPage();
+                    Serial.printf("[BUTTON] SET Short-press: Switched to OLED Page %u\n", oledMgr.getPage() + 1);
+                }
+            }
+        }
+        lastRawSetPin = rawSet;
+
+#if ENABLE_EXTERNAL_BUTTONS_UP_DOWN
+        // Optional external UP / DOWN button logic (only active when board has verified pull-ups)
+        // PIN_BTN_UP (GPIO 35) & PIN_BTN_DOWN (GPIO 34)
+#endif
+
+        // 2. Alert Monitoring & Threshold Checking
         WeatherData weather = sensorMgr.getData();
 
         SystemConfig cfg;
@@ -285,7 +335,9 @@ void taskAlert(void *pvParameters) {
             lastPulseToggleMs = now;
         }
 
-        bool buzzerOut = buzzerManualOn || (triggerAlarm && cfg.buzzer_enabled && alarmPulseOn);
+        // Alarm Snooze check: suppress buzzer while snoozed
+        bool isAlarmSnoozed = (now < alarmSnoozedUntilMs);
+        bool buzzerOut = buzzerManualOn || (triggerAlarm && cfg.buzzer_enabled && alarmPulseOn && !isAlarmSnoozed);
         bool ledOut = triggerAlarm ? alarmPulseOn : (ledOverride ? ledManualState : false);
 
         digitalWrite(PIN_BUZZER, buzzerOut ? HIGH : LOW);
@@ -305,13 +357,22 @@ void setup() {
     Serial.println("  MQTT + GATEWAY + FREERTOS      ");
     Serial.println("=================================");
 
-    // 1. Initialize GPIO pins (LED Active-LOW, Buzzer Active-HIGH)
+    // 1. Initialize GPIO pins (LED Active-LOW, Buzzer Active-HIGH, Button SET with INPUT_PULLUP)
     digitalWrite(PIN_LED, LED_OFF_LEVEL);
     digitalWrite(PIN_BUZZER, LOW);
     pinMode(PIN_LED, OUTPUT);
     pinMode(PIN_BUZZER, OUTPUT);
     digitalWrite(PIN_LED, LED_OFF_LEVEL);
     digitalWrite(PIN_BUZZER, LOW);
+
+    // Button SET uses internal pull-up (safe on GPIO 32)
+    pinMode(PIN_BTN_SET, INPUT_PULLUP);
+
+#if ENABLE_EXTERNAL_BUTTONS_UP_DOWN
+    // GPIO 34 & 35 do NOT have internal pull-ups on ESP32; require external pull-up resistors
+    pinMode(PIN_BTN_UP, INPUT);
+    pinMode(PIN_BTN_DOWN, INPUT);
+#endif
 
     // 2. Initialize OLED
     oledMgr.begin();

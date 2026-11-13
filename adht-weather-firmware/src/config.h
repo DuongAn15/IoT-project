@@ -87,4 +87,15 @@
 #define WDT_TIMEOUT_MS           30000    // 30s Task Watchdog Timer
 #define WIFI_FORCE_RECONNECT_MS  45000    // 45s mất WiFi liên tục mới ép reconnect lại
 
+// Rain & Wind calculation parameters
+#define RAIN_TIMEOUT_SEC         180      // 3 phút không có xung -> rain_rate tự về 0.0 mm/h
+#define WIND_GUST_WINDOW_SAMPLES 120      // Cửa sổ trượt 10 phút: 120 mẫu x 5s = 600s
+
+// Button & Screen parameters
+#define ENABLE_EXTERNAL_BUTTONS_UP_DOWN 0 // 0 = Tắt an toàn (GPIO 34/35 không có pull-up nội); 1 = Bật nếu có pull-up ngoài
+#define BTN_DEBOUNCE_MS          50       // 50ms chống rung nút bấm
+#define BTN_LONG_PRESS_MS        2000     // 2s nhấn giữ nút SET để tạm tắt còi (Snooze Alarm)
+#define ALARM_SNOOZE_DURATION_MS 300000   // 5 phút tạm tắt còi sau khi nhấn giữ
+#define SCREEN_SAVER_TIMEOUT_MS  120000   // 2 phút không tương tác -> tắt màn hình chống burn-in
+
 #endif // CONFIG_H

@@ -26,10 +26,15 @@ SensorManager::SensorManager()
       lastRainCalcTime(0),
       lastWindCalcTime(0),
       lastDhtReadTime(0),
-      lastValidDhtTime(0)
+      lastValidDhtTime(0),
+      windGustIndex(0),
+      windGustCount(0),
+      lastRainTipTime(0),
+      lastRainRateCalculated(0.0f)
 {
     isrMux = portMUX_INITIALIZER_UNLOCKED;
     dataMux = portMUX_INITIALIZER_UNLOCKED;
+    memset(windGustHistory, 0, sizeof(windGustHistory));
 }
 
 void SensorManager::begin() {
@@ -41,6 +46,12 @@ void SensorManager::begin() {
     // Wind circumference: C = PI * D
     float d_meters = WIND_ANEMOMETER_D_MM / 1000.0f;
     circumferenceWind = 3.14159265f * d_meters;
+
+    windGustIndex = 0;
+    windGustCount = 0;
+    memset(windGustHistory, 0, sizeof(windGustHistory));
+    lastRainTipTime = 0;
+    lastRainRateCalculated = 0.0f;
 
     pinMode(PIN_RAIN_SENSOR, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(PIN_RAIN_SENSOR), isrRainPulse, FALLING);
@@ -122,7 +133,7 @@ void SensorManager::update() {
         }
     }
 
-    // 2. Calculate Wind Speed every WIND_SAMPLE_PERIOD_SEC
+    // 2. Calculate Wind Speed every WIND_SAMPLE_PERIOD_SEC (5s)
     if (now - lastWindCalcTime >= (WIND_SAMPLE_PERIOD_SEC * 1000)) {
         float elapsedSec = (now - lastWindCalcTime) / 1000.0f;
         lastWindCalcTime = now;
@@ -136,33 +147,73 @@ void SensorManager::update() {
         // Distance = pulses * circumference; Speed = distance / time
         float speed = (pulses * circumferenceWind) / elapsedSec;
 
+        // Push into 10-minute sliding window ring buffer (120 samples x 5s = 600s)
+        windGustHistory[windGustIndex] = speed;
+        windGustIndex = (windGustIndex + 1) % WIND_GUST_WINDOW_SAMPLES;
+        if (windGustCount < WIND_GUST_WINDOW_SAMPLES) {
+            windGustCount++;
+        }
+
+        // Calculate peak gust in the 10-minute window
+        float maxGust = speed;
+        for (uint16_t i = 0; i < windGustCount; i++) {
+            if (windGustHistory[i] > maxGust) {
+                maxGust = windGustHistory[i];
+            }
+        }
+
         portENTER_CRITICAL(&dataMux);
         currentData.wind_speed = speed;
-        if (speed > currentData.wind_max) {
-            currentData.wind_max = speed;
-        }
+        currentData.wind_max = maxGust;
         portEXIT_CRITICAL(&dataMux);
     }
 
-    // 3. Calculate Rain Rate every RAIN_SAMPLE_PERIOD_SEC
-    if (now - lastRainCalcTime >= (RAIN_SAMPLE_PERIOD_SEC * 1000)) {
-        float elapsedSec = (now - lastRainCalcTime) / 1000.0f;
-        lastRainCalcTime = now;
+    // 3. Fast Rain Rate calculation (instant delta-t) & Continuous Accumulation
+    uint32_t rainPulses = 0;
+    portENTER_CRITICAL(&isrMux);
+    rainPulses = rainPulseCount;
+    rainPulseCount = 0;
+    portEXIT_CRITICAL(&isrMux);
 
-        uint32_t pulses = 0;
-        portENTER_CRITICAL(&isrMux);
-        pulses = rainPulseCount;
-        rainPulseCount = 0;
-        portEXIT_CRITICAL(&isrMux);
-
-        float mmInPeriod = pulses * mmPerPulse;
-        // Rate in mm/hour: mmInPeriod * (3600 / elapsedSec)
-        float rate = mmInPeriod * (3600.0f / elapsedSec);
+    if (rainPulses > 0) {
+        float mmAdded = rainPulses * mmPerPulse;
 
         portENTER_CRITICAL(&dataMux);
-        currentData.rain_rate = rate;
-        currentData.rain_total += mmInPeriod;
+        currentData.rain_total += mmAdded;
         portEXIT_CRITICAL(&dataMux);
+
+        if (lastRainTipTime > 0) {
+            float deltaSec = (now - lastRainTipTime) / 1000.0f;
+            if (deltaSec > 0.0f && deltaSec <= RAIN_TIMEOUT_SEC) {
+                lastRainRateCalculated = mmAdded * (3600.0f / deltaSec);
+            } else {
+                lastRainRateCalculated = mmAdded * (3600.0f / static_cast<float>(RAIN_TIMEOUT_SEC));
+            }
+        } else {
+            lastRainRateCalculated = mmAdded * (3600.0f / static_cast<float>(RAIN_TIMEOUT_SEC));
+        }
+        lastRainTipTime = now;
+
+        portENTER_CRITICAL(&dataMux);
+        currentData.rain_rate = lastRainRateCalculated;
+        portEXIT_CRITICAL(&dataMux);
+    } else if (lastRainTipTime > 0) {
+        // No pulse in this tick: apply decay or timeout
+        float idleSec = (now - lastRainTipTime) / 1000.0f;
+        if (idleSec >= RAIN_TIMEOUT_SEC) {
+            lastRainRateCalculated = 0.0f;
+            portENTER_CRITICAL(&dataMux);
+            currentData.rain_rate = 0.0f;
+            portEXIT_CRITICAL(&dataMux);
+        } else if (lastRainRateCalculated > 0.0f) {
+            float decayRate = mmPerPulse * (3600.0f / idleSec);
+            if (decayRate < lastRainRateCalculated) {
+                lastRainRateCalculated = decayRate;
+                portENTER_CRITICAL(&dataMux);
+                currentData.rain_rate = lastRainRateCalculated;
+                portEXIT_CRITICAL(&dataMux);
+            }
+        }
     }
 }
 
@@ -178,6 +229,9 @@ void SensorManager::resetRainTotal() {
     portENTER_CRITICAL(&isrMux);
     rainPulseCount = 0;
     portEXIT_CRITICAL(&isrMux);
+
+    lastRainTipTime = 0;
+    lastRainRateCalculated = 0.0f;
 
     portENTER_CRITICAL(&dataMux);
     currentData.rain_rate = 0.0f;

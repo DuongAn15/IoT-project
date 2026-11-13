@@ -291,15 +291,12 @@ flowchart TD
         A5["1.5. Seed Kalman Filter (q=0.04), DHT 2500ms & Báo lỗi OLED T:/H: ERR"]
     end
 
-    subgraph G2["GIAI ĐOẠN 2: Chuẩn Hóa Khí Tượng (millis) & Nút Bấm Phần Cứng (Tiếp Theo)"]
-        B1["2.1. Cửa sổ trượt Wind Gust 10 phút dùng millis()<br/>(Giữ nguyên key JSON wind_max cho Backend)"]
-        B2["2.2. Tính nhanh Rain Rate theo delta-t & Timeout tự về 0<br/>(Giữ nguyên rain_total theo phiên + lệnh reset_rain; không dùng NTP)"]
-        B3["2.3. Lập trình nút bấm cứng (Chống rung 50ms)<br/>(SET GPIO 32 dùng INPUT_PULLUP; UP/DOWN GPIO 34,35 chỉ bật nếu có pull-up ngoài)"]
-    end
-
-    subgraph G3["GIAI ĐOẠN 3: Nâng Cấp Giao Diện OLED & Bảo Vệ Màn Hình (Hoàn Thiện)"]
-        C1["3.1. Sửa đơn vị mm/h & Thiết kế 3 Trang OLED chuyên biệt<br/>(Tổng quan / Cực trị / Trạng thái Hệ thống)"]
-        C2["3.2. Cơ chế Chống Burn-in OLED (Screen Saver sau 2 phút)<br/>(Dùng setContrast/SH110X_DISPLAYOFF; tự sáng khi có cảnh báo)"]
+    subgraph G2["GIAI ĐOẠN 2 & 3: Chuẩn Hóa Khí Tượng, Nút Bấm SET & Giao Diện OLED 3 Trang (ĐÃ HOÀN THIỆN TRONG MÃ NGUỒN)"]
+        B1["2.1. Cửa sổ trượt Wind Gust 10 phút (120 mẫu x 5s) dùng millis()<br/>(Giữ nguyên key JSON wind_max cho Backend)"]
+        B2["2.2. Tính nhanh Rain Rate theo delta-t & Timeout 180s tự về 0<br/>(Cộng dồn tức thì rain_total theo phiên + lệnh reset_rain)"]
+        B3["2.3. Lập trình nút bấm SET GPIO 32 (INPUT_PULLUP, chống rung 50ms)<br/>(Bấm ngắn: Đổi trang OLED; Nhấn giữ 2s: Snooze còi 5 phút; GPIO 34/35 tắt an toàn)"]
+        C1["3.1. Sửa đơn vị mm/h & 3 Trang OLED chuyên biệt<br/>(1: Tổng quan / 2: Cực trị khí hậu / 3: Hệ thống & Mạng)"]
+        C2["3.2. Cơ chế Chống Burn-in OLED (Screen Saver sau 2 phút)<br/>(Tự tắt SH110X_DISPLAYOFF; tự bật lại khi bấm nút hoặc có cảnh báo)"]
     end
 
     G1 --> G2 --> G3
@@ -317,9 +314,9 @@ flowchart TD
 | **Partial Config NVS & 5 Ngưỡng Alert** | 🟡 **Code xong, chờ test `PUT /config`** | Cập nhật từng phần không mất ngưỡng cũ; báo đủ 5 ngưỡng | Gửi `PUT /config` chỉ gồm `{"temp_max": 41.0}` rồi `{"buzzer": false}`, kiểm tra `temp_max` vẫn là `41.0` sau reboot. |
 | **Phục hồi WiFi, WDT & I2C** | 🟢 **TWDT 30s đạt; chờ test cắt mạng** | Tự reconnect sau tắt router ($\ge 45\text{s}$); hết Race; tự reset tối đa $30\text{ s}$ | Tắt router 2 phút rồi bật lại; tháo OLED kiểm tra mạch vẫn chạy không treo. |
 | **Kalman, Nhịp đọc & Lỗi DHT11** | 🟢 **Cold-start đạt; chờ test rút DHT** | Bám giá trị đầu ngay; đọc đều mỗi $2.5\text{ s}$; báo `ERR` sau $15\text{ s}$ | Đã thấy `23.7°C` ngay gói đầu; rút dây GPIO 26 thấy OLED báo `ERR` và Backend vẫn nhận đều `wind`/`rain`. |
-| **Chu kỳ Gió giật & Mưa (Giai đoạn 2)** | 🔴 **Chờ Giai đoạn 2** | Wind Gust cửa sổ trượt $10\text{ phút}$; `rain_rate` phản ứng theo xung; giữ nguyên key `rain_total` | Tạo gió mạnh rồi ngưng 10 phút kiểm tra `wind_max` tự hạ; gạt gàu mưa thấy `rain_rate` nhảy ngay và tự về `0` khi tạnh. |
-| **Thao tác nút bấm cứng (Giai đoạn 2)** | 🔴 **Chờ Giai đoạn 2** | Chuyển trang OLED (`SET` GPIO 32); Snooze còi (`UP`/`DOWN` nếu có pull-up ngoài) | Xác minh điện trở kéo ngoài cho GPIO 34/35 trước khi bật; bấm `SET` chuyển trang OLED mượt mà. |
-| **OLED & Burn-in (Giai đoạn 3)** | 🔴 **Chờ Giai đoạn 3** | Đúng đơn vị `mm/h`; 3 trang OLED; tự ngủ sau $2\text{ phút}$, thức khi bấm nút/có bão | Để trạm chạy 2 phút không tác động, kiểm tra OLED tắt/giảm sáng và tự sáng lại khi có cảnh báo. |
+| **Chu kỳ Gió giật & Mưa (Giai đoạn 2)** | 🟢 **Code hoàn thành & Build OK** | Wind Gust cửa sổ trượt $10\text{ phút}$ (120 mẫu x 5s); `rain_rate` phản ứng tức thì theo $\Delta t$ với timeout 180s tự về 0; giữ nguyên key `rain_total` | Nạp phần mềm, xoay cánh gió kiểm tra `wind_max` tự hạ sau 10 phút; gạt gàu mưa kiểm tra `rain_rate` phản ứng ngay lập tức. |
+| **Thao tác nút bấm cứng (Giai đoạn 2)** | 🟢 **Code hoàn thành & Build OK** | Bấm ngắn `SET` (GPIO 32) chuyển trang OLED; Nhấn giữ 2s Snooze còi 5 phút; GPIO 34/35 tắt an toàn qua macro | Bấm nút SET kiểm tra OLED chuyển mượt 3 trang; nhấn giữ kiểm tra còi kêu bíp 100ms và tạm tắt chuông cảnh báo. |
+| **OLED & Burn-in (Giai đoạn 3)** | 🟢 **Code hoàn thành & Build OK** | Đúng đơn vị `mm/h`; 3 trang OLED rõ nét; tự tắt màn hình sau $2\text{ phút}$ (chống burn-in), tự sáng lại khi bấm nút/có cảnh báo | Để trạm 2 phút không bấm kiểm tra OLED tắt; bấm SET hoặc kích hoạt ngưỡng kiểm tra màn hình tự sáng. |
 
 ---
 *Tài liệu này là bản đặc tả phân tích kỹ thuật cập nhật theo hiện trạng thực tế ngày 11/11/2026 của toàn bộ Monorepo `IoT-project`.*

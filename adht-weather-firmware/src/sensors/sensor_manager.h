@@ -39,6 +39,15 @@ private:
     uint32_t lastDhtReadTime;
     uint32_t lastValidDhtTime;
 
+    // Wind Gust sliding window (10 minutes = 120 samples x 5 seconds)
+    float windGustHistory[WIND_GUST_WINDOW_SAMPLES];
+    uint16_t windGustIndex;
+    uint16_t windGustCount;
+
+    // Fast rain rate calculation with instant delta-t & decay
+    uint32_t lastRainTipTime;
+    float lastRainRateCalculated;
+
     WeatherData currentData;
     portMUX_TYPE dataMux;
 };
