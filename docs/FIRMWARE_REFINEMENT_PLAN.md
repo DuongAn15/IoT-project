@@ -296,7 +296,7 @@ flowchart TD
         B2["2.2. Tính nhanh Rain Rate theo delta-t & Timeout 180s tự về 0<br/>(Cộng dồn tức thì rain_total theo phiên + lệnh reset_rain)"]
         B3["2.3. Lập trình nút bấm SET GPIO 32 (INPUT_PULLUP, chống rung 50ms)<br/>(Bấm ngắn: Đổi trang OLED; Nhấn giữ 2s: Snooze còi 5 phút; GPIO 34/35 tắt an toàn)"]
         C1["3.1. Sửa đơn vị mm/h & 3 Trang OLED chuyên biệt<br/>(1: Tổng quan / 2: Cực trị khí hậu / 3: Hệ thống & Mạng)"]
-        C2["3.2. Cơ chế Chống Burn-in OLED (Screen Saver sau 2 phút)<br/>(Tự tắt SH110X_DISPLAYOFF; tự bật lại khi bấm nút hoặc có cảnh báo)"]
+        C2["3.2. Cơ chế Chống Burn-in & Tour Định Kỳ (10 phút thức 30s)<br/>(Tự lướt 3 trang mỗi 10s trong 30s; ngủ sâu sau 2 phút; thức khi bấm nút/có bão)"]
     end
 
     G1 --> G2 --> G3

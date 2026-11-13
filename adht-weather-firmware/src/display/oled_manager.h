@@ -39,6 +39,12 @@ private:
     uint8_t currentPage;
     uint32_t lastActivityMs;
     bool screenSaverActive;
+
+    // Periodic 10-minute auto-tour parameters
+    uint32_t lastPeriodicWakeMs;
+    bool isPeriodicTourActive;
+    uint32_t tourStartMs;
+    uint32_t lastPageRotateMs;
 };
 
 extern OledManager oledMgr;

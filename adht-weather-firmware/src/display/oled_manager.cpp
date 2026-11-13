@@ -9,7 +9,11 @@ OledManager::OledManager()
       lastBlinkTime(0),
       currentPage(PAGE_OVERVIEW),
       lastActivityMs(0),
-      screenSaverActive(false)
+      screenSaverActive(false),
+      lastPeriodicWakeMs(0),
+      isPeriodicTourActive(false),
+      tourStartMs(0),
+      lastPageRotateMs(0)
 {
     oledMux = portMUX_INITIALIZER_UNLOCKED;
 }
@@ -26,6 +30,8 @@ void OledManager::begin() {
     display.setTextColor(SH110X_WHITE);
     display.display();
     lastActivityMs = millis();
+    lastPeriodicWakeMs = millis();
+    isPeriodicTourActive = false;
 }
 
 void OledManager::showBootScreen(const String &statusText) {
@@ -41,11 +47,13 @@ void OledManager::showBootScreen(const String &statusText) {
     display.println(statusText);
     display.display();
     lastActivityMs = millis();
+    lastPeriodicWakeMs = millis();
 }
 
 void OledManager::wakeScreen() {
     portENTER_CRITICAL(&oledMux);
     lastActivityMs = millis();
+    isPeriodicTourActive = false; // Manual interaction cancels periodic tour
     bool needTurnOn = screenSaverActive;
     screenSaverActive = false;
     portEXIT_CRITICAL(&oledMux);
@@ -59,16 +67,28 @@ void OledManager::nextPage() {
     portENTER_CRITICAL(&oledMux);
     currentPage = (currentPage + 1) % PAGE_COUNT;
     lastActivityMs = millis();
+    isPeriodicTourActive = false; // Manual page switch cancels tour and gives full 2 min
+    bool needTurnOn = screenSaverActive;
+    screenSaverActive = false;
     portEXIT_CRITICAL(&oledMux);
-    wakeScreen();
+
+    if (needTurnOn && oledReady) {
+        display.oled_command(SH110X_DISPLAYON);
+    }
 }
 
 void OledManager::setPage(uint8_t page) {
     portENTER_CRITICAL(&oledMux);
     currentPage = page % PAGE_COUNT;
     lastActivityMs = millis();
+    isPeriodicTourActive = false;
+    bool needTurnOn = screenSaverActive;
+    screenSaverActive = false;
     portEXIT_CRITICAL(&oledMux);
-    wakeScreen();
+
+    if (needTurnOn && oledReady) {
+        display.oled_command(SH110X_DISPLAYON);
+    }
 }
 
 uint8_t OledManager::getPage() {
@@ -200,30 +220,80 @@ void OledManager::update(const WeatherData &weather, const NetworkStatus &net, c
 
     uint32_t now = millis();
 
-    // If there is an active alert condition, wake screen immediately
+    // 1. If there is an active alert condition, wake screen immediately and keep awake
     if (alertMessage != nullptr && alertMessage[0] != '\0') {
         wakeScreen();
     }
 
     portENTER_CRITICAL(&oledMux);
-    uint32_t lastAct = lastActivityMs;
     bool isOff = screenSaverActive;
+    bool isTour = isPeriodicTourActive;
+    uint32_t tourStart = tourStartMs;
+    uint32_t lastTourWake = lastPeriodicWakeMs;
+    uint32_t lastAct = lastActivityMs;
+    uint32_t lastRotate = lastPageRotateMs;
     uint8_t page = currentPage;
     portEXIT_CRITICAL(&oledMux);
 
-    // Screen saver check: auto turn off after SCREEN_SAVER_TIMEOUT_MS
-    if (!isOff && (static_cast<uint32_t>(now - lastAct) >= SCREEN_SAVER_TIMEOUT_MS)) {
-        display.oled_command(SH110X_DISPLAYOFF);
-        portENTER_CRITICAL(&oledMux);
-        screenSaverActive = true;
-        portEXIT_CRITICAL(&oledMux);
-        return;
-    }
-
+    // 2. Periodic Wakeup Check (When screen is currently asleep)
     if (isOff) {
-        return; // Don't draw while screen saver is active (saves I2C traffic & CPU)
+        if (static_cast<uint32_t>(now - lastTourWake) >= OLED_PERIODIC_WAKE_INTERVAL_MS) {
+            // 10 minutes elapsed: Wake up for 30s auto-tour!
+            display.oled_command(SH110X_DISPLAYON);
+
+            portENTER_CRITICAL(&oledMux);
+            screenSaverActive = false;
+            isPeriodicTourActive = true;
+            tourStartMs = now;
+            lastPeriodicWakeMs = now;
+            lastPageRotateMs = now;
+            currentPage = PAGE_OVERVIEW;
+            isOff = false;
+            isTour = true;
+            page = PAGE_OVERVIEW;
+            portEXIT_CRITICAL(&oledMux);
+        } else {
+            return; // Still sleeping: save I2C traffic and CPU
+        }
     }
 
+    // 3. Screen is ON: handle sleep timers and tour rotation
+    if (isTour) {
+        // Tour mode: runs for exactly 30 seconds
+        if (static_cast<uint32_t>(now - tourStart) >= OLED_PERIODIC_WAKE_DURATION_MS) {
+            // Tour finished -> turn screen back off to sleep
+            display.oled_command(SH110X_DISPLAYOFF);
+
+            portENTER_CRITICAL(&oledMux);
+            screenSaverActive = true;
+            isPeriodicTourActive = false;
+            lastPeriodicWakeMs = now; // Count 10 minutes from when screen turns off
+            portEXIT_CRITICAL(&oledMux);
+            return;
+        }
+
+        // Auto-rotate page every 10 seconds during the 30s tour (Page 1 -> Page 2 -> Page 3)
+        if (static_cast<uint32_t>(now - lastRotate) >= OLED_PAGE_ROTATE_INTERVAL_MS) {
+            portENTER_CRITICAL(&oledMux);
+            currentPage = (currentPage + 1) % PAGE_COUNT;
+            lastPageRotateMs = now;
+            page = currentPage;
+            portEXIT_CRITICAL(&oledMux);
+        }
+    } else {
+        // Manual mode: stays awake for 2 minutes from last button press or alert
+        if (static_cast<uint32_t>(now - lastAct) >= SCREEN_SAVER_TIMEOUT_MS) {
+            display.oled_command(SH110X_DISPLAYOFF);
+
+            portENTER_CRITICAL(&oledMux);
+            screenSaverActive = true;
+            lastPeriodicWakeMs = now; // Count 10 minutes from when screen turns off
+            portEXIT_CRITICAL(&oledMux);
+            return;
+        }
+    }
+
+    // 4. Render active page
     display.clearDisplay();
 
     switch (page) {

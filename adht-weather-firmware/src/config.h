@@ -96,6 +96,9 @@
 #define BTN_DEBOUNCE_MS          50       // 50ms chống rung nút bấm
 #define BTN_LONG_PRESS_MS        2000     // 2s nhấn giữ nút SET để tạm tắt còi (Snooze Alarm)
 #define ALARM_SNOOZE_DURATION_MS 300000   // 5 phút tạm tắt còi sau khi nhấn giữ
-#define SCREEN_SAVER_TIMEOUT_MS  120000   // 2 phút không tương tác -> tắt màn hình chống burn-in
+#define SCREEN_SAVER_TIMEOUT_MS  120000   // 2 phút không tương tác tay -> tắt màn hình chống burn-in
+#define OLED_PERIODIC_WAKE_INTERVAL_MS 600000 // 10 phút tự động bật màn hình 1 lần (10 * 60 * 1000)
+#define OLED_PERIODIC_WAKE_DURATION_MS 30000  // Mỗi lần bật định kỳ kéo dài 30 giây (30 * 1000)
+#define OLED_PAGE_ROTATE_INTERVAL_MS   10000  // Tự động lướt trang mỗi 10 giây trong 30s tour (3 trang)
 
 #endif // CONFIG_H
