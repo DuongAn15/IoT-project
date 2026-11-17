@@ -1,13 +1,36 @@
-import { Controller, Post, Put, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Body } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { DevicesService } from './devices.service';
 import { SendCommandDto } from './dto/send-command.dto';
 import { UpdateConfigDto } from './dto/update-config.dto';
+import { CreateDeviceDto } from './dto/create-device.dto';
 
 @ApiTags('Devices')
 @Controller('devices')
 export class DevicesController {
   constructor(private readonly devicesService: DevicesService) {}
+
+  @Post()
+  @ApiOperation({ summary: 'Thêm thiết bị vào Supabase' })
+  @ApiResponse({ status: 201, description: 'Đã tạo thiết bị' })
+  @ApiResponse({ status: 400, description: 'Dữ liệu không hợp lệ' })
+  @ApiResponse({ status: 409, description: 'Device ID hoặc MAC đã tồn tại' })
+  createDevice(@Body() dto: CreateDeviceDto) {
+    return this.devicesService.createDevice(dto);
+  }
+
+  @Get()
+  @ApiOperation({ summary: 'Lấy tất cả thiết bị' })
+  getDevices() {
+    return this.devicesService.getDevices();
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Lấy thiết bị theo device_id' })
+  @ApiResponse({ status: 404, description: 'Không tìm thấy thiết bị' })
+  getDevice(@Param('id') deviceId: string) {
+    return this.devicesService.getDevice(deviceId);
+  }
 
   @Post(':id/command')
   @ApiOperation({ summary: 'Gửi lệnh điều khiển còi/LED xuống ESP32' })
@@ -23,4 +46,3 @@ export class DevicesController {
     return this.devicesService.updateConfig(deviceId, dto);
   }
 }
-

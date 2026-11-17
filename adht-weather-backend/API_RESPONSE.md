@@ -16,9 +16,60 @@ Tài liệu phản ánh controller, DTO và service hiện tại của backend.
 | GET | `/api/weather/latest` | Lấy số đo mới nhất |
 | GET | `/api/weather/history` | Lấy lịch sử số đo |
 | GET | `/api/weather/forecast` | Lấy dự báo |
+| POST | `/api/devices` | Thêm thiết bị vào Supabase |
+| GET | `/api/devices` | Lấy tất cả thiết bị |
+| GET | `/api/devices/:id` | Lấy thiết bị theo device_id |
 | POST | `/api/devices/:id/command` | Gửi lệnh qua MQTT |
 | PUT | `/api/devices/:id/config` | Gửi cấu hình qua MQTT |
 | POST | `/api/notifications/register-token` | Đăng ký FCM token |
+
+## Quản lý danh mục thiết bị
+
+Ba API danh mục thiết bị đọc/ghi trực tiếp bảng `public.devices` trong Supabase,
+không phải stub. Bảng cần có `device_id` (text, primary key), `name` (text, not null),
+`mac` (text, not null, unique). Backend cần quyền đọc/ghi phù hợp với RLS;
+không đưa service-role key vào app.
+
+### Thêm thiết bị
+
+`POST /api/devices`
+
+```json
+{
+  "device_id": "adht_weather_02",
+  "name": "Trạm 02 Ảo - Nắng Nóng",
+  "mac": "02:00:00:00:00:02"
+}
+```
+
+ID và tên được trim, không được rỗng. MAC gồm sáu cặp hex ngăn bằng dấu `:`,
+được trim và chuẩn hóa thành chữ hoa.
+
+Response HTTP 201:
+
+```json
+{
+  "statusCode": 201,
+  "data": {
+    "device_id": "adht_weather_02",
+    "name": "Trạm 02 Ảo - Nắng Nóng",
+    "mac": "02:00:00:00:00:02"
+  },
+  "timestamp": "2026-11-17T00:00:00.000Z"
+}
+```
+
+### Lấy danh sách và chi tiết
+
+- `GET /api/devices`: HTTP 200, `data` là mảng thiết bị, sắp theo `device_id`;
+  trả `[]` nếu chưa có thiết bị.
+- `GET /api/devices/adht_weather_02`: HTTP 200, `data` là một thiết bị.
+- HTTP 400: body không hợp lệ; 404: không tìm thấy ID; 409: trùng ID hoặc MAC;
+  503: lỗi truy cập Supabase.
+
+Các API này chưa có cơ chế xác thực/phân quyền, giống các API thiết bị hiện tại.
+Cần bảo vệ endpoint thêm thiết bị trước khi mở cho người dùng không tin cậy.
+Việc thêm thiết bị không tự đăng ký MQTT, cập nhật firmware hoặc sửa dữ liệu log cũ.
 
 ## 1. Nhận telemetry
 
