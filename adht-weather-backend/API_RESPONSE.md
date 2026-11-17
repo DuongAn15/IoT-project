@@ -6,7 +6,7 @@ Tài liệu phản ánh controller, DTO và service hiện tại của backend.
 - Swagger: `http://localhost:8000/docs`.
 - Request có body dùng `Content-Type: application/json`.
 - Các timestamp dưới đây chỉ là ví dụ; response thực tế dùng thời điểm xử lý request.
-- Supabase, dự báo và FCM vẫn là **stub**. Response thành công không đồng nghĩa dữ liệu đã được lưu hoặc thông báo đã được gửi thật.
+- API danh mục thiết bị bên dưới đọc/ghi Supabase thật, không phải stub.
 
 ## Danh sách API
 
@@ -34,6 +34,14 @@ không đưa service-role key vào app.
 
 `POST /api/devices`
 
+#### Request body
+
+| Trường | Bắt buộc | Kiểu / giới hạn |
+| --- | --- | --- |
+| `device_id` | Có | String không rỗng sau khi trim; duy nhất |
+| `name` | Có | String không rỗng sau khi trim |
+| `mac` | Có | String theo dạng `02:00:00:00:00:02`; duy nhất |
+
 ```json
 {
   "device_id": "adht_weather_02",
@@ -59,13 +67,108 @@ Response HTTP 201:
 }
 ```
 
-### Lấy danh sách và chi tiết
+### Lấy tất cả thiết bị
 
-- `GET /api/devices`: HTTP 200, `data` là mảng thiết bị, sắp theo `device_id`;
-  trả `[]` nếu chưa có thiết bị.
-- `GET /api/devices/adht_weather_02`: HTTP 200, `data` là một thiết bị.
-- HTTP 400: body không hợp lệ; 404: không tìm thấy ID; 409: trùng ID hoặc MAC;
-  503: lỗi truy cập Supabase.
+`GET /api/devices`
+
+Không có request body hoặc query bắt buộc. Response HTTP 200, danh sách sắp theo
+`device_id` tăng dần; trả `data: []` nếu chưa có thiết bị. API lấy toàn bộ danh sách,
+không có tham số phân trang phía client.
+
+```json
+{
+  "statusCode": 200,
+  "data": [
+    {
+      "device_id": "adht_weather_02",
+      "name": "Trạm 02 Ảo - Nắng Nóng",
+      "mac": "02:00:00:00:00:02"
+    }
+  ],
+  "timestamp": "2026-11-17T00:00:00.000Z"
+}
+```
+
+### Lấy thiết bị theo ID
+
+`GET /api/devices/:id`
+
+Tham số path `id` là `device_id` (không phải MAC), ví dụ `adht_weather_02`.
+Không có request body. Response HTTP 200:
+
+```json
+{
+  "statusCode": 200,
+  "data": {
+    "device_id": "adht_weather_02",
+    "name": "Trạm 02 Ảo - Nắng Nóng",
+    "mac": "02:00:00:00:00:02"
+  },
+  "timestamp": "2026-11-17T00:00:00.000Z"
+}
+```
+
+### Mã lỗi
+
+| HTTP | Trường hợp |
+| --- | --- |
+| 400 | Body thêm thiết bị thiếu trường hoặc không hợp lệ |
+| 404 | Không tìm thấy thiết bị theo ID |
+| 409 | Thêm thiết bị trùng `device_id` hoặc `mac` |
+| 503 | Không đọc/ghi được Supabase, bao gồm lỗi quyền truy cập |
+
+Ví dụ lỗi trùng thiết bị:
+
+```json
+{
+  "statusCode": 409,
+  "timestamp": "2026-11-17T00:00:00.000Z",
+  "path": "/api/devices",
+  "error": {
+    "message": "Device ID or MAC already exists",
+    "error": "Conflict",
+    "statusCode": 409
+  }
+}
+```
+
+Lỗi validation HTTP 400 có `error.message` là mảng thông báo lỗi.
+
+### cURL kiểm thử
+
+Thêm thiết bị test (ghi dữ liệu thật; chạy lại sẽ trả 409):
+
+```bash
+curl -i -X POST http://localhost:8000/api/devices \
+  -H "Content-Type: application/json" \
+  -d '{"device_id":"adht_weather_05","name":"Trạm test 05","mac":"02:00:00:00:00:05"}'
+```
+
+Lấy danh sách:
+
+```bash
+curl -i http://localhost:8000/api/devices
+```
+
+Lấy chi tiết thiết bị vừa thêm:
+
+```bash
+curl -i http://localhost:8000/api/devices/adht_weather_05
+```
+
+Kiểm tra 404 (ID chưa được đăng ký):
+
+```bash
+curl -i http://localhost:8000/api/devices/device_not_found
+```
+
+Kiểm tra validation 400:
+
+```bash
+curl -i -X POST http://localhost:8000/api/devices \
+  -H "Content-Type: application/json" \
+  -d '{"device_id":"","name":"","mac":"invalid"}'
+```
 
 Các API này chưa có cơ chế xác thực/phân quyền, giống các API thiết bị hiện tại.
 Cần bảo vệ endpoint thêm thiết bị trước khi mở cho người dùng không tin cậy.
