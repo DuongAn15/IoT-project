@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import type { Device } from '../devices/types/device.types';
 
 export interface WeatherRecord {
   device_id: string | null;
@@ -54,6 +55,52 @@ export class SupabaseService {
         detectSessionInUrl: false,
       },
     });
+  }
+
+  async createDevice(device: Device): Promise<Device> {
+    const { data, error } = await this.client.from('devices')
+      .insert(device)
+      .select('device_id,name,mac')
+      .single<Device>();
+    if (error) {
+      if (error.code === '23505') {
+        throw new ConflictException('Device ID or MAC already exists');
+      }
+      this.logger.error(`Failed to create device: ${this.describeError(error)}`);
+      throw new ServiceUnavailableException('Unable to create device');
+    }
+    return data;
+  }
+
+  async getDevices(): Promise<Device[]> {
+    const devices: Device[] = [];
+    const pageSize = 500;
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await this.client.from('devices')
+        .select('device_id,name,mac')
+        .order('device_id', { ascending: true })
+        .range(offset, offset + pageSize - 1)
+        .returns<Device[]>();
+      if (error) {
+        this.logger.error(`Failed to fetch devices: ${this.describeError(error)}`);
+        throw new ServiceUnavailableException('Unable to load devices');
+      }
+      devices.push(...data);
+      if (data.length < pageSize) return devices;
+    }
+  }
+
+  async getDevice(deviceId: string): Promise<Device> {
+    const { data, error } = await this.client.from('devices')
+      .select('device_id,name,mac')
+      .eq('device_id', deviceId)
+      .maybeSingle<Device>();
+    if (error) {
+      this.logger.error(`Failed to fetch device: ${this.describeError(error)}`);
+      throw new ServiceUnavailableException('Unable to load device');
+    }
+    if (!data) throw new NotFoundException('Device not found');
+    return data;
   }
 
   async saveTelemetry(data: Partial<WeatherRecord>): Promise<boolean> {
