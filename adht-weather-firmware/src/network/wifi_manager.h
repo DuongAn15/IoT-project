@@ -15,6 +15,9 @@ public:
 
 private:
     uint32_t lastCheckTime;
+    uint32_t disconnectedSinceMs;
+    bool wasDisconnected;
+    portMUX_TYPE statusMux;
     NetworkStatus status;
 };
 

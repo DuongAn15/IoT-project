@@ -8,7 +8,7 @@
 #include <PubSubClient.h>
 
 typedef void (*CommandCallback)(const String &cmd, const String &payload);
-typedef void (*ConfigUpdateCallback)(const SystemConfig &newCfg);
+typedef void (*ConfigUpdateCallback)(const ConfigUpdatePatch &patch);
 
 class MqttManager {
 public:

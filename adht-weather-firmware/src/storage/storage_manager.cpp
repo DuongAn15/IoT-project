@@ -13,7 +13,7 @@ void StorageManager::loadConfig(SystemConfig &cfg) {
     cfg.temp_min_alert = prefs.getFloat("t_min", 10.0f);
     cfg.humi_max_alert = prefs.getFloat("h_max", 90.0f);
     cfg.wind_max_alert = prefs.getFloat("w_max", 15.0f);
-    cfg.rain_max_alert = prefs.getFloat("r_max", 50.0f);
+    cfg.rain_max_alert = prefs.getFloat("r_max", 30.0f);
     cfg.buzzer_enabled = prefs.getBool("bz_en", true);
     cfg.auto_warning_enabled = prefs.getBool("w_en", true);
 }

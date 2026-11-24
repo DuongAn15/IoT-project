@@ -14,8 +14,10 @@
 #define PIN_OLED_SCL      22    // I2C OLED SCL
 #define OLED_I2C_ADDR     0x3C  // OLED SH1106 / SSD1306 128x64
 
-#define PIN_LED           33    // Status LED
-#define PIN_BUZZER        2     // Alert Buzzer
+#define PIN_LED           33    // Status LED (Active-LOW: LOW = Sáng, HIGH = Tắt)
+#define LED_ON_LEVEL      LOW
+#define LED_OFF_LEVEL     HIGH
+#define PIN_BUZZER        2     // Alert Buzzer (Active-HIGH)
 
 #define PIN_BTN_SET       32    // Button SET
 #define PIN_BTN_UP        35    // Button UP
@@ -74,10 +76,29 @@
 #define TOPIC_CONFIG            "adht/weather/" DEVICE_ID "/config"
 
 // ==========================================
-// 5. TIMING INTERVALS
+// 5. TIMING INTERVALS & PROTECTION
 // ==========================================
-#define SENSOR_READ_INTERVAL_MS 2000     // 2 giây đọc cảm biến 1 lần
-#define MQTT_PUBLISH_INTERVAL_MS 5000    // 5 giây publish MQTT 1 lần (EMQX tự forward sang Supabase)
-#define DISPLAY_UPDATE_MS       500      // 500ms cập nhật màn hình OLED
+#define WIND_DEBOUNCE_MS         3        // 3ms debounce (> 65 m/s)
+#define RAIN_DEBOUNCE_MS         150      // 150ms debounce for tipping bucket
+#define SENSOR_READ_INTERVAL_MS  2500     // 2.5s đọc DHT11 (tránh trượt MIN_INTERVAL 2000ms của DHT.cpp)
+#define DHT_ERROR_TIMEOUT_MS     15000    // 15s không đọc được DHT11 -> báo lỗi OLED
+#define MQTT_PUBLISH_INTERVAL_MS 5000     // 5 giây publish MQTT 1 lần (giữ nguyên hợp đồng Backend)
+#define DISPLAY_UPDATE_MS        500      // 500ms cập nhật màn hình OLED
+#define WDT_TIMEOUT_MS           30000    // 30s Task Watchdog Timer
+#define WIFI_FORCE_RECONNECT_MS  45000    // 45s mất WiFi liên tục mới ép reconnect lại
+
+// Rain & Wind calculation parameters
+#define RAIN_TIMEOUT_SEC         180      // 3 phút không có xung -> rain_rate tự về 0.0 mm/h
+#define WIND_GUST_WINDOW_SAMPLES 120      // Cửa sổ trượt 10 phút: 120 mẫu x 5s = 600s
+
+// Button & Screen parameters
+#define ENABLE_EXTERNAL_BUTTONS_UP_DOWN 0 // 0 = Tắt an toàn (GPIO 34/35 không có pull-up nội); 1 = Bật nếu có pull-up ngoài
+#define BTN_DEBOUNCE_MS          50       // 50ms chống rung nút bấm
+#define BTN_LONG_PRESS_MS        2000     // 2s nhấn giữ nút SET để tạm tắt còi (Snooze Alarm)
+#define ALARM_SNOOZE_DURATION_MS 300000   // 5 phút tạm tắt còi sau khi nhấn giữ
+#define SCREEN_SAVER_TIMEOUT_MS  120000   // 2 phút không tương tác tay -> tắt màn hình chống burn-in
+#define OLED_PERIODIC_WAKE_INTERVAL_MS 600000 // 10 phút tự động bật màn hình 1 lần (10 * 60 * 1000)
+#define OLED_PERIODIC_WAKE_DURATION_MS 30000  // Mỗi lần bật định kỳ kéo dài 30 giây (30 * 1000)
+#define OLED_PAGE_ROTATE_INTERVAL_MS   10000  // Tự động lướt trang mỗi 10 giây trong 30s tour (3 trang)
 
 #endif // CONFIG_H
