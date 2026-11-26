@@ -18,8 +18,8 @@ if os.path.exists(env_path):
             key = key.strip()
             val = val.strip().strip("'\"")
             
-            # Numeric types (e.g. PORT)
-            if key == "MQTT_BROKER_PORT" and val.isdigit():
+            # Numeric types (e.g. PORT, feature flags)
+            if key in ("MQTT_BROKER_PORT", "ENABLE_V2_MINUTE_LOG_PUBLISHER") and val.isdigit():
                 env.Append(CPPDEFINES=[(key, int(val))])
             else:
                 env.Append(CPPDEFINES=[(key, env.StringifyMacro(val))])
