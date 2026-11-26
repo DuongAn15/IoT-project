@@ -34,7 +34,7 @@ test('rejects disconnected clients and invalid device IDs without publishing', a
   assert.equal(publications, 0);
 });
 
-test('waits for broker ACK before returning success', async () => {
+test('waits for broker ACK before returning accepted', async () => {
   let acknowledge;
   const service = createService(() => new Promise(resolve => { acknowledge = resolve; }));
   const devices = new DevicesService(service);
@@ -44,7 +44,10 @@ test('waits for broker ACK before returning success', async () => {
   await Promise.resolve();
   assert.equal(settled, false);
   acknowledge();
-  assert.equal((await result).status, 'success');
+  const res = await result;
+  assert.equal(res.status, 'accepted');
+  assert.equal(res.delivery, 'broker_ack');
+  assert.equal(res.executed, false);
 });
 
 test('reports failed status when broker rejects publication', async () => {

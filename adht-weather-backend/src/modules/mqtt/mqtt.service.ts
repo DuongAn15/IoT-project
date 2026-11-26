@@ -10,11 +10,25 @@ import { NotificationsService } from '../notifications/notifications.service';
 import type { SendCommandDto } from '../devices/dto/send-command.dto';
 import type { UpdateConfigDto } from '../devices/dto/update-config.dto';
 
+interface QueuedMqttMessage {
+  topic: string;
+  payload: Buffer;
+}
+
 @Injectable()
 export class MqttService implements OnModuleInit, OnModuleDestroy {
+  private static readonly MAX_QUEUE_SIZE = 200;
+  private static readonly MAX_CONCURRENCY = 4;
+  private static readonly MAX_DEDUP_KEYS = 1000;
+
   private readonly logger = new Logger(MqttService.name);
   private client?: MqttClient;
   public isConnected = false;
+
+  private readonly messageQueue: QueuedMqttMessage[] = [];
+  private activeWorkers = 0;
+  private readonly seenSamples = new Set<string>();
+  private readonly seenOrder: string[] = [];
 
   constructor(
     private readonly config: ConfigService,
@@ -34,8 +48,8 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       rejectUnauthorized: true,
       reconnectPeriod: 5000,
       connectTimeout: 30000,
-      clean: true,
-      resubscribe: false,
+      clean: false,
+      resubscribe: true,
     });
 
     this.client.on('connect', () => {
@@ -55,9 +69,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.client.on('message', (topic, payload) => {
-      void this.handleMessage(topic, payload).catch(() => {
-        this.logger.error('Failed to process MQTT message');
-      });
+      this.enqueueMessage(topic, payload);
     });
     this.client.on('error', (error) => {
       this.logger.error(`MQTT error: ${error.message}`);
@@ -80,10 +92,64 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async handleMessage(topic: string, payload: Buffer): Promise<void> {
-    // chỉ cho phép 2 topic
+  enqueueMessage(topic: string, payload: Buffer): boolean {
+    if (this.messageQueue.length >= MqttService.MAX_QUEUE_SIZE) {
+      this.logger.warn('MQTT ingestion queue full; dropping incoming message');
+      return false;
+    }
+    this.messageQueue.push({ topic, payload });
+    this.drainQueue();
+    return true;
+  }
+
+  private drainQueue(): void {
+    while (this.activeWorkers < MqttService.MAX_CONCURRENCY && this.messageQueue.length > 0) {
+      const next = this.messageQueue.shift();
+      if (!next) break;
+      this.activeWorkers++;
+      void this.handleMessage(next.topic, next.payload)
+        .catch(() => {
+          this.logger.error('Failed to process MQTT message');
+        })
+        .finally(() => {
+          this.activeWorkers--;
+          this.drainQueue();
+        });
+    }
+  }
+
+  private getDedupKey(telemetry: CreateTelemetryDto): string | null {
+    if (telemetry.sample_id?.trim()) {
+      return `sample:${telemetry.device_id}:${telemetry.sample_id.trim()}`;
+    }
+    if (telemetry.boot_id?.trim() && telemetry.sequence !== undefined) {
+      return `seq:${telemetry.device_id}:${telemetry.boot_id.trim()}:${telemetry.sequence}`;
+    }
+    if (telemetry.timestamp !== undefined) {
+      return `ts:${telemetry.device_id}:${telemetry.timestamp}`;
+    }
+    return null;
+  }
+
+  private isDuplicateSample(key: string): boolean {
+    if (this.seenSamples.has(key)) {
+      return true;
+    }
+    this.seenSamples.add(key);
+    this.seenOrder.push(key);
+    if (this.seenOrder.length > MqttService.MAX_DEDUP_KEYS) {
+      const oldest = this.seenOrder.shift();
+      if (oldest) {
+        this.seenSamples.delete(oldest);
+      }
+    }
+    return false;
+  }
+
+  async handleMessage(topic: string, payload: Buffer): Promise<void> {
+    // chỉ cho phép 2 topic:
     //  - 'adht/weather/+/telemetry'
-    //   - 'adht/weather/status'
+    //  - 'adht/weather/status'
     const telemetryTopic = /^adht\/weather\/([^/]+)\/telemetry$/.exec(topic);
     if (!telemetryTopic && topic !== 'adht/weather/status') return;
 
@@ -111,9 +177,19 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    const dedupKey = this.getDedupKey(telemetry);
+    if (dedupKey && this.isDuplicateSample(dedupKey)) {
+      this.logger.debug(`Ignored duplicate MQTT telemetry: ${dedupKey}`);
+      return;
+    }
+
     this.logger.debug('Received valid MQTT telemetry');
+    const saved = await this.supabaseService.saveTelemetry(telemetry);
+    if (!saved) {
+      this.logger.warn(`Skipped broadcast/alert because persistence failed for ${telemetry.device_id}`);
+      return;
+    }
     this.telemetryGateway.broadcastTelemetry(telemetry);
-    await this.supabaseService.saveTelemetry(telemetry);
     await this.notificationsService.checkAndAlert(telemetry);
   }
 

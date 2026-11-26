@@ -1,9 +1,23 @@
 import { AppConfig } from './configuration.interface';
 
+function parseCorsOrigins(raw?: string): string[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0 && origin !== '*');
+}
+
 export default (): AppConfig => ({
   port: parseInt(process.env.PORT, 10) || 8000,
   nodeEnv: process.env.NODE_ENV || 'development',
   apiPrefix: process.env.API_PREFIX || 'api',
+  corsOrigins: parseCorsOrigins(process.env.CORS_ORIGINS),
+  auth: {
+    apiToken: process.env.API_AUTH_TOKEN?.trim() || undefined,
+    webhookSecret: process.env.WEBHOOK_SECRET?.trim() || undefined,
+    enableWebhookTelemetry: (process.env.ENABLE_WEBHOOK_TELEMETRY || 'false') === 'true',
+  },
   mqtt: {
     host: process.env.MQTT_BROKER_HOST || 'xxxxxxxx.ala.asia-southeast1.emqxsl.com',
     port: parseInt(process.env.MQTT_BROKER_PORT, 10) || 8883,
@@ -14,12 +28,8 @@ export default (): AppConfig => ({
   },
   supabase: {
     url: process.env.SUPABASE_URL || '',
-    // Backend cần service role key để vượt RLS; anon key chỉ là fallback cho dev.
-    key:
-      process.env.SUPABASE_SERVICE_ROLE_KEY ||
-      process.env.SUPABASE_KEY ||
-      process.env.SUPABASE_ANON_KEY ||
-      '',
+    // Server-side only: require service role key (never fall back to anon key).
+    key: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '',
     table: process.env.SUPABASE_TABLE || 'weather_logs',
   },
   firebase: {
@@ -28,11 +38,13 @@ export default (): AppConfig => ({
     credentialsJson: process.env.FIREBASE_CREDENTIALS_JSON || undefined,
     alertTopic: process.env.FIREBASE_ALERT_TOPIC || 'adht_weather_alerts',
   },
+  /* Deferred forecast configuration; restore when forecast is reactivated.
   openWeather: {
     apiKey: process.env.OPENWEATHER_API_KEY || '',
     defaultLat: parseFloat(process.env.DEFAULT_LAT || '10.7769'),
     defaultLon: parseFloat(process.env.DEFAULT_LON || '106.7009'),
   },
+  */
   thresholds: {
     tempMax: parseFloat(process.env.ALERT_TEMP_MAX) || 38.0,
     tempMin: parseFloat(process.env.ALERT_TEMP_MIN) || 10.0,

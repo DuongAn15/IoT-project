@@ -2,6 +2,12 @@ export interface AppConfig {
   port: number;
   nodeEnv: string;
   apiPrefix: string;
+  corsOrigins: string[];
+  auth: {
+    apiToken?: string;
+    webhookSecret?: string;
+    enableWebhookTelemetry: boolean;
+  };
   mqtt: {
     host: string;
     port: number;
@@ -21,11 +27,13 @@ export interface AppConfig {
     credentialsJson?: string;
     alertTopic: string;
   };
+  /* Deferred forecast configuration; restore when forecast is reactivated.
   openWeather: {
     apiKey?: string;
     defaultLat: number;
     defaultLon: number;
   };
+  */
   thresholds: {
     tempMax: number;
     tempMin: number;
@@ -34,4 +42,3 @@ export interface AppConfig {
     rainMax: number;
   };
 }
-

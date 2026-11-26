@@ -15,11 +15,14 @@ async function bootstrap() {
   const port = configService.get<number>('port') || 8000;
   const apiPrefix = configService.get<string>('apiPrefix') || 'api';
 
-  // 1. CORS cho phép Flutter App & Web Dashboard gọi API
+  const corsOrigins = configService.get<string[]>('corsOrigins') || [];
+  const nodeEnv = configService.get<string>('nodeEnv') || 'development';
+
+  // 1. CORS: chỉ cho phép các origin được cấu hình tường minh khi bật credentials
   app.enableCors({
-    origin: '*',
+    origin: corsOrigins.length > 0 ? corsOrigins : nodeEnv === 'production' ? false : true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    credentials: true,
+    credentials: corsOrigins.length > 0,
   });
 
   // 2. Global Prefix: /api

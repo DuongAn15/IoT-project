@@ -1,9 +1,12 @@
-import { Controller, Post, Body } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Controller, Post, Body, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
 import { RegisterFcmTokenDto } from './dto/register-fcm-token.dto';
+import { ApiAuthGuard } from '../../common/guards/api-auth.guard';
 
 @ApiTags('Notifications')
+@ApiBearerAuth()
+@UseGuards(ApiAuthGuard)
 @Controller('notifications')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
