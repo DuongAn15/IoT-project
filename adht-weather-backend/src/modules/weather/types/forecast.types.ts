@@ -1,3 +1,4 @@
+/* Forecast response types are deferred with the feature; preserve for reactivation.
 export interface ForecastPeriod {
   timestamp: string;
   temp: number;
@@ -28,3 +29,4 @@ export interface WeatherForecast {
   timezone_offset_seconds: number;
   forecast_days: ForecastDay[];
 }
+*/

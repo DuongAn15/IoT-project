@@ -44,8 +44,10 @@ Cấu hình service nằm trong [`render.yaml`](../render.yaml) ở gốc repo (
    | `SUPABASE_URL` | `https://xxxx.supabase.co` |
    | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API → `service_role` |
    | `FIREBASE_CREDENTIALS_JSON` | Chuỗi base64 vừa copy ở bước 1 |
+   <!-- Forecast đang tạm hoãn; không cần các biến này khi deploy hiện tại:
    | `OPENWEATHER_API_KEY` | Key OpenWeather |
-   | `DEFAULT_LAT`, `DEFAULT_LON` | Tọa độ trạm (vd. Đà Nẵng `16.0544`, `108.2022`) |
+   | `DEFAULT_LAT`, `DEFAULT_LON` | Tọa độ trạm mặc định cho forecast |
+   -->
 
 4. **Apply** → Render build Docker image (lần đầu khoảng 3–5 phút).
 5. Xem tab **Logs**, phải thấy:

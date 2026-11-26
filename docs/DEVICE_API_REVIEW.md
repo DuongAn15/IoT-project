@@ -14,6 +14,7 @@ Chi tiết kiểm tra schema, bổ sung unique/check và RLS: [hướng dẫn SQ
 - Metadata REST xác nhận `device_id` là primary key; chưa đủ thông tin để kết luận MAC đã có unique index/constraint hay trạng thái RLS/policy. [hướng dẫn SQL Supabase](SUPABASE_DEVICES_SQL.md) giúp kiểm tra trực tiếp.
 - Không xác định được ngày tạo bảng từ bằng chứng hiện có. Ngày commit API 17/11/2026 không phải bằng chứng về ngày tạo bảng.
 - SQL trong tài liệu chưa được chạy trên Supabase. Không có thay đổi database trong quá trình lập tài liệu này.
+- **Cập nhật P00 ngày 26/11/2026:** người dùng đã chạy catalog audit read-only trên Supabase project ref `umsysvgxprlwpqmblwie`. Kết quả xác nhận `devices.device_id` là PK, `devices.mac` có unique constraint và các CHECK về ID/name/MAC đã validated; RLS bật trên `devices` và `weather_logs`. `weather_logs` có policy role `{public}` cho SELECT (`qual=true`) và INSERT (`with_check=true`), cùng grants rộng cho `anon`/`authenticated`, bao gồm quyền bảng ngoài SELECT/INSERT như `TRUNCATE`. Đây là finding truy cập trực tiếp P1 cần xử lý trong [P01](plans/01-security-and-baseline-fixes.md), người dùng xác nhận project đang lưu dữ liệu thật nên ghi nhận là live/non-staging, dù dữ liệu có thể bỏ; project ref `umsysvgxprlwpqmblwie`, SQL Editor role `superuser`. Catalog audit ban đầu chỉ đọc; người dùng sau đó chạy SQL hardening P01; hậu kiểm catalog xác nhận không còn grants anon/authenticated trong các kết quả đã kiểm tra; ảnh mới xác nhận telemetry write tiếp tục bình thường. Người dùng xác nhận app hoạt động bình thường sau hardening; anon REST denial vẫn cần xác nhận. Catalog audit này supersede nhận định trước đó rằng unique MAC/RLS/grants chưa được kiểm chứng; Follow-up A/B đã hoàn tất: `weather_logs.id` là identity `BY DEFAULT` dùng `public.weather_logs_id_seq`; `anon`/`authenticated` có INSERT/REFERENCES/SELECT/UPDATE trên toàn bộ cột của cả hai bảng. SQL Editor role được người dùng ghi nhận là `superuser`. Chi tiết sanitized tại [P00 audit record](p00-staging-audit-template.md).
 
 ## 2. Schema và API hiện tại
 
@@ -82,15 +83,15 @@ Hướng xử lý: thống nhất default, đơn vị và ý nghĩa từng trư�
 
 Feature bổ sung endpoint public tạo thiết bị và đọc danh mục/MAC. Các endpoint command/config đã có trên master cũng chưa có guard xác thực. Backend dùng service-role key truy cập Supabase.
 
-Nguy cơ: người ngoài tạo thiết bị giả, chiếm device ID/MAC trước thiết bị hợp lệ, đọc danh mục hoặc gửi lệnh/config nếu truy cập được endpoint. MAC unique chỉ bảo đảm không trùng, không chứng minh quyền sở hữu phần cứng.
+Nguy cơ: người ngoài tạo thiết bị giả, chiếm device ID/MAC trước thiết bị hợp lệ, đọc danh mục hoặc gửi lệnh/config nếu truy cập được endpoint. MAC unique chỉ bảo đảm không trùng, không chứng minh quyền sở hữu phần cứng. Catalog audit P00 sau đó còn xác nhận một đường truy cập Supabase trực tiếp riêng: policy `public` SELECT/INSERT trên `weather_logs` kết hợp grants `anon`; không nhầm finding này với auth guard của backend API. Môi trường project chưa được xác nhận.
 
 Hướng xử lý: xác thực ở backend, phân quyền quản lý/điều khiển từng thiết bị. RLS không ngăn request đi qua một backend không xác thực sử dụng service-role; CORS cũng không phải cơ chế xác thực.
 
-### D07 — Contract 409 cho MAC phụ thuộc unique thực tế trong DB (vừa, liên quan feature mới)
+### D07 — Contract 409 cho MAC phụ thuộc unique thực tế trong DB (vừa; constraint đã xác minh trên project được audit)
 
-`createDevice()` chỉ đổi lỗi PostgreSQL `23505` thành HTTP 409. Chưa xác nhận DB có unique cho MAC; không có bản ghi trùng tại thời điểm kiểm tra không chứng minh constraint tồn tại.
+Catalog audit P00 xác nhận `devices.mac` có unique constraint `devices_mac_key`, đã validated, trên project đã audit. Điều này đóng khoảng trống bằng chứng về unique MAC **chỉ cho project đó**; alias/ref chưa được ghi nên chưa thể khẳng định môi trường.
 
-Nếu thiếu unique, hai request đồng thời có thể tạo hai thiết bị cùng MAC. Việc trim/uppercase trong DTO chỉ áp dụng cho đường API; ghi trực tiếp DB có thể bỏ qua. Các lệnh trong [hướng dẫn SQL Supabase](SUPABASE_DEVICES_SQL.md) thêm NOT NULL, check format MAC chữ hoa và unique, không tự đổi hoặc xóa dữ liệu cũ.
+`createDevice()` vẫn cần xử lý lỗi PostgreSQL `23505` thành HTTP 409. Trim/uppercase trong DTO chỉ áp dụng cho đường API; cần giữ validation nhất quán vì ghi trực tiếp DB có thể bỏ qua chuẩn hóa ứng dụng. Không chạy lại DDL thêm unique nếu chưa xác định project và kiểm tra migration hiện có.
 
 ### D08 — Validation định danh/cấu hình chưa nhất quán (vừa)
 
@@ -108,11 +109,11 @@ Nguy cơ: thiết bị mới tạo không xuất hiện trong app; tên hiển t
 
 Hướng xử lý: lấy danh sách/tên từ GET devices, cache danh mục khi offline; có quy trình provision và xác minh thiết bị riêng.
 
-### D10 — GET danh sách có thể thiếu dữ liệu khi Supabase giới hạn trang dưới 500 (vừa, feature mới)
+### D10 — GET danh sách có thể thiếu dữ liệu khi Supabase giới hạn trang dưới 500 (vừa, có từ feature mới)
 
-Bằng chứng: `SupabaseService.getDevices()` dùng page size 500, tăng offset cố định 500 và dừng khi `data.length < 500`. Nếu giới hạn server là 100, API trả 100 dòng rồi dừng dù còn dữ liệu.
+Bằng chứng: `SupabaseService.getDevices()` dùng page size 500, tăng offset cố định 500 và dừng khi `data.length < 500`. P00 đo được PostgREST Max Rows = 1000 trên project live nên giới hạn hiện tại cao hơn page size và lỗi này chưa tái hiện ở môi trường đó. Nếu cap được hạ xuống dưới 500, API có thể dừng sớm dù còn dữ liệu.
 
-Hướng xử lý: đọc đến trang rỗng và tăng offset theo số dòng thực nhận, hoặc pagination/cursor có contract rõ ràng. API đang trả toàn bộ danh sách cũng cần giới hạn quy mô/chi phí; hiện 5 dòng chưa gặp lỗi này.
+Hướng xử lý: giữ page size không cao hơn server cap; về lâu dài đọc đến page rỗng và tăng offset theo số dòng thực nhận, hoặc dùng cursor pagination có contract rõ ràng. API trả toàn bộ danh sách cũng cần giới hạn quy mô/chi phí.
 
 ### D11 — Linux runner chưa có SQLite runtime phù hợp (vừa, feature mới)
 
@@ -131,7 +132,7 @@ Hướng xử lý: sau khi xác minh catalog, xuất baseline đúng schema live
 ## 4. Kiểm thử đã thực hiện trong phiên review trước
 
 - Backend build và test file devices đã pass; diff không có lỗi whitespace.
-- Toàn bộ backend chưa xanh: forecast test mock logger thiếu `log()`; test Socket.IO bị sandbox chặn listen. Đây không phải thay đổi mới của Device API.
+- Tại phiên review lúc đó backend chưa xanh: forecast test mock logger thiếu `log()`; test Socket.IO bị sandbox chặn listen. Forecast sau đó được tạm hoãn, route/service/config comment out và tests skip; đây không phải lỗi mới của Device API.
 - Flutter/Linux chưa kiểm chứng build/runtime vì Flutter qua snap không chạy được trong môi trường kiểm tra.
 - Không kiểm thử ghi DB, gửi cấu hình hoặc điều khiển ESP32 live. Các nhận định về tác động runtime dựa trên code, cần xác nhận bằng test tích hợp sau khi sửa.
 

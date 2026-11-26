@@ -25,7 +25,7 @@ Hệ thống trạm quan trắc thời tiết thông minh phát triển bởi nh
 1. **Tầng 1 - Thiết bị (ESP32 & Simulator)**: Thu thập dữ liệu cảm biến DHT11 (bộ lọc Kalman), gàu lật mưa, chong chóng gió, hiển thị OLED SH1106 và publish gói tin MQTT mỗi **5 giây** lên **EMQX Cloud Serverless** qua cổng bảo mật TLS `8883`. Hỗ trợ trạm ảo đồng hành qua `tools/simulate_nodes.py`.
 2. **Tầng 2 - Kết nối (MQTT Broker)**: **EMQX Cloud Serverless** quản lý phân phối tin nhắn và trạng thái Online/Offline qua cơ chế LWT (QoS 1).
 3. **Tầng 3 - Máy chủ & CSDL (Backend & Database)**:
-   - **Backend Application Gateway (Docker Compose)**: Lọc sạch dữ liệu cảm biến, làm mịn biểu đồ (Downsampling), cung cấp REST API & WebSocket, đồng bộ dự báo thời tiết OpenWeather, và gọi **Firebase Admin SDK** bắn thông báo đẩy FCM về điện thoại khi có dông lốc, mưa to.
+   - **Backend Application Gateway (Docker Compose)**: Lọc sạch dữ liệu cảm biến, làm mịn biểu đồ (Downsampling), cung cấp REST API & WebSocket, và gọi **Firebase Admin SDK** bắn thông báo đẩy FCM về điện thoại khi có dông lốc, mưa to. Forecast đang tạm hoãn; code được giữ nhưng chưa kích hoạt.
    - **Supabase Cloud (PostgreSQL)**: Lưu trữ lịch sử quan trắc bền vững, chỉ cấp quyền truy xuất bảo mật cho Backend.
 4. **Tầng 4 - Ứng dụng (Client Apps)**: **Flutter Mobile App & Web Dashboard** kết nối trực tiếp với Backend (qua REST API + WebSocket) và nhận thông báo rung chuông màn hình khóa (FCM) ngay cả khi đã tắt App.
 

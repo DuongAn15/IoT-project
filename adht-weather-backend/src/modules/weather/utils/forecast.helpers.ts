@@ -1,3 +1,4 @@
+/* Forecast aggregation is deferred. Preserve this source for future reactivation.
 import type { ForecastDay, ForecastPeriod } from '../types/forecast.types';
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -68,3 +69,4 @@ export function buildForecast(data: unknown, now: number): { timezone: number; d
   if (days.length !== 3) throw new Error('Incomplete three-day forecast');
   return { timezone, days };
 }
+*/

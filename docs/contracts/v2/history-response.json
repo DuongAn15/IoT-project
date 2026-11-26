@@ -1,0 +1,29 @@
+{
+  "station_id": "sta-001",
+  "timezone": "Asia/Ho_Chi_Minh",
+  "resolution": "10m",
+  "aggregation_version": 2,
+  "server_time": "2026-11-26T03:31:00Z",
+  "served_from": "2026-11-26T03:20:00Z",
+  "served_through": "2026-11-26T03:30:00Z",
+  "available_through": "2026-11-26T03:30:00Z",
+  "next_cursor": null,
+  "points": [
+    {
+      "bucket_start": "2026-11-26T03:20:00Z",
+      "bucket_end": "2026-11-26T03:30:00Z",
+      "revision": 1,
+      "temperature": {
+        "mean": 30.0,
+        "min": 29.0,
+        "max": 31.0,
+        "count": 240
+      },
+      "rainfall_mm": 1.263424,
+      "quality": {
+        "coverage_ratio": 1.0,
+        "state": "observed"
+      }
+    }
+  ]
+}

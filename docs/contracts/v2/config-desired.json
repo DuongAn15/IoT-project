@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "device_id": "dev-001",
+  "deployment_id": "dep-002",
+  "config_version": 12,
+  "config": {
+    "temp_max": 38.0,
+    "temp_min": 10.0,
+    "humi_max": 90.0,
+    "wind_max": 15.0,
+    "rain_max": 30.0,
+    "auto_warning": true,
+    "buzzer": true
+  }
+}

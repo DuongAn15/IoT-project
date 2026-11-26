@@ -5,6 +5,7 @@ const { WeatherService } = require('../dist/modules/weather/weather.service');
 const { WeatherController } = require('../dist/modules/weather/weather.controller');
 const { buildForecast } = require('../dist/modules/weather/utils/forecast.helpers');
 
+// Forecast is deferred. Keep these tests as a reactivation checklist, but skip them by default.
 const NOW = Date.parse('2026-11-04T18:00:00.000Z'); // Nov 5 at 01:00 in UTC+7.
 function fixture() {
   return {
@@ -26,7 +27,7 @@ function service(settings = {}) {
   return result;
 }
 
-test('groups three future local calendar days and aggregates 3-hour periods', () => {
+test.skip('groups three future local calendar days and aggregates 3-hour periods', () => {
   const { timezone, days } = buildForecast(fixture(), NOW);
   assert.equal(timezone, 25200);
   assert.deepEqual(days.map(day => day.date), ['2026-11-06', '2026-11-07', '2026-11-08']);
@@ -41,7 +42,7 @@ test('groups three future local calendar days and aggregates 3-hour periods', ()
   }
 });
 
-test('missing rain means zero; malformed and incomplete responses are rejected', () => {
+test.skip('missing rain means zero; malformed and incomplete responses are rejected', () => {
   const data = fixture();
   for (const item of data.list) delete item.rain;
   assert.equal(buildForecast(data, NOW).days[0].rain_mm, 0);
@@ -51,7 +52,7 @@ test('missing rain means zero; malformed and incomplete responses are rejected',
   assert.throws(() => buildForecast(data, NOW), /Invalid/);
 });
 
-test('uses metric units, Vietnamese descriptions, timeout and zero coordinates', async t => {
+test.skip('uses metric units, Vietnamese descriptions, timeout and zero coordinates', async t => {
   const originalNow = Date.now;
   Date.now = () => NOW;
   t.after(() => { Date.now = originalNow; });
@@ -69,7 +70,7 @@ test('uses metric units, Vietnamese descriptions, timeout and zero coordinates',
   mocked.mock.restore();
 });
 
-test('uses configured defaults only when coordinates are omitted', async t => {
+test.skip('uses configured defaults only when coordinates are omitted', async t => {
   const originalNow = Date.now;
   Date.now = () => NOW;
   t.after(() => { Date.now = originalNow; });
@@ -78,7 +79,7 @@ test('uses configured defaults only when coordinates are omitted', async t => {
   mocked.mock.restore();
 });
 
-test('rejects invalid coordinates and missing API key without making a request', async t => {
+test.skip('rejects invalid coordinates and missing API key without making a request', async t => {
   const mocked = t.mock.method(axios, 'get', async () => { throw new Error('Unexpected request'); });
   const weather = service();
   for (const [lat, lon] of [[91, 0], [0, -181], [NaN, 0], [0, Infinity]]) {
@@ -89,7 +90,7 @@ test('rejects invalid coordinates and missing API key without making a request',
   mocked.mock.restore();
 });
 
-test('upstream errors are sanitized and mapped to appropriate HTTP failures', async t => {
+test.skip('upstream errors are sanitized and mapped to appropriate HTTP failures', async t => {
   for (const [status, expected] of [[401, 503], [403, 503], [429, 503], [500, 502]]) {
     const mocked = t.mock.method(axios, 'get', async () => {
       throw { isAxiosError: true, response: { status }, config: { params: { appid: 'private-key' } } };
@@ -102,7 +103,7 @@ test('upstream errors are sanitized and mapped to appropriate HTTP failures', as
   mocked.mock.restore();
 });
 
-test('controller parses query strings, including zero, and does not silently default empty or repeated values', () => {
+test.skip('controller parses query strings, including zero, and does not silently default empty or repeated values', () => {
   const calls = [];
   const controller = new WeatherController({ getForecast: (...args) => calls.push(args) });
   controller.getForecast('0', '0');
@@ -115,7 +116,7 @@ test('controller parses query strings, including zero, and does not silently def
   assert.ok(Number.isNaN(calls[3][0]));
 });
 
-test('environment defaults preserve valid zero coordinates', () => {
+test.skip('environment defaults preserve valid zero coordinates', () => {
   const previousLat = process.env.DEFAULT_LAT;
   const previousLon = process.env.DEFAULT_LON;
   try {

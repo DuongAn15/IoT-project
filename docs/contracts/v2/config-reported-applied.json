@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "type": "config_report",
+  "device_id": "dev-001",
+  "deployment_id": "dep-002",
+  "boot_id": "boot-20261126-0001",
+  "config_version": 12,
+  "status": "applied",
+  "persisted": true,
+  "applied": true,
+  "reported_at": "2026-11-26T03:20:05Z",
+  "config": {
+    "temp_max": 38.0,
+    "temp_min": 10.0,
+    "humi_max": 90.0,
+    "wind_max": 15.0,
+    "rain_max": 30.0,
+    "auto_warning": true,
+    "buzzer": true
+  }
+}

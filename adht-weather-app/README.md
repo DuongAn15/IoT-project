@@ -33,7 +33,7 @@ adht-weather-app/
 │       ├── screens/
 │       │   ├── dashboard_screen.dart  # Màn hình số đo thời gian thực qua WebSocket
 │       │   ├── analytics_screen.dart  # Màn hình biểu đồ phân tích 1H, 6H, 24H, 3D, 7D
-│       │   ├── forecast_screen.dart   # Màn hình dự báo thời tiết 3 ngày tới
+│       │   ├── forecast_screen.dart   # Forecast tạm hoãn; giữ cho phase sau, chưa kích hoạt
 │       │   └── control_screen.dart    # Màn hình điều khiển còi & cài đặt ngưỡng
 │       └── widgets/                   # Thẻ đồng hồ Gauge, Card thông số, Biểu đồ
 ├── assets/                            # Biểu tượng thời tiết, hình ảnh minh họa
