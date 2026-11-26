@@ -60,6 +60,10 @@ export interface DerivedMinuteLogRecord {
   identityKey: string;
   payloadHash: string;
   device_id: string;
+  deployment_id: string;
+  boot_id: string;
+  window_sequence: number;
+  clock_quality: 'synchronized' | 'unsynchronized';
   temp: number;
   humi: number;
   wind_speed: number;
@@ -289,6 +293,10 @@ export function validateAndDeriveMinuteLogV2(
       identityKey: `${raw.device_id}:${raw.deployment_id}:${raw.boot_id}:${raw.window_sequence}`,
       payloadHash: hashV2Payload(raw),
       device_id: raw.device_id,
+      deployment_id: raw.deployment_id,
+      boot_id: raw.boot_id,
+      window_sequence: raw.window_sequence,
+      clock_quality: raw.clock_quality,
       temp: Number(tempAvg.toFixed(2)),
       humi: Number(humiAvg.toFixed(2)),
       wind_speed: Number(windAvg.toFixed(2)),

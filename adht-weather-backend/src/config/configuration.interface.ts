@@ -10,6 +10,7 @@ export interface AppConfig {
     allowedDevices: string[];
     deviceDeployments: Record<string, string>;
     v2DedupFile?: string;
+    v2CutoverEnabled: boolean;
   };
   mqtt: {
     host: string;
@@ -23,6 +24,7 @@ export interface AppConfig {
     url: string;
     key: string;
     table: string;
+    v2Table?: string;
   };
   firebase: {
     credentialsPath: string;

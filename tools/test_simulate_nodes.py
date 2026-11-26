@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 import ssl
@@ -64,6 +65,35 @@ class SimulatorConnectionTests(unittest.TestCase):
             node._on_connect_fail(node.client, None)
             self.assertFalse(node.is_connected)
             node._log.assert_called_once()
+
+    def test_topics_thresholds_and_v2_minute_log_match_firmware(self):
+        with patch.object(simulator.mqtt, "Client") as factory:
+            client = factory.return_value
+            node = self.make_node(enable_v2=True, deployment_id="dep-test")
+            self.assertEqual(node.sys_config["rain_max"], 30.0)
+            client.will_set.assert_called_once()
+            self.assertEqual(client.will_set.call_args.args[0], "adht/weather/status")
+
+            node._on_connect(client, None, None, 0)
+            sub_topics = [c.args[0] for c in client.subscribe.call_args_list]
+            self.assertEqual(
+                sub_topics,
+                ["adht/weather/adht_weather_02/command", "adht/weather/adht_weather_02/config"],
+            )
+
+            node._update_physics()
+            node._publish_v2_minute_log()
+            topic, raw = client.publish.call_args.args[0:2]
+            self.assertEqual(topic, "adht/weather/adht_weather_02/telemetry/log")
+            payload = json.loads(raw)
+            self.assertEqual(payload["schema_version"], 2)
+            self.assertEqual(payload["deployment_id"], "dep-test")
+            self.assertEqual(payload["window_sequence"], 1)
+
+            node._handle_command("reset_rain", "")
+            self.assertEqual(node.rain_reset_epoch, 1)
+            self.assertEqual(node.rain_tip_counter, 0)
+            self.assertEqual(node.rain_total, 0.0)
 
 
 if __name__ == "__main__":

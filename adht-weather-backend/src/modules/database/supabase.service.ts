@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, Logger, NotFoundExc
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { Device } from '../devices/types/device.types';
+import type { DerivedMinuteLogRecord } from '../telemetry/minute-log-v2';
 
 export interface WeatherRecord {
   device_id: string | null;
@@ -22,7 +23,18 @@ interface WeatherLogRow {
   wind_speed: number;
 }
 
+interface WeatherLogV2Row {
+  recorded_at: string;
+  device_id: string;
+  temperature: number;
+  humidity: number;
+  rain_rate: number;
+  rainfall_mm: number;
+  wind_speed: number;
+}
+
 const WEATHER_COLUMNS = 'created_at,device_id,temperature,humidity,rain_rate,wind_speed';
+const WEATHER_V2_COLUMNS = 'recorded_at,device_id,temperature,humidity,rain_rate,rainfall_mm,wind_speed';
 const HISTORY_PAGE_SIZE = 500;
 const HISTORY_RANGES = {
   '1h': { duration: 3600, bucket: 60 },
@@ -37,6 +49,7 @@ export class SupabaseService {
   private readonly logger = new Logger(SupabaseService.name);
   private readonly client: SupabaseClient;
   private readonly table: string;
+  private readonly v2Table?: string;
 
 
   constructor(private readonly config: ConfigService) {
@@ -48,6 +61,7 @@ export class SupabaseService {
     }
 
     this.table = this.config.getOrThrow<string>('supabase.table');
+    this.v2Table = this.config.get<string>('supabase.v2Table') || 'weather_logs_v2';
 
     this.client = createClient(url, key, {
       auth: {
@@ -131,6 +145,48 @@ export class SupabaseService {
     }
   }
 
+  async saveMinuteLogV2(
+    record: DerivedMinuteLogRecord,
+  ): Promise<'persisted' | 'duplicate' | 'conflict' | 'error'> {
+    const targetTable = this.v2Table || 'weather_logs_v2';
+    try {
+      const { error } = await this.client.from(targetTable).insert({
+        device_id: record.device_id,
+        deployment_id: record.deployment_id,
+        boot_id: record.boot_id,
+        window_sequence: record.window_sequence,
+        payload_hash: record.payloadHash,
+        clock_quality: record.clock_quality,
+        recorded_at: record.recorded_at,
+        temperature: record.temp,
+        humidity: record.humi,
+        wind_speed: record.wind_speed,
+        rain_rate: record.rain_rate,
+        rainfall_mm: record.rainfall_mm,
+      });
+
+      if (!error) return 'persisted';
+
+      if (error.code === '23505') {
+        const { data: existing, error: lookupError } = await this.client
+          .from(targetTable)
+          .select('payload_hash')
+          .eq('device_id', record.device_id)
+          .eq('deployment_id', record.deployment_id)
+          .eq('boot_id', record.boot_id)
+          .eq('window_sequence', record.window_sequence)
+          .maybeSingle<{ payload_hash: string }>();
+        if (lookupError || !existing) return 'error';
+        return existing.payload_hash === record.payloadHash ? 'duplicate' : 'conflict';
+      }
+
+      throw error;
+    } catch (error: unknown) {
+      this.logger.error(`Failed to save v2 minute_log to Supabase: ${this.describeError(error)}`);
+      return 'error';
+    }
+  }
+
   async getLatest(deviceId?: string): Promise<WeatherRecord | null> {
     try {
       let query = this.client.from(this.table).select(WEATHER_COLUMNS);
@@ -141,7 +197,35 @@ export class SupabaseService {
         .limit(1)
         .maybeSingle<WeatherLogRow>();
       if (error) throw error;
-      return data ? this.toWeatherRecord(data) : null;
+      const v1Record = data ? this.toWeatherRecord(data) : null;
+
+      if (!this.v2Table) {
+        return v1Record;
+      }
+
+      let v2Query = this.client.from(this.v2Table).select(WEATHER_V2_COLUMNS);
+      if (deviceId !== undefined) v2Query = v2Query.eq('device_id', deviceId);
+      const { data: v2Data, error: v2Error } = await v2Query
+        .order('recorded_at', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(1)
+        .maybeSingle<WeatherLogV2Row>();
+      if (v2Error) throw v2Error;
+      if (!v2Data) return v1Record;
+
+      const v2Record: WeatherRecord = {
+        device_id: v2Data.device_id,
+        temp: v2Data.temperature,
+        humi: v2Data.humidity,
+        rain_rate: v2Data.rain_rate,
+        rainfall_mm: v2Data.rainfall_mm,
+        wind_speed: v2Data.wind_speed,
+        recorded_at: v2Data.recorded_at,
+      };
+      if (!v1Record) return v2Record;
+      return Date.parse(v2Record.recorded_at) >= Date.parse(v1Record.recorded_at)
+        ? v2Record
+        : v1Record;
     } catch (error: unknown) {
       this.logger.error(`Failed to fetch latest telemetry from Supabase: ${this.describeError(error)}`);
       throw new ServiceUnavailableException('Unable to load latest weather data');
@@ -156,10 +240,11 @@ export class SupabaseService {
     const settings = HISTORY_RANGES[range as keyof typeof HISTORY_RANGES];
     const end = Date.now();
     const start = end - settings.duration * 1000;
-    const buckets = new Map<number, { point: WeatherRecord; count: number }>();
+    const v1Buckets = new Map<number, { point: WeatherRecord; count: number }>();
+    const v2Buckets = new Map<number, { point: WeatherRecord; count: number; rainfallMmSum: number }>();
 
     try {
-      // Read every page: Supabase's response limit must not truncate the time range.
+      // Read every page from legacy v1 table
       for (let offset = 0; ; ) {
         const { data, error } = await this.client.from(this.table)
           .select(WEATHER_COLUMNS)
@@ -175,8 +260,9 @@ export class SupabaseService {
 
         for (const row of data) {
           const time = Date.parse(row.created_at);
-          const bucketTime = start + Math.floor((time - start) / (settings.bucket * 1000)) * settings.bucket * 1000;
-          const existing = buckets.get(bucketTime);
+          const bucketMs = settings.bucket * 1000;
+          const bucketTime = Math.floor(time / bucketMs) * bucketMs;
+          const existing = v1Buckets.get(bucketTime);
           if (existing) {
             existing.point.temp += row.temperature;
             existing.point.humi += row.humidity;
@@ -184,7 +270,7 @@ export class SupabaseService {
             existing.point.wind_speed += row.wind_speed;
             existing.count++;
           } else {
-            buckets.set(bucketTime, {
+            v1Buckets.set(bucketTime, {
               point: { ...this.toWeatherRecord(row), recorded_at: new Date(bucketTime).toISOString() },
               count: 1,
             });
@@ -193,12 +279,71 @@ export class SupabaseService {
         // Stop only on an empty page, even if the server caps pages below 500 rows.
         offset += data.length;
       }
+
+      // Union with v2 minute-log table when configured
+      if (this.v2Table) {
+        for (let offset = 0; ; ) {
+          const { data, error } = await this.client.from(this.v2Table)
+            .select(WEATHER_V2_COLUMNS)
+            .eq('device_id', deviceId)
+            .gte('recorded_at', new Date(start).toISOString())
+            .lte('recorded_at', new Date(end).toISOString())
+            .order('recorded_at', { ascending: true })
+            .order('id', { ascending: true })
+            .range(offset, offset + HISTORY_PAGE_SIZE - 1)
+            .returns<WeatherLogV2Row[]>();
+          if (error) throw error;
+          if (!data?.length) break;
+
+          for (const row of data) {
+            const time = Date.parse(row.recorded_at);
+            const bucketMs = settings.bucket * 1000;
+            const bucketTime = Math.floor(time / bucketMs) * bucketMs;
+            const existing = v2Buckets.get(bucketTime);
+            if (existing) {
+              existing.point.temp += row.temperature;
+              existing.point.humi += row.humidity;
+              existing.point.rain_rate += row.rain_rate;
+              existing.point.wind_speed += row.wind_speed;
+              existing.rainfallMmSum += row.rainfall_mm;
+              existing.count++;
+            } else {
+              v2Buckets.set(bucketTime, {
+                point: {
+                  device_id: row.device_id,
+                  temp: row.temperature,
+                  humi: row.humidity,
+                  rain_rate: row.rain_rate,
+                  wind_speed: row.wind_speed,
+                  recorded_at: new Date(bucketTime).toISOString(),
+                },
+                count: 1,
+                rainfallMmSum: row.rainfall_mm,
+              });
+            }
+          }
+          offset += data.length;
+        }
+      }
     } catch (error: unknown) {
       this.logger.error(`Failed to fetch weather history from Supabase: ${this.describeError(error)}`);
       throw new ServiceUnavailableException('Unable to load weather history');
     }
 
-    return [...buckets.entries()].sort(([left], [right]) => left - right).map(([, { point, count }]) => {
+    const allTimes = new Set<number>([...v1Buckets.keys(), ...v2Buckets.keys()]);
+    return [...allTimes].sort((left, right) => left - right).map((bucketTime) => {
+      const v2 = v2Buckets.get(bucketTime);
+      if (v2) {
+        return {
+          ...v2.point,
+          temp: v2.point.temp / v2.count,
+          humi: v2.point.humi / v2.count,
+          rain_rate: v2.point.rain_rate / v2.count,
+          rainfall_mm: Number(v2.rainfallMmSum.toFixed(3)),
+          wind_speed: v2.point.wind_speed / v2.count,
+        };
+      }
+      const { point, count } = v1Buckets.get(bucketTime)!;
       const avgRainRate = point.rain_rate / count;
       return {
         ...point,

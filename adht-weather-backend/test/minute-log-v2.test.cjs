@@ -5,6 +5,7 @@ const path = require('node:path');
 const { test } = require('node:test');
 const { validateAndDeriveMinuteLogV2 } = require('../dist/modules/telemetry/minute-log-v2');
 const { MqttService } = require('../dist/modules/mqtt/mqtt.service');
+const { SupabaseService } = require('../dist/modules/database/supabase.service');
 
 const fixturesDir = path.resolve(__dirname, '../../docs/contracts/v2');
 const readFixture = (name) => JSON.parse(fs.readFileSync(path.join(fixturesDir, name), 'utf8'));
@@ -163,4 +164,120 @@ test('MqttService persists v2 dedup/conflict across service restart via V2_DEDUP
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+});
+
+test('SupabaseService.saveMinuteLogV2 handles persisted, DB 23505 duplicate, and conflict', async () => {
+  const valid = readFixture('minute-log-valid.json');
+  const { record } = validateAndDeriveMinuteLogV2(valid, valid.device_id);
+
+  let insertResp = { error: null };
+  let lookupResp = { data: null, error: null };
+  const svc = Object.create(SupabaseService.prototype);
+  svc.v2Table = 'weather_logs_v2';
+  svc.logger = { warn() {}, error() {} };
+  svc.describeError = () => '23505';
+  svc.client = {
+    from: () => ({
+      insert: async () => insertResp,
+      select: () => ({
+        eq: () => ({ eq: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => lookupResp }) }) }) }),
+      }),
+    }),
+  };
+
+  assert.equal(await svc.saveMinuteLogV2(record), 'persisted');
+
+  insertResp = { error: { code: '23505' } };
+  lookupResp = { data: { payload_hash: record.payloadHash }, error: null };
+  assert.equal(await svc.saveMinuteLogV2(record), 'duplicate');
+
+  lookupResp = { data: { payload_hash: 'different-hash' }, error: null };
+  assert.equal(await svc.saveMinuteLogV2(record), 'conflict');
+});
+
+test('MqttService skips v1 DB write when V2_CUTOVER_ENABLED=true while keeping WS broadcast', async () => {
+  let v1Saves = 0;
+  let wsBroadcasts = 0;
+  const service = new MqttService(
+    { get: (key) => (key === 'auth.v2CutoverEnabled' ? true : undefined) },
+    { saveTelemetry: async () => { v1Saves++; return true; } },
+    { broadcastTelemetry: () => { wsBroadcasts++; }, broadcastStatus: () => {} },
+    { checkAndAlert: async () => {} },
+  );
+
+  await service.handleMessage(
+    'adht/weather/adht_weather_01/telemetry',
+    Buffer.from(JSON.stringify({
+      device_id: 'adht_weather_01',
+      temp: 25,
+      humi: 70,
+      rain_rate: 0,
+      rain_total: 0,
+      wind_speed: 2,
+    })),
+  );
+  assert.equal(v1Saves, 0);
+  assert.equal(wsBroadcasts, 1);
+});
+
+test('SupabaseService.getHistory aligns 24h buckets to clock boundaries across midnight', async () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse('2026-11-26T17:09:48.179Z'); // 00:09:48 GMT+7
+  try {
+    const svc = Object.create(SupabaseService.prototype);
+    svc.table = 'weather_logs';
+    svc.v2Table = 'weather_logs_v2';
+    svc.logger = { warn() {}, error() {} };
+    const responses = [
+      { data: [], error: null },
+      {
+        data: [
+          {
+            device_id: 'adht_weather_01',
+            temperature: 24.44,
+            humidity: 68,
+            rain_rate: 0,
+            rainfall_mm: 0,
+            wind_speed: 0,
+            recorded_at: '2026-11-26T17:08:50.000Z', // 00:08:50 GMT+7
+          },
+        ],
+        error: null,
+      },
+      { data: [], error: null },
+    ];
+    const query = {};
+    for (const m of ['select', 'eq', 'gte', 'lte', 'order', 'range']) {
+      query[m] = () => query;
+    }
+    query.returns = async () => responses.shift();
+    svc.client = { from: () => query };
+
+    const history = await svc.getHistory('adht_weather_01', '24h');
+    assert.equal(history.length, 1);
+    assert.equal(history[0].recorded_at, '2026-11-26T17:00:00.000Z'); // 00:00:00 GMT+7 (today!)
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test('MqttService rejects v2 minute_log in production when DEVICE_DEPLOYMENTS binding is missing', async () => {
+  const service = new MqttService(
+    {
+      get: (key) => {
+        if (key === 'nodeEnv') return 'production';
+        if (key === 'auth.deviceDeployments') return {};
+        return undefined;
+      },
+    },
+    { saveMinuteLogV2: async () => 'persisted' },
+    { broadcastTelemetry: () => {}, broadcastStatus: () => {} },
+    { checkAndAlert: async () => {} },
+  );
+
+  const valid = readFixture('minute-log-valid.json');
+  const res = await service.processMinuteLogV2(valid.device_id, valid);
+  assert.equal(res.status, 'rejected');
+  assert.equal(res.errorCode, 'identity_mismatch');
+  assert.equal(res.retryable, false);
 });

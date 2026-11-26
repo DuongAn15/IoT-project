@@ -213,7 +213,20 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
 
   async processMinuteLogV2(topicDeviceId: string, raw: unknown): Promise<V2IngestResult> {
     const deployments = this.config?.get?.<Record<string, string>>('auth.deviceDeployments');
+    const nodeEnv = this.config?.get?.<string>('nodeEnv') || process.env.NODE_ENV || 'development';
     const expectedDeploymentId = deployments?.[topicDeviceId];
+
+    if (nodeEnv === 'production' && !expectedDeploymentId) {
+      this.logger.warn(
+        `Rejected MQTT v2 minute_log (identity_mismatch): no DEVICE_DEPLOYMENTS binding for ${topicDeviceId}`,
+      );
+      return {
+        status: 'rejected',
+        errorCode: 'identity_mismatch',
+        retryable: false,
+      };
+    }
+
     const validated = validateAndDeriveMinuteLogV2(
       raw,
       topicDeviceId,
@@ -232,33 +245,53 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     }
 
     const { record } = validated;
-    const existingHash = this.v2LogHashes.get(record.identityKey);
-    if (existingHash !== undefined) {
-      if (existingHash === record.payloadHash) {
-        this.logger.debug(`Ignored duplicate v2 minute_log: ${record.identityKey}`);
+    const hasDbV2Persistence = typeof this.supabaseService.saveMinuteLogV2 === 'function';
+
+    if (hasDbV2Persistence) {
+      // Database unique constraint (weather_logs_v2) is the single source of truth.
+      const dbResult = await this.supabaseService.saveMinuteLogV2(record);
+      if (dbResult === 'duplicate') {
         return { status: 'duplicate' };
       }
-      this.logger.warn(
-        `Conflict on v2 minute_log identity ${record.identityKey}; keeping original record`,
-      );
-      return { status: 'rejected', errorCode: 'conflict', retryable: false };
+      if (dbResult === 'conflict') {
+        this.logger.warn(
+          `Conflict in DB on v2 minute_log identity ${record.identityKey}; keeping original record`,
+        );
+        return { status: 'rejected', errorCode: 'conflict', retryable: false };
+      }
+      if (dbResult === 'error') {
+        this.logger.warn(`Failed to persist v2 minute_log ${record.identityKey}`);
+        return { status: 'rejected', errorCode: 'storage_unavailable', retryable: true };
+      }
+    } else {
+      const existingHash = this.v2LogHashes.get(record.identityKey);
+      if (existingHash !== undefined) {
+        if (existingHash === record.payloadHash) {
+          this.logger.debug(`Ignored duplicate v2 minute_log: ${record.identityKey}`);
+          return { status: 'duplicate' };
+        }
+        this.logger.warn(
+          `Conflict on v2 minute_log identity ${record.identityKey}; keeping original record`,
+        );
+        return { status: 'rejected', errorCode: 'conflict', retryable: false };
+      }
+
+      const saved = await this.supabaseService.saveTelemetry({
+        device_id: record.device_id,
+        temp: record.temp,
+        humi: record.humi,
+        rain_rate: record.rain_rate,
+        wind_speed: record.wind_speed,
+        recorded_at: record.recorded_at,
+      });
+
+      if (!saved) {
+        this.logger.warn(`Failed to persist v2 minute_log ${record.identityKey}`);
+        return { status: 'rejected', errorCode: 'storage_unavailable', retryable: true };
+      }
+      this.recordV2Hash(record.identityKey, record.payloadHash);
     }
 
-    const saved = await this.supabaseService.saveTelemetry({
-      device_id: record.device_id,
-      temp: record.temp,
-      humi: record.humi,
-      rain_rate: record.rain_rate,
-      wind_speed: record.wind_speed,
-      recorded_at: record.recorded_at,
-    });
-
-    if (!saved) {
-      this.logger.warn(`Failed to persist v2 minute_log ${record.identityKey}`);
-      return { status: 'rejected', errorCode: 'storage_unavailable', retryable: true };
-    }
-
-    this.recordV2Hash(record.identityKey, record.payloadHash);
     await this.notificationsService.checkAndAlert({
       device_id: record.device_id,
       temp: record.temp,
@@ -316,10 +349,13 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.logger.debug('Received valid MQTT telemetry');
-    const saved = await this.supabaseService.saveTelemetry(telemetry);
-    if (!saved) {
-      this.logger.warn(`Skipped broadcast/alert because persistence failed for ${telemetry.device_id}`);
-      return;
+    const v2CutoverEnabled = this.config?.get?.<boolean>('auth.v2CutoverEnabled') ?? false;
+    if (!v2CutoverEnabled) {
+      const saved = await this.supabaseService.saveTelemetry(telemetry);
+      if (!saved) {
+        this.logger.warn(`Skipped broadcast/alert because persistence failed for ${telemetry.device_id}`);
+        return;
+      }
     }
     this.telemetryGateway.broadcastTelemetry(telemetry);
     await this.notificationsService.checkAndAlert(telemetry);

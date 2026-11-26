@@ -35,6 +35,7 @@ export default (): AppConfig => ({
     allowedDevices: parseCorsOrigins(process.env.ALLOWED_DEVICE_IDS),
     deviceDeployments: parseDeviceDeployments(process.env.DEVICE_DEPLOYMENTS),
     v2DedupFile: process.env.V2_DEDUP_FILE?.trim() || undefined,
+    v2CutoverEnabled: (process.env.V2_CUTOVER_ENABLED || 'false') === 'true',
   },
   mqtt: {
     host: process.env.MQTT_BROKER_HOST || 'xxxxxxxx.ala.asia-southeast1.emqxsl.com',
@@ -49,6 +50,7 @@ export default (): AppConfig => ({
     // Server-side only: require service role key (never fall back to anon key).
     key: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '',
     table: process.env.SUPABASE_TABLE || 'weather_logs',
+    v2Table: process.env.SUPABASE_V2_TABLE?.trim() || 'weather_logs_v2',
   },
   firebase: {
     credentialsPath: process.env.FIREBASE_CREDENTIALS_PATH || 'serviceAccountKey.json',
