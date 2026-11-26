@@ -8,6 +8,21 @@ function parseCorsOrigins(raw?: string): string[] {
     .filter((origin) => origin.length > 0 && origin !== '*');
 }
 
+function parseDeviceDeployments(raw?: string): Record<string, string> {
+  const map: Record<string, string> = {};
+  if (!raw) return map;
+  for (const entry of raw.split(',')) {
+    const trimmed = entry.trim();
+    const eq = trimmed.indexOf('=');
+    if (eq > 0) {
+      const devId = trimmed.slice(0, eq).trim();
+      const depId = trimmed.slice(eq + 1).trim();
+      if (devId && depId) map[devId] = depId;
+    }
+  }
+  return map;
+}
+
 export default (): AppConfig => ({
   port: parseInt(process.env.PORT, 10) || 8000,
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -18,6 +33,8 @@ export default (): AppConfig => ({
     webhookSecret: process.env.WEBHOOK_SECRET?.trim() || undefined,
     enableWebhookTelemetry: (process.env.ENABLE_WEBHOOK_TELEMETRY || 'false') === 'true',
     allowedDevices: parseCorsOrigins(process.env.ALLOWED_DEVICE_IDS),
+    deviceDeployments: parseDeviceDeployments(process.env.DEVICE_DEPLOYMENTS),
+    v2DedupFile: process.env.V2_DEDUP_FILE?.trim() || undefined,
   },
   mqtt: {
     host: process.env.MQTT_BROKER_HOST || 'xxxxxxxx.ala.asia-southeast1.emqxsl.com',

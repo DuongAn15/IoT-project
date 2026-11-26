@@ -8,6 +8,8 @@ export interface AppConfig {
     webhookSecret?: string;
     enableWebhookTelemetry: boolean;
     allowedDevices: string[];
+    deviceDeployments: Record<string, string>;
+    v2DedupFile?: string;
   };
   mqtt: {
     host: string;

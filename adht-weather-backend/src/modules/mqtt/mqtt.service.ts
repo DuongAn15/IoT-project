@@ -1,9 +1,16 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'fs';
+import { dirname } from 'path';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { connect, MqttClient } from 'mqtt';
 import { CreateTelemetryDto } from '../telemetry/dto/create-telemetry.dto';
+import {
+  MAX_V2_PAYLOAD_BYTES,
+  validateAndDeriveMinuteLogV2,
+  V2ErrorCode,
+} from '../telemetry/minute-log-v2';
 import { SupabaseService } from '../database/supabase.service';
 import { TelemetryGateway } from '../websocket/telemetry.gateway';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -15,11 +22,18 @@ interface QueuedMqttMessage {
   payload: Buffer;
 }
 
+export interface V2IngestResult {
+  status: 'persisted' | 'duplicate' | 'rejected';
+  errorCode?: V2ErrorCode;
+  retryable?: boolean;
+}
+
 @Injectable()
 export class MqttService implements OnModuleInit, OnModuleDestroy {
   private static readonly MAX_QUEUE_SIZE = 200;
   private static readonly MAX_CONCURRENCY = 4;
   private static readonly MAX_DEDUP_KEYS = 1000;
+  private static readonly MAX_V2_DEDUP_KEYS = 2000;
 
   private readonly logger = new Logger(MqttService.name);
   private client?: MqttClient;
@@ -29,13 +43,18 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   private activeWorkers = 0;
   private readonly seenSamples = new Set<string>();
   private readonly seenOrder: string[] = [];
+  private readonly v2LogHashes = new Map<string, string>();
+  private readonly v2DedupFile?: string;
 
   constructor(
     private readonly config: ConfigService,
     private readonly supabaseService: SupabaseService,
     private readonly telemetryGateway: TelemetryGateway,
     private readonly notificationsService: NotificationsService,
-  ) {}
+  ) {
+    this.v2DedupFile = this.config?.get?.<string>('auth.v2DedupFile');
+    this.loadV2DedupJournal();
+  }
 
   onModuleInit() {
     this.client = connect({
@@ -56,14 +75,18 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       this.isConnected = true;
       this.logger.log('Connected to MQTT broker');
       this.client.subscribe(
-        ['adht/weather/+/telemetry', 'adht/weather/status'],
+        [
+          'adht/weather/+/telemetry',
+          'adht/weather/+/telemetry/log',
+          'adht/weather/status',
+        ],
         { qos: 1 },
         (error, granted) => {
           if (error || !granted?.length || granted.some((subscription) => subscription.qos === 128)) {
             this.logger.error('MQTT subscribe failed; check broker permissions');
             return;
           }
-          this.logger.log('Subscribed to adht/weather/+/telemetry and adht/weather/status');
+          this.logger.log('Subscribed to telemetry (v1/v2) and status topics');
         },
       );
     });
@@ -146,12 +169,116 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     return false;
   }
 
+  private loadV2DedupJournal(): void {
+    if (!this.v2DedupFile || !existsSync(this.v2DedupFile)) return;
+    try {
+      const lines = readFileSync(this.v2DedupFile, 'utf8').split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const parsed = JSON.parse(trimmed) as { key?: string; hash?: string };
+        if (parsed.key && parsed.hash) {
+          this.setV2HashInMemory(parsed.key, parsed.hash);
+        }
+      }
+    } catch {
+      this.logger.warn('Failed to load v2 dedup journal; starting with empty in-memory map');
+    }
+  }
+
+  private setV2HashInMemory(identityKey: string, payloadHash: string): void {
+    this.v2LogHashes.set(identityKey, payloadHash);
+    if (this.v2LogHashes.size > MqttService.MAX_V2_DEDUP_KEYS) {
+      const oldestKey = this.v2LogHashes.keys().next().value;
+      if (oldestKey) {
+        this.v2LogHashes.delete(oldestKey);
+      }
+    }
+  }
+
+  private recordV2Hash(identityKey: string, payloadHash: string): void {
+    this.setV2HashInMemory(identityKey, payloadHash);
+    if (this.v2DedupFile) {
+      try {
+        mkdirSync(dirname(this.v2DedupFile), { recursive: true });
+        appendFileSync(
+          this.v2DedupFile,
+          `${JSON.stringify({ key: identityKey, hash: payloadHash })}\n`,
+        );
+      } catch {
+        this.logger.warn('Failed to append to v2 dedup journal');
+      }
+    }
+  }
+
+  async processMinuteLogV2(topicDeviceId: string, raw: unknown): Promise<V2IngestResult> {
+    const deployments = this.config?.get?.<Record<string, string>>('auth.deviceDeployments');
+    const expectedDeploymentId = deployments?.[topicDeviceId];
+    const validated = validateAndDeriveMinuteLogV2(
+      raw,
+      topicDeviceId,
+      new Date(),
+      expectedDeploymentId,
+    );
+    if ('error' in validated) {
+      this.logger.warn(
+        `Rejected MQTT v2 minute_log (${validated.error.code}): ${validated.error.message}`,
+      );
+      return {
+        status: 'rejected',
+        errorCode: validated.error.code,
+        retryable: validated.error.retryable,
+      };
+    }
+
+    const { record } = validated;
+    const existingHash = this.v2LogHashes.get(record.identityKey);
+    if (existingHash !== undefined) {
+      if (existingHash === record.payloadHash) {
+        this.logger.debug(`Ignored duplicate v2 minute_log: ${record.identityKey}`);
+        return { status: 'duplicate' };
+      }
+      this.logger.warn(
+        `Conflict on v2 minute_log identity ${record.identityKey}; keeping original record`,
+      );
+      return { status: 'rejected', errorCode: 'conflict', retryable: false };
+    }
+
+    const saved = await this.supabaseService.saveTelemetry({
+      device_id: record.device_id,
+      temp: record.temp,
+      humi: record.humi,
+      rain_rate: record.rain_rate,
+      wind_speed: record.wind_speed,
+      recorded_at: record.recorded_at,
+    });
+
+    if (!saved) {
+      this.logger.warn(`Failed to persist v2 minute_log ${record.identityKey}`);
+      return { status: 'rejected', errorCode: 'storage_unavailable', retryable: true };
+    }
+
+    this.recordV2Hash(record.identityKey, record.payloadHash);
+    await this.notificationsService.checkAndAlert({
+      device_id: record.device_id,
+      temp: record.temp,
+      humi: record.humi,
+      rain_rate: record.rain_rate,
+      wind_speed: record.wind_speed,
+    });
+
+    return { status: 'persisted' };
+  }
+
   async handleMessage(topic: string, payload: Buffer): Promise<void> {
-    // chỉ cho phép 2 topic:
-    //  - 'adht/weather/+/telemetry'
-    //  - 'adht/weather/status'
-    const telemetryTopic = /^adht\/weather\/([^/]+)\/telemetry$/.exec(topic);
-    if (!telemetryTopic && topic !== 'adht/weather/status') return;
+    if (payload.length > MAX_V2_PAYLOAD_BYTES) {
+      this.logger.warn(`Ignored oversized MQTT payload (${payload.length} bytes) on ${topic}`);
+      return;
+    }
+
+    const v1TelemetryTopic = /^adht\/weather\/([^/]+)\/telemetry$/.exec(topic);
+    const v2MinuteLogTopic = /^adht\/weather\/([^/]+)\/telemetry\/log$/.exec(topic);
+    if (!v1TelemetryTopic && !v2MinuteLogTopic && topic !== 'adht/weather/status') return;
 
     let data: unknown;
     try {
@@ -165,14 +292,19 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    if (!telemetryTopic) {
+    if (topic === 'adht/weather/status') {
       this.telemetryGateway.broadcastStatus(data);
+      return;
+    }
+
+    if (v2MinuteLogTopic) {
+      await this.processMinuteLogV2(v2MinuteLogTopic[1], data);
       return;
     }
 
     const telemetry = plainToInstance(CreateTelemetryDto, data);
     const errors = await validate(telemetry, { whitelist: true, forbidUnknownValues: true });
-    if (errors.length || telemetry.device_id !== telemetryTopic[1]) {
+    if (errors.length || telemetry.device_id !== v1TelemetryTopic![1]) {
       this.logger.warn('Ignored MQTT telemetry: invalid fields or device ID mismatch');
       return;
     }
