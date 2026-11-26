@@ -1,6 +1,6 @@
 # P04 — MQTT telemetry pipeline v2
 
-**Trạng thái:** Planned
+**Trạng thái:** In progress on branch `feat/p04-mqtt-telemetry-pipeline-v2` — receiver v1/v2, durable dedup journal + SQL migration (`docs/p04-minute-log-v2-migration.sql`), deployment binding, simulator v2, và firmware minute-log accumulator đã triển khai; firmware publisher còn gated (`ENABLE_V2_MINUTE_LOG_PUBLISHER=0`), vẫn dùng `PubSubClient` QoS 0 + RAM backlog 12 slot (ESP-MQTT QoS 1 và canary board test là bước kế tiếp trước production sign-off).
 **Mục tiêu:** lịch sử log idempotent, live/state/event tách semantics; backend sẵn sàng trước khi firmware phát v2.
 
 ## Phạm vi và các chặng
