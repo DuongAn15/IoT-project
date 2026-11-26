@@ -92,9 +92,13 @@
 #define WIND_GUST_WINDOW_SAMPLES 120      // Cửa sổ trượt 10 phút: 120 mẫu x 5s = 600s
 
 // Button & Screen parameters
-#define ENABLE_EXTERNAL_BUTTONS_UP_DOWN 0 // 0 = Tắt an toàn (GPIO 34/35 không có pull-up nội); 1 = Bật nếu có pull-up ngoài
+#define ENABLE_EXTERNAL_BUTTONS_UP_DOWN 1 // 1 = Bật (GPIO 34/35 active-low với pull-up ngoài, dùng INPUT)
 #define BTN_DEBOUNCE_MS          50       // 50ms chống rung nút bấm
-#define BTN_LONG_PRESS_MS        2000     // 2s nhấn giữ nút SET để tạm tắt còi (Snooze Alarm)
+#define BTN_LONG_PRESS_MS        2000     // 2s..8s nhấn giữ SET rồi thả để tạm tắt còi (Snooze Alarm)
+#define BTN_PROVISION_PRESS_MS   8000     // >=8s nhấn giữ SET rồi thả để mở Wi-Fi Provisioning Portal
+#define WIFI_PORTAL_TIMEOUT_MS   300000   // 5 phút timeout AP portal nếu đã có credentials cũ
+#define WIFI_BACKOFF_MIN_MS      5000     // 5s initial STA reconnect backoff
+#define WIFI_BACKOFF_MAX_MS      45000    // 45s max STA reconnect backoff
 #define ALARM_SNOOZE_DURATION_MS 300000   // 5 phút tạm tắt còi sau khi nhấn giữ
 #define SCREEN_SAVER_TIMEOUT_MS  120000   // 2 phút không tương tác tay -> tắt màn hình chống burn-in
 #define OLED_PERIODIC_WAKE_INTERVAL_MS 600000 // 10 phút tự động bật màn hình 1 lần (10 * 60 * 1000)

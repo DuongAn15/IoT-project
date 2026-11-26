@@ -218,52 +218,97 @@ void taskAlert(void *pvParameters) {
     bool alarmPulseOn = false;
     uint32_t lastPulseToggleMs = millis();
 
-    // Button SET debounce state variables
+    // Button debounce & hold state variables
     int lastRawSetPin = HIGH;
     uint32_t setPressStartMs = 0;
-    bool setLongPressHandled = false;
+    bool setProvisionHintShown = false;
+
+    bool snoozeActive = false;
+    uint32_t snoozeStartMs = 0;
+
+#if ENABLE_EXTERNAL_BUTTONS_UP_DOWN
+    int lastRawUpPin = HIGH;
+    uint32_t upLastEdgeMs = 0;
+    bool upStableLow = false;
+
+    int lastRawDownPin = HIGH;
+    uint32_t downLastEdgeMs = 0;
+    bool downStableLow = false;
+#endif
 
     while (1) {
         uint32_t now = millis();
 
         // 1. Scan Hardware Button SET (GPIO 32, Active-LOW with internal INPUT_PULLUP)
+        //    - Tap (<2s): wake OLED
+        //    - Hold 2..8s & release: snooze buzzer for 5 minutes
+        //    - Hold >=8s & release: trigger Wi-Fi provisioning portal
         int rawSet = digitalRead(PIN_BTN_SET);
         if (rawSet == LOW) {
             if (lastRawSetPin == HIGH) {
-                // Button just pressed down
                 setPressStartMs = now;
-                setLongPressHandled = false;
+                setProvisionHintShown = false;
                 oledMgr.wakeScreen();
-            } else if (!setLongPressHandled && static_cast<uint32_t>(now - setPressStartMs) >= BTN_LONG_PRESS_MS) {
-                // Long press threshold reached (2 seconds) -> Snooze alarm buzzer for 5 minutes
-                setLongPressHandled = true;
-                alarmSnoozedUntilMs = now + ALARM_SNOOZE_DURATION_MS;
-
-                // Beep 100ms to acknowledge snooze
+            } else if (!setProvisionHintShown &&
+                       static_cast<uint32_t>(now - setPressStartMs) >= BTN_PROVISION_PRESS_MS) {
+                setProvisionHintShown = true;
+                oledMgr.wakeScreen();
+                portENTER_CRITICAL(&stateMux);
+                manualBuzzerActive = true;
+                manualBuzzerStartMs = now;
+                manualBuzzerDurationMs = 80;
+                portEXIT_CRITICAL(&stateMux);
+                Serial.println("[BUTTON] SET >=8s held: release to enter Wi-Fi provisioning portal");
+            }
+        } else if (lastRawSetPin == LOW) {
+            uint32_t heldMs = static_cast<uint32_t>(now - setPressStartMs);
+            if (heldMs >= BTN_PROVISION_PRESS_MS) {
+                Serial.println("[BUTTON] SET released >=8s: requesting Wi-Fi provisioning portal");
+                wifiMgr.requestProvisioningPortal();
+            } else if (heldMs >= BTN_LONG_PRESS_MS) {
+                snoozeActive = true;
+                snoozeStartMs = now;
                 portENTER_CRITICAL(&stateMux);
                 manualBuzzerActive = true;
                 manualBuzzerStartMs = now;
                 manualBuzzerDurationMs = 100;
                 portEXIT_CRITICAL(&stateMux);
-
-                Serial.println("[BUTTON] SET Long-press: Alarm buzzer snoozed for 5 minutes!");
+                Serial.println("[BUTTON] SET 2-8s release: Alarm buzzer snoozed for 5 minutes!");
+            } else if (heldMs >= BTN_DEBOUNCE_MS) {
+                oledMgr.wakeScreen();
+                Serial.println("[BUTTON] SET tap: OLED woken");
             }
-        } else {
-            if (lastRawSetPin == LOW) {
-                // Button just released
-                if (!setLongPressHandled && static_cast<uint32_t>(now - setPressStartMs) >= BTN_DEBOUNCE_MS) {
-                    // Valid short press: Cycle OLED display page
-                    oledMgr.wakeScreen();
-                    oledMgr.nextPage();
-                    Serial.printf("[BUTTON] SET Short-press: Switched to OLED Page %u\n", oledMgr.getPage() + 1);
-                }
-            }
+            setProvisionHintShown = false;
         }
         lastRawSetPin = rawSet;
 
 #if ENABLE_EXTERNAL_BUTTONS_UP_DOWN
-        // Optional external UP / DOWN button logic (only active when board has verified pull-ups)
-        // PIN_BTN_UP (GPIO 35) & PIN_BTN_DOWN (GPIO 34)
+        // 1b. UP (GPIO 35) & DOWN (GPIO 34) - Active-LOW with external pull-up (INPUT only)
+        int rawUp = digitalRead(PIN_BTN_UP);
+        if (rawUp != lastRawUpPin) {
+            upLastEdgeMs = now;
+            lastRawUpPin = rawUp;
+        } else if (static_cast<uint32_t>(now - upLastEdgeMs) >= BTN_DEBOUNCE_MS) {
+            bool isLow = (rawUp == LOW);
+            if (isLow && !upStableLow) {
+                oledMgr.nextPageClamped();
+                Serial.printf("[BUTTON] UP: Page %u/3\n", oledMgr.getPage() + 1);
+            }
+            upStableLow = isLow;
+        }
+
+        int rawDown = digitalRead(PIN_BTN_DOWN);
+        if (rawDown != lastRawDownPin) {
+            downLastEdgeMs = now;
+            lastRawDownPin = rawDown;
+        } else if (static_cast<uint32_t>(now - downLastEdgeMs) >= BTN_DEBOUNCE_MS) {
+            bool isLow = (rawDown == LOW);
+            if (isLow && !downStableLow) {
+                oledMgr.prevPage();
+                Serial.printf("[BUTTON] DOWN: Page %u/3\n", oledMgr.getPage() + 1);
+            }
+            downStableLow = isLow;
+        }
 #endif
 
         // 2. Alert Monitoring & Threshold Checking
@@ -320,6 +365,10 @@ void taskAlert(void *pvParameters) {
             }
         }
 
+        if (setProvisionHintShown) {
+            snprintf(nextAlertMsg, sizeof(nextAlertMsg), "RELEASE FOR WIFI");
+        }
+
         portENTER_CRITICAL(&stateMux);
         snprintf(currentAlertMsg, sizeof(currentAlertMsg), "%s", nextAlertMsg);
         portEXIT_CRITICAL(&stateMux);
@@ -335,8 +384,11 @@ void taskAlert(void *pvParameters) {
             lastPulseToggleMs = now;
         }
 
-        // Alarm Snooze check: suppress buzzer while snoozed
-        bool isAlarmSnoozed = (now < alarmSnoozedUntilMs);
+        // Alarm Snooze check (wrap-safe): suppress buzzer while snoozed
+        if (snoozeActive && static_cast<uint32_t>(now - snoozeStartMs) >= ALARM_SNOOZE_DURATION_MS) {
+            snoozeActive = false;
+        }
+        bool isAlarmSnoozed = snoozeActive;
         bool buzzerOut = buzzerManualOn || (triggerAlarm && cfg.buzzer_enabled && alarmPulseOn && !isAlarmSnoozed);
         bool ledOut = triggerAlarm ? alarmPulseOn : (ledOverride ? ledManualState : false);
 

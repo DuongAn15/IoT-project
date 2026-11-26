@@ -21,6 +21,8 @@ public:
     void update(const WeatherData &weather, const NetworkStatus &net, const char *alertMessage = "");
     void showBootScreen(const String &statusText);
     void nextPage();
+    void nextPageClamped();
+    void prevPage();
     void setPage(uint8_t page);
     uint8_t getPage();
     void wakeScreen();
@@ -29,6 +31,7 @@ private:
     void renderPageOverview(const WeatherData &weather, const NetworkStatus &net, const char *alertMessage);
     void renderPageExtremes(const WeatherData &weather, const char *alertMessage);
     void renderPageSystem(const WeatherData &weather, const NetworkStatus &net);
+    void renderProvisioningScreen(const NetworkStatus &net);
 
     Adafruit_SH1106G display;
     bool oledReady;
