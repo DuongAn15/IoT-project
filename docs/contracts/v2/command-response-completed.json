@@ -1,0 +1,11 @@
+{
+  "schema_version": 2,
+  "device_id": "dev-001",
+  "deployment_id": "dep-002",
+  "boot_id": "boot-20261126-0001",
+  "request_id": "op-001",
+  "status": "completed",
+  "result": {
+    "duration_ms": 500
+  }
+}

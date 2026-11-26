@@ -15,7 +15,7 @@ Tài liệu phản ánh controller, DTO và service hiện tại của backend.
 | POST | `/api/telemetry` | Nhận số đo cảm biến |
 | GET | `/api/weather/latest` | Lấy số đo mới nhất |
 | GET | `/api/weather/history` | Lấy lịch sử số đo |
-| GET | `/api/weather/forecast` | Lấy dự báo |
+
 | POST | `/api/devices` | Thêm thiết bị vào Supabase |
 | GET | `/api/devices` | Lấy tất cả thiết bị |
 | GET | `/api/devices/:id` | Lấy thiết bị theo device_id |
@@ -275,33 +275,9 @@ Truy vấn Supabase chưa triển khai, nên endpoint hiện chưa trả số đ
 
 Truy vấn lịch sử vẫn là stub; chưa có hợp đồng điểm dữ liệu thực tế để minh họa.
 
-## 4. Lấy dự báo
+## 4. Forecast — tạm hoãn
 
-### API / Request mẫu
-
-`GET /api/weather/forecast?lat=10.8231&lon=106.6297`
-
-Query `lat` (vĩ độ) và `lon` (kinh độ) đều không bắt buộc. Không có request body.
-
-### Response hiện tại — HTTP 200
-
-```json
-{
-  "statusCode": 200,
-  "data": {
-    "status": "success",
-    "message": "TODO: Tích hợp OpenWeatherMap API",
-    "coords": {
-      "lat": 10.8231,
-      "lon": 106.6297
-    },
-    "forecast_days": []
-  },
-  "timestamp": "2026-11-04T05:00:00.000Z"
-}
-```
-
-Chưa tích hợp API dự báo thật.
+Forecast tạm hoãn để phát triển sau. Route `/api/weather/forecast` và service hiện được comment out, vì vậy endpoint không được expose và không có response contract đang hoạt động. Giữ source/spec làm điểm bắt đầu cho phase sau; chỉ khôi phục endpoint sau khi contract/provider được duyệt.
 
 ## 5. Gửi lệnh điều khiển
 

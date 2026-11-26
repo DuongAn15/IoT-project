@@ -1,20 +1,19 @@
-import { BadGatewayException, BadRequestException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { SupabaseService } from '../database/supabase.service';
+
+/* Forecast-only dependencies; restore with the deferred getForecast implementation.
+import { BadGatewayException, BadRequestException, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import { SupabaseService } from '../database/supabase.service';
 import type { WeatherForecast } from './types/forecast.types';
 import { buildForecast } from './utils/forecast.helpers';
 
 const OPENWEATHER_FORECAST_URL = 'https://api.openweathermap.org/data/2.5/forecast';
+*/
 
 @Injectable()
 export class WeatherService {
-    private readonly logger = new Logger(WeatherService.name);
-
-    constructor(
-        private readonly config: ConfigService,
-        private readonly supabaseService: SupabaseService,
-    ) { }
+    constructor(private readonly supabaseService: SupabaseService) { }
 
     async getLatest(deviceId?: string) {
         // TODO: Viết code lấy số đo mới nhất từ SupabaseService
@@ -32,6 +31,7 @@ export class WeatherService {
         };
     }
 
+    /* Forecast integration is deferred. Keep this code for a future scoped reactivation.
     async getForecast(lat?: number, lon?: number): Promise<WeatherForecast> {
         // const latitude = lat ?? this.config.getOrThrow<number>('openWeather.defaultLat');
         // const longitude = lon ?? this.config.getOrThrow<number>('openWeather.defaultLon');
@@ -75,4 +75,5 @@ export class WeatherService {
             timezone_offset_seconds: 0,
         };
     }
+    */
 }

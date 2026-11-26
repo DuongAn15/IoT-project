@@ -1,0 +1,11 @@
+{
+  "device_id": "adht_weather_01",
+  "temp": 30.2,
+  "humi": 120.0,
+  "rain_rate": 0.0,
+  "rain_total": 12.5,
+  "wind_speed": 2.1,
+  "wind_max": 4.5,
+  "rssi": -58,
+  "uptime": 3600
+}

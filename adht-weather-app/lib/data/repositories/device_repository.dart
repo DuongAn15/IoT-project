@@ -31,7 +31,7 @@ class DeviceRepositoryImpl implements DeviceRepository {
       command: command,
     );
     final status = response.data['status'] as String?;
-    return status == 'success';
+    return status == 'accepted' || status == 'success';
   }
 
   @override
@@ -44,6 +44,6 @@ class DeviceRepositoryImpl implements DeviceRepository {
       config: config,
     );
     final status = response.data['status'] as String?;
-    return status == 'success';
+    return status == 'accepted' || status == 'success';
   }
 }

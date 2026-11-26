@@ -30,7 +30,9 @@ export class DevicesService {
     this.logger.log(`[DevicesService] Nhận lệnh điều khiển cho trạm ${deviceId}: ${dto.cmd}`);
     const success = await this.mqttService.publishCommand(deviceId, dto);
     return {
-      status: success ? 'success' : 'failed',
+      status: success ? 'accepted' : 'failed',
+      delivery: success ? 'broker_ack' : 'failed',
+      executed: false,
       deviceId,
       command: dto,
     };
@@ -40,7 +42,9 @@ export class DevicesService {
     this.logger.log(`[DevicesService] Nhận cấu hình mới cho trạm ${deviceId}`);
     const success = await this.mqttService.publishConfig(deviceId, dto);
     return {
-      status: success ? 'success' : 'failed',
+      status: success ? 'accepted' : 'failed',
+      delivery: success ? 'broker_ack' : 'failed',
+      executed: false,
       deviceId,
       config: dto,
     };

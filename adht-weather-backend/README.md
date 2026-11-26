@@ -29,7 +29,7 @@ adht-weather-backend/
         ├── notifications/      # 📌 [TODO] NotificationsService: Kiểm tra thiên tai & gọi Firebase FCM
         ├── websocket/          # 📌 [TODO] TelemetryGateway: Kênh WebSocket /ws/telemetry phát realtime
         ├── telemetry/          # 📌 [TODO] TelemetryController: Nhận Webhook từ EMQX Cloud Rule Engine
-        ├── weather/            # 📌 [TODO] WeatherController: API latest, history làm mịn & dự báo 3 ngày
+        ├── weather/            # 📌 [TODO] WeatherController: latest/history; forecast tạm comment để phát triển sau
         └── devices/            # 📌 [TODO] DevicesController: API gửi lệnh còi/LED & cài đặt ngưỡng ESP32
 ```
 

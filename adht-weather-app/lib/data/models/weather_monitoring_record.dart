@@ -7,7 +7,8 @@ class WeatherMonitoringRecord {
   final String deviceId;
   final double temperature; // °C
   final double humidity; // %
-  final double rainfall; // mm / rain_rate
+  final double rainfall; // rain_rate (mm/h)
+  final double? rainfallMm; // Estimated bucket rainfall amount (mm)
   final double windSpeed; // km/h
   final DateTime recordedAt;
   final int timestamp; // millisecondsSinceEpoch
@@ -18,6 +19,7 @@ class WeatherMonitoringRecord {
     required this.temperature,
     required this.humidity,
     required this.rainfall,
+    this.rainfallMm,
     required this.windSpeed,
     required this.recordedAt,
     int? timestamp,
@@ -77,6 +79,7 @@ class WeatherMonitoringRecord {
       temperature: (json['temp'] as num?)?.toDouble() ?? 0.0,
       humidity: (json['humi'] as num?)?.toDouble() ?? 0.0,
       rainfall: (json['rain_rate'] as num?)?.toDouble() ?? 0.0,
+      rainfallMm: (json['rainfall_mm'] as num?)?.toDouble(),
       windSpeed: (json['wind_speed'] as num?)?.toDouble() ?? 0.0,
       recordedAt: date,
       timestamp: date.millisecondsSinceEpoch,

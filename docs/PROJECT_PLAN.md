@@ -3,7 +3,8 @@
 > **Đơn vị phát triển**: Nhóm ADHT  
 > **Mô hình Repository**: Monorepo (Quản lý tập trung Firmware, Backend Server, Mobile App & Simulator trong 1 Repository duy nhất)  
 > **Kiến trúc hệ thống**: 4 Tầng chuẩn IoT (Thiết bị ➔ MQTT Broker ➔ Backend Gateway & CSDL ➔ Client Apps & Web)  
-> **Công nghệ lõi**: ESP32 (FreeRTOS) + EMQX Cloud (MQTT TLS 8883) + NestJS Backend Gateway (TypeScript / Docker Compose) + Supabase (PostgreSQL) + Flutter App & Web Dashboard  
+> **Công nghệ lõi**: ESP32 (FreeRTOS) + EMQX Cloud (MQTT TLS 8883) + NestJS Backend Gateway (TypeScript / Docker Compose) + Supabase (PostgreSQL) + Flutter App & Web Dashboard
+> **Trạng thái Forecast**: Tạm hoãn để phát triển sau. Source/spec được giữ lại nhưng route, cấu hình và test đang comment/disable; không tính vào chức năng hiện hành.
 
 ---
 
@@ -58,7 +59,7 @@ IoT-project/
 │   │       ├── database/               # SupabaseService ghi PostgreSQL & thuật toán Downsampling biểu đồ
 │   │       ├── notifications/          # NotificationsService kiểm tra thiên tai & gọi Firebase FCM Admin
 │   │       ├── telemetry/              # TelemetryController nhận Webhook từ EMQX Cloud Rule Engine
-│   │       ├── weather/                # WeatherController: latest, history downsampled, 3-day forecast
+│   │       ├── weather/                # WeatherController: latest và history downsampled
 │   │       └── devices/                # DevicesController: send command còi/LED & update config NVS
 │
 ├── adht-weather-app/                    # Phân hệ Ứng dụng Người dùng (Flutter Mobile & Web)
@@ -67,7 +68,7 @@ IoT-project/
 │       ├── main.dart                   # Điểm khởi chạy ứng dụng (Hỗ trợ cả Android, iOS và Web)
 │       ├── core/                       # Hằng số kết nối Backend API URL, Theme, Helpers
 │       ├── data/
-│       │   ├── models/                 # Model dữ liệu thời tiết, cấu hình và dự báo
+│       │   ├── models/                 # Model dữ liệu thời tiết và cấu hình
 │       │   └── services/               # ApiClientService (REST) & WebSocketService (Realtime)
 │       └── presentation/
 │           ├── providers/              # Quản lý State dữ liệu thời gian thực và lịch sử
@@ -258,8 +259,7 @@ Hệ thống triển khai tầng Máy chủ theo mô hình **Application Server 
    * Khi phát hiện nhiệt độ cực đoan $> 38.0^\circ\text{C}$, mưa to $> 30.0\text{ mm/h}$ hoặc gió giật $> 15.0\text{ m/s}$, Backend gọi ngay **Firebase Admin SDK** để bắn thông báo khẩn cấp rung chuông điện thoại người dùng (ngay cả khi đã tắt App).
 5. **Làm mịn dữ liệu biểu đồ (Downsampling)**:
    * Thay vì trả về hàng vạn điểm dữ liệu thô gây lag giật điện thoại, Backend tự động tổng hợp trung bình theo giờ để trả về biểu đồ siêu mượt cho các mốc `1H`, `6H`, `24H`, `3D`, `7D`.
-6. **Dự báo thời tiết tương lai (External Weather API)**:
-   * Tự động đồng bộ với OpenWeatherMap API để cung cấp dữ liệu dự báo 3 ngày tới cho ứng dụng người dùng.
+
 
 ---
 
@@ -273,7 +273,7 @@ Hệ thống triển khai tầng Máy chủ theo mô hình **Application Server 
 | `GET` | `/api/weather/history` | `?device_id=...&range=1h\|6h\|24h\|3d\|7d` | Truy vấn dữ liệu lịch sử đã được làm mịn (Downsampled) để vẽ biểu đồ |
 | `POST` | `/api/devices/:id/command` | `{"cmd": "buzzer", "arg": "500"}` | Nhận lệnh điều khiển còi/LED từ App và phát MQTT xuống ESP32 |
 | `PUT` | `/api/devices/:id/config` | `{"temp_max": 39.0, ...}` | Nhận cấu hình ngưỡng mới từ App, lưu DB và phát MQTT xuống ESP32 |
-| `GET` | `/api/weather/forecast` | `?lat=...&lon=...` | Trả về dự báo thời tiết 3 ngày tới từ OpenWeatherMap API |
+
 | `POST` | `/api/notifications/register-token`| `{"fcm_token": "..."}` | Đăng ký thiết bị di động nhận thông báo đẩy khi có giông bão |
 
 ---
@@ -366,7 +366,7 @@ services:
       - MQTT_USERNAME=adht_device
       - MQTT_PASSWORD=Your_Mqtt_Password
       - FIREBASE_SERVICE_ACCOUNT_PATH=/app/firebase-service-account.json
-      - OPENWEATHER_API_KEY=Your_OpenWeather_Key
+
 ```
 
 ---
@@ -375,7 +375,7 @@ services:
 
 Ứng dụng **ADHT Weather App** được phát triển đa nền tảng bằng **Flutter (Dart)**, hỗ trợ cả **Android, iOS và Web Dashboard** trên máy tính. 
 
-Theo chuẩn kiến trúc bảo mật, **Ứng dụng chỉ giao tiếp DUY NHẤT với Backend Gateway** thông qua hai giao thức tiêu chuẩn: **WebSocket** (cho số liệu thời gian thực) và **REST API** (cho lịch sử, dự báo và lệnh điều khiển), đồng thời tích hợp **Firebase FCM** để nhận cảnh báo giông bão từ xa.
+Theo chuẩn kiến trúc bảo mật, **Ứng dụng chỉ giao tiếp DUY NHẤT với Backend Gateway** thông qua hai giao thức tiêu chuẩn: **WebSocket** (cho số liệu thời gian thực) và **REST API** (cho lịch sử và lệnh điều khiển), đồng thời tích hợp **Firebase FCM** để nhận cảnh báo giông bão từ xa.
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
@@ -393,8 +393,7 @@ Theo chuẩn kiến trúc bảo mật, **Ứng dụng chỉ giao tiếp DUY NH�
 │ • Trạng thái Online / Offline │                           │ • Biểu đồ tương tác fl_chart  │
 │ • Không tốn tài nguyên DB     │                           │ • Gửi lệnh còi, LED, reset    │
 │ • Kết nối nhẹ, không hao pin  │                           │ • Cập nhật ngưỡng báo động NVS│
-└───────────────────────────────┘                           │ • Lấy dự báo 3 ngày tới       │
-                                                            │ • Đăng ký nhận FCM Token      │
+└───────────────────────────────┘                           │ • Đăng ký nhận FCM Token      │
                                                             └───────────────────────────────┘
 ```
 
@@ -418,10 +417,7 @@ Theo chuẩn kiến trúc bảo mật, **Ứng dụng chỉ giao tiếp DUY NH�
 │   ├── Biểu đồ diện tích (Area Chart): Tốc độ gió qua các mốc thời gian
 │   └── Biểu đồ cột (Bar Chart): Lượng mưa đo được theo từng mốc giờ/ngày
 │
-├── 3. Forecast Screen (Màn hình Dự báo Thời tiết)
-│   ├── Dự báo thời tiết 3 ngày tới (Biểu tượng thời tiết, khả năng mưa %, nhiệt độ ngày/đêm)
-│   └── Đồng bộ trực tiếp từ OpenWeatherMap API thông qua Backend
-│
+
 └── 4. Settings Screen (Màn hình Cấu hình & Điều khiển từ xa)
     ├── Điều khiển thiết bị:
     │   ├── Nút "Kích hoạt Còi kiểm tra" (POST /api/devices/:id/command)
@@ -459,7 +455,7 @@ adht-weather-app/lib/
     ├── screens/
     │   ├── dashboard_screen.dart      # Màn hình Dashboard thời gian thực
     │   ├── history_chart_screen.dart  # Màn hình Biểu đồ lịch sử fl_chart
-    │   ├── forecast_screen.dart       # Màn hình Dự báo thời tiết OpenWeather
+
     │   └── settings_screen.dart       # Màn hình Điều khiển còi và Cài đặt ngưỡng
     └── widgets/
         ├── weather_gauge_card.dart    # Thẻ đồng hồ đo vòng cung (Circular Gauge)
@@ -485,7 +481,7 @@ Toàn bộ nhóm làm việc tập trung trên cùng một Git Repository, phân
 |---|---|---|---|
 | **Tuần 1** | **Khởi tạo Đám mây & Kiểm thử Mạch**<br/>- Đăng ký cụm EMQX Cloud Serverless & tạo tài khoản kết nối.<br/>- Tạo dự án Supabase & chạy script SQL tạo bảng.<br/>- Kiểm tra nguồn và đường truyền tín hiệu cảm biến ESP32. | Cloud & Hardware | - Cụm EMQX Cloud & Supabase sẵn sàng.<br/>- Bảng đo kiểm tín hiệu GPIO hoạt động tốt. |
 | **Tuần 2** | **Hiệu chuẩn Firmware & Bộ Công cụ Mô phỏng**<br/>- Tạo file `.env`, hiệu chuẩn hệ số gàu lật mưa và chong chóng gió.<br/>- Nạp code ESP32 phát MQTTS chu kỳ 5.0s kèm LWT QoS 1.<br/>- Xây dựng `tools/simulate_nodes.py` chạy 2 trạm ảo đồng hành. | `adht-weather-firmware`<br/>`tools/` | - ESP32 hoạt động liên tục 24/7.<br/>- OLED hiển thị đầy đủ thông số.<br/>- Script simulator phát dữ liệu song song ổn định. |
-| **Tuần 3** | **Xây dựng Backend Gateway & Docker Compose**<br/>- Xây dựng REST API Server + WebSocket Gateway.<br/>- Lọc dữ liệu, lưu Supabase và tích hợp Firebase FCM Admin.<br/>- Tích hợp OpenWeatherMap API và cronjob thống kê ngày.<br/>- Đóng gói Dockerfile và `docker-compose.yml`. | `adht-weather-backend` | - Backend chạy trọn gói bằng `docker compose up`.<br/>- Nhận telemetry từ EMQX, lưu DB và bắn được push notification. |
+| **Tuần 3** | **Xây dựng Backend Gateway & Docker Compose**<br/>- Xây dựng REST API Server + WebSocket Gateway.<br/>- Lọc dữ liệu, lưu Supabase và tích hợp Firebase FCM Admin.<br/>- Tích hợp cronjob thống kê dữ liệu ngày.<br/>- Đóng gói Dockerfile và `docker-compose.yml`. | `adht-weather-backend` | - Backend chạy trọn gói bằng `docker compose up`.<br/>- Nhận telemetry từ EMQX, lưu DB và bắn được push notification. |
 | **Tuần 4** | **Phát triển Ứng dụng Di động & Web Dashboard**<br/>- Tạo dự án Flutter trong `adht-weather-app`.<br/>- Kết nối WebSocket nhận Realtime và REST API vẽ biểu đồ `fl_chart`.<br/>- Tích hợp Firebase Messaging nhận thông báo rung chuông màn hình khóa.<br/>- Build thử nghiệm trên cả Android và Web. | `adht-weather-app` | - Ứng dụng chạy mượt trên Android & Web.<br/>- Nhận cảnh báo giông bão khi khóa màn hình. |
 | **Tuần 5** | **Kiểm thử Hệ thống, Đóng gói & Báo cáo**<br/>- Stress test: Mất WiFi, mất điện đột ngột, phục hồi tự động.<br/>- Xuất bản file cài đặt Android `.apk` và hosting Web.<br/>- Hoàn thiện hộp bảo vệ ngoài trời và Slide thuyết trình. | Toàn hệ thống | - File cài đặt `ADHT_Weather.apk`.<br/>- Bản báo cáo đồ án hoàn chỉnh. |
 

@@ -21,12 +21,23 @@ public:
     void setConfigCallback(ConfigUpdateCallback cb);
 
 private:
+    static constexpr size_t TELEMETRY_BACKLOG_CAPACITY = 16;
+    static constexpr size_t TELEMETRY_PAYLOAD_MAX_BYTES = 512;
+
     WiFiClientSecure secureClient;
     PubSubClient mqttClient;
     uint32_t lastReconnectAttempt;
     CommandCallback onCommand;
     ConfigUpdateCallback onConfig;
 
+    char bootId[17];
+    uint32_t telemetrySequence;
+    char backlog[TELEMETRY_BACKLOG_CAPACITY][TELEMETRY_PAYLOAD_MAX_BYTES];
+    size_t backlogHead;
+    size_t backlogCount;
+
+    void enqueueBacklog(const char *payload);
+    void flushBacklog();
     bool reconnect();
     void onMessageReceived(char *topic, byte *payload, unsigned int length);
     static void staticCallback(char *topic, byte *payload, unsigned int length);
@@ -35,4 +46,3 @@ private:
 extern MqttManager mqttMgr;
 
 #endif // MQTT_MANAGER_H
-

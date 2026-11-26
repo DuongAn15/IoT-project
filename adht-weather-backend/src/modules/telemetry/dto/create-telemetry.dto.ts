@@ -58,4 +58,20 @@ export class CreateTelemetryDto {
   @IsNumber()
   @IsOptional()
   uptime?: number;
+
+  @ApiPropertyOptional({ example: 'adht_weather_01:1a2b3c4d5e6f7a8b:42', description: 'Định danh duy nhất của mẫu đo để chống trùng lặp' })
+  @IsString()
+  @IsOptional()
+  sample_id?: string;
+
+  @ApiPropertyOptional({ example: '1a2b3c4d5e6f7a8b', description: 'Định danh phiên khởi động của thiết bị' })
+  @IsString()
+  @IsOptional()
+  boot_id?: string;
+
+  @ApiPropertyOptional({ example: 42, description: 'Số thứ tự mẫu đo tăng dần trong phiên boot' })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  sequence?: number;
 }

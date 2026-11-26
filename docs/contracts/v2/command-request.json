@@ -1,0 +1,12 @@
+{
+  "schema_version": 2,
+  "device_id": "dev-001",
+  "deployment_id": "dep-002",
+  "request_id": "op-001",
+  "command": "buzzer_test",
+  "args": {
+    "duration_ms": 500
+  },
+  "issued_at": "2026-11-26T03:20:00Z",
+  "expires_at": "2026-11-26T03:20:15Z"
+}

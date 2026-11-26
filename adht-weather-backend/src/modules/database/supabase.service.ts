@@ -8,6 +8,7 @@ export interface WeatherRecord {
   temp: number;
   humi: number;
   rain_rate: number;
+  rainfall_mm?: number;
   wind_speed: number;
   recorded_at: string;
 }
@@ -196,13 +197,17 @@ export class SupabaseService {
       throw new ServiceUnavailableException('Unable to load weather history');
     }
 
-    return [...buckets.entries()].sort(([left], [right]) => left - right).map(([, { point, count }]) => ({
-      ...point,
-      temp: point.temp / count,
-      humi: point.humi / count,
-      rain_rate: point.rain_rate / count,
-      wind_speed: point.wind_speed / count,
-    }));
+    return [...buckets.entries()].sort(([left], [right]) => left - right).map(([, { point, count }]) => {
+      const avgRainRate = point.rain_rate / count;
+      return {
+        ...point,
+        temp: point.temp / count,
+        humi: point.humi / count,
+        rain_rate: avgRainRate,
+        rainfall_mm: Number(((avgRainRate * settings.bucket) / 3600).toFixed(3)),
+        wind_speed: point.wind_speed / count,
+      };
+    });
   }
 
   private describeError(error: unknown): string {

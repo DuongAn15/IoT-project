@@ -1,0 +1,51 @@
+{
+  "schema_version": 2,
+  "type": "minute_log",
+  "device_id": "dev-001",
+  "deployment_id": "dep-002",
+  "boot_id": "boot-20261126-0001",
+  "window_sequence": 123,
+  "interval_start": "2026-11-26T03:20:00Z",
+  "interval_end": "2026-11-26T03:21:00Z",
+  "clock_quality": "synchronized",
+  "metrics": {
+    "temperature": {
+      "unit": "degC",
+      "sum": 720.0,
+      "count": 24,
+      "min": 29.0,
+      "max": 31.0,
+      "latest": 30.2
+    },
+    "humidity": {
+      "unit": "percent_rh",
+      "sum": 1632.0,
+      "count": 24,
+      "min": 64.0,
+      "max": 72.0,
+      "latest": 68.0
+    },
+    "wind_speed": {
+      "unit": "m/s",
+      "sum": 24.0,
+      "count": 12,
+      "min": 1.2,
+      "max": 2.8,
+      "latest": 2.1
+    }
+  },
+  "rain": {
+    "counter_epoch": "boot-20261126-0001:reset-0",
+    "calibration_version": "rain-bucket-v1",
+    "tip_count_start": 40,
+    "tip_count_end": 40
+  },
+  "quality": {
+    "dht_expected_count": 24,
+    "dht_valid_count": 24,
+    "wind_expected_count": 12,
+    "wind_valid_count": 12,
+    "coverage_ms": 60000,
+    "rain_coverage_ms": 60000
+  }
+}
