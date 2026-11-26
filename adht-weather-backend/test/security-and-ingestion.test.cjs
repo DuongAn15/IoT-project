@@ -1,11 +1,21 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { UnauthorizedException, NotImplementedException } = require('@nestjs/common');
+const {
+  BadRequestException,
+  ForbiddenException,
+  NotImplementedException,
+  UnauthorizedException,
+} = require('@nestjs/common');
+const { plainToInstance } = require('class-transformer');
+const { validate } = require('class-validator');
 const loadConfiguration = require('../dist/config/configuration').default;
 const { ApiAuthGuard } = require('../dist/common/guards/api-auth.guard');
 const { MqttService } = require('../dist/modules/mqtt/mqtt.service');
 const { TelemetryService } = require('../dist/modules/telemetry/telemetry.service');
 const { TelemetryGateway } = require('../dist/modules/websocket/telemetry.gateway');
+const { DevicesService } = require('../dist/modules/devices/devices.service');
+const { SendCommandDto } = require('../dist/modules/devices/dto/send-command.dto');
+const { UpdateConfigDto } = require('../dist/modules/devices/dto/update-config.dto');
 
 test('supabase config never falls back to SUPABASE_ANON_KEY', () => {
   const prevService = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -111,4 +121,32 @@ test('TelemetryGateway disconnects unauthorized socket when API_AUTH_TOKEN is co
     disconnect: (close) => { disconnected = close; },
   });
   assert.equal(disconnected, true);
+});
+
+test('SendCommandDto and UpdateConfigDto reject invalid enums and out-of-range domain values', async () => {
+  const badCmd = plainToInstance(SendCommandDto, { cmd: 'arbitrary_shell' });
+  assert.ok((await validate(badCmd)).length > 0);
+
+  const badCfg = plainToInstance(UpdateConfigDto, { temp_max: 999, humi_max: 150 });
+  assert.ok((await validate(badCfg)).length >= 2);
+});
+
+test('DevicesService rejects empty config, temp_min >= temp_max, invalid args, and disallowed devices', async () => {
+  const mqtt = { publishCommand: async () => true, publishConfig: async () => true };
+  const config = { get: (key) => (key === 'auth.allowedDevices' ? ['adht_weather_01'] : undefined) };
+  const svc = new DevicesService(mqtt, {}, config);
+
+  await assert.rejects(() => svc.updateConfig('adht_weather_01', {}), BadRequestException);
+  await assert.rejects(
+    () => svc.updateConfig('adht_weather_01', { temp_min: 30, temp_max: 25 }),
+    BadRequestException,
+  );
+  await assert.rejects(
+    () => svc.sendCommand('adht_weather_01', { cmd: 'buzzer', arg: 'not-a-number' }),
+    BadRequestException,
+  );
+  await assert.rejects(
+    () => svc.sendCommand('adht_weather_02', { cmd: 'reboot' }),
+    ForbiddenException,
+  );
 });
