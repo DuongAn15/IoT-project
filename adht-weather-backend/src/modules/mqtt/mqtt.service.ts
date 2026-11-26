@@ -244,18 +244,36 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       return { status: 'rejected', errorCode: 'conflict', retryable: false };
     }
 
-    const saved = await this.supabaseService.saveTelemetry({
-      device_id: record.device_id,
-      temp: record.temp,
-      humi: record.humi,
-      rain_rate: record.rain_rate,
-      wind_speed: record.wind_speed,
-      recorded_at: record.recorded_at,
-    });
+    if (typeof this.supabaseService.saveMinuteLogV2 === 'function') {
+      const dbResult = await this.supabaseService.saveMinuteLogV2(record);
+      if (dbResult === 'duplicate') {
+        this.recordV2Hash(record.identityKey, record.payloadHash);
+        return { status: 'duplicate' };
+      }
+      if (dbResult === 'conflict') {
+        this.logger.warn(
+          `Conflict in DB on v2 minute_log identity ${record.identityKey}; keeping original record`,
+        );
+        return { status: 'rejected', errorCode: 'conflict', retryable: false };
+      }
+      if (dbResult === 'error') {
+        this.logger.warn(`Failed to persist v2 minute_log ${record.identityKey}`);
+        return { status: 'rejected', errorCode: 'storage_unavailable', retryable: true };
+      }
+    } else {
+      const saved = await this.supabaseService.saveTelemetry({
+        device_id: record.device_id,
+        temp: record.temp,
+        humi: record.humi,
+        rain_rate: record.rain_rate,
+        wind_speed: record.wind_speed,
+        recorded_at: record.recorded_at,
+      });
 
-    if (!saved) {
-      this.logger.warn(`Failed to persist v2 minute_log ${record.identityKey}`);
-      return { status: 'rejected', errorCode: 'storage_unavailable', retryable: true };
+      if (!saved) {
+        this.logger.warn(`Failed to persist v2 minute_log ${record.identityKey}`);
+        return { status: 'rejected', errorCode: 'storage_unavailable', retryable: true };
+      }
     }
 
     this.recordV2Hash(record.identityKey, record.payloadHash);
@@ -316,10 +334,13 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.logger.debug('Received valid MQTT telemetry');
-    const saved = await this.supabaseService.saveTelemetry(telemetry);
-    if (!saved) {
-      this.logger.warn(`Skipped broadcast/alert because persistence failed for ${telemetry.device_id}`);
-      return;
+    const v2CutoverEnabled = this.config?.get?.<boolean>('auth.v2CutoverEnabled') ?? false;
+    if (!v2CutoverEnabled) {
+      const saved = await this.supabaseService.saveTelemetry(telemetry);
+      if (!saved) {
+        this.logger.warn(`Skipped broadcast/alert because persistence failed for ${telemetry.device_id}`);
+        return;
+      }
     }
     this.telemetryGateway.broadcastTelemetry(telemetry);
     await this.notificationsService.checkAndAlert(telemetry);

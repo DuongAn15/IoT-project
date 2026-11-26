@@ -5,6 +5,7 @@ const path = require('node:path');
 const { test } = require('node:test');
 const { validateAndDeriveMinuteLogV2 } = require('../dist/modules/telemetry/minute-log-v2');
 const { MqttService } = require('../dist/modules/mqtt/mqtt.service');
+const { SupabaseService } = require('../dist/modules/database/supabase.service');
 
 const fixturesDir = path.resolve(__dirname, '../../docs/contracts/v2');
 const readFixture = (name) => JSON.parse(fs.readFileSync(path.join(fixturesDir, name), 'utf8'));
@@ -163,4 +164,58 @@ test('MqttService persists v2 dedup/conflict across service restart via V2_DEDUP
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+});
+
+test('SupabaseService.saveMinuteLogV2 handles persisted, DB 23505 duplicate, and conflict', async () => {
+  const valid = readFixture('minute-log-valid.json');
+  const { record } = validateAndDeriveMinuteLogV2(valid, valid.device_id);
+
+  let insertResp = { error: null };
+  let lookupResp = { data: null, error: null };
+  const svc = Object.create(SupabaseService.prototype);
+  svc.v2Table = 'weather_logs_v2';
+  svc.logger = { warn() {}, error() {} };
+  svc.describeError = () => '23505';
+  svc.client = {
+    from: () => ({
+      insert: async () => insertResp,
+      select: () => ({
+        eq: () => ({ eq: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => lookupResp }) }) }) }),
+      }),
+    }),
+  };
+
+  assert.equal(await svc.saveMinuteLogV2(record), 'persisted');
+
+  insertResp = { error: { code: '23505' } };
+  lookupResp = { data: { payload_hash: record.payloadHash }, error: null };
+  assert.equal(await svc.saveMinuteLogV2(record), 'duplicate');
+
+  lookupResp = { data: { payload_hash: 'different-hash' }, error: null };
+  assert.equal(await svc.saveMinuteLogV2(record), 'conflict');
+});
+
+test('MqttService skips v1 DB write when V2_CUTOVER_ENABLED=true while keeping WS broadcast', async () => {
+  let v1Saves = 0;
+  let wsBroadcasts = 0;
+  const service = new MqttService(
+    { get: (key) => (key === 'auth.v2CutoverEnabled' ? true : undefined) },
+    { saveTelemetry: async () => { v1Saves++; return true; } },
+    { broadcastTelemetry: () => { wsBroadcasts++; }, broadcastStatus: () => {} },
+    { checkAndAlert: async () => {} },
+  );
+
+  await service.handleMessage(
+    'adht/weather/adht_weather_01/telemetry',
+    Buffer.from(JSON.stringify({
+      device_id: 'adht_weather_01',
+      temp: 25,
+      humi: 70,
+      rain_rate: 0,
+      rain_total: 0,
+      wind_speed: 2,
+    })),
+  );
+  assert.equal(v1Saves, 0);
+  assert.equal(wsBroadcasts, 1);
 });
