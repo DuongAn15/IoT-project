@@ -219,3 +219,44 @@ test('MqttService skips v1 DB write when V2_CUTOVER_ENABLED=true while keeping W
   assert.equal(v1Saves, 0);
   assert.equal(wsBroadcasts, 1);
 });
+
+test('SupabaseService.getHistory aligns 24h buckets to clock boundaries across midnight', async () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse('2026-11-26T17:09:48.179Z'); // 00:09:48 GMT+7
+  try {
+    const svc = Object.create(SupabaseService.prototype);
+    svc.table = 'weather_logs';
+    svc.v2Table = 'weather_logs_v2';
+    svc.logger = { warn() {}, error() {} };
+    const responses = [
+      { data: [], error: null },
+      {
+        data: [
+          {
+            device_id: 'adht_weather_01',
+            temperature: 24.44,
+            humidity: 68,
+            rain_rate: 0,
+            rainfall_mm: 0,
+            wind_speed: 0,
+            recorded_at: '2026-11-26T17:08:50.000Z', // 00:08:50 GMT+7
+          },
+        ],
+        error: null,
+      },
+      { data: [], error: null },
+    ];
+    const query = {};
+    for (const m of ['select', 'eq', 'gte', 'lte', 'order', 'range']) {
+      query[m] = () => query;
+    }
+    query.returns = async () => responses.shift();
+    svc.client = { from: () => query };
+
+    const history = await svc.getHistory('adht_weather_01', '24h');
+    assert.equal(history.length, 1);
+    assert.equal(history[0].recorded_at, '2026-11-26T17:00:00.000Z'); // 00:00:00 GMT+7 (today!)
+  } finally {
+    Date.now = originalNow;
+  }
+});

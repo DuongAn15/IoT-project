@@ -260,7 +260,8 @@ export class SupabaseService {
 
         for (const row of data) {
           const time = Date.parse(row.created_at);
-          const bucketTime = start + Math.floor((time - start) / (settings.bucket * 1000)) * settings.bucket * 1000;
+          const bucketMs = settings.bucket * 1000;
+          const bucketTime = Math.floor(time / bucketMs) * bucketMs;
           const existing = v1Buckets.get(bucketTime);
           if (existing) {
             existing.point.temp += row.temperature;
@@ -296,7 +297,8 @@ export class SupabaseService {
 
           for (const row of data) {
             const time = Date.parse(row.recorded_at);
-            const bucketTime = start + Math.floor((time - start) / (settings.bucket * 1000)) * settings.bucket * 1000;
+            const bucketMs = settings.bucket * 1000;
+            const bucketTime = Math.floor(time / bucketMs) * bucketMs;
             const existing = v2Buckets.get(bucketTime);
             if (existing) {
               existing.point.temp += row.temperature;
