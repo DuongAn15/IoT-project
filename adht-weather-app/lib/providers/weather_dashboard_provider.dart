@@ -33,23 +33,31 @@ final weatherRepositoryProvider = Provider<WeatherRepository>((ref) {
 
 /// AsyncNotifier quản lý trạng thái tải dữ liệu và làm mới cho Dashboard
 class WeatherDashboardNotifier extends AsyncNotifier<WeatherDashboardState> {
+  int _activeRequestId = 0;
+
   @override
   Future<WeatherDashboardState> build() async {
-    return _fetchData();
+    final targetDeviceId = ref.watch(selectedDeviceIdProvider);
+    final repo = ref.watch(weatherRepositoryProvider);
+    final requestId = ++_activeRequestId;
+    return _fetchDataForStation(repo, targetDeviceId, requestId);
   }
 
-  Future<WeatherDashboardState> _fetchData() async {
-    final repo = ref.read(weatherRepositoryProvider);
-
-    final currentFuture = repo.getCurrentWeather();
-    final intraDayFuture = repo.getIntraDayData();
-    final weeklyFuture = repo.get7DaysSummary();
-
+  Future<WeatherDashboardState> _fetchDataForStation(
+    WeatherRepository repo,
+    String targetDeviceId,
+    int requestId,
+  ) async {
     final results = await Future.wait([
-      currentFuture,
-      intraDayFuture,
-      weeklyFuture,
+      repo.getCurrentWeather(),
+      repo.getIntraDayData(),
+      repo.get7DaysSummary(),
     ]);
+
+    if (requestId != _activeRequestId ||
+        ref.read(selectedDeviceIdProvider) != targetDeviceId) {
+      throw StateError('Stale weather response discarded for $targetDeviceId');
+    }
 
     final current = results[0] as WeatherCurrentModel;
     return WeatherDashboardState(
@@ -63,25 +71,29 @@ class WeatherDashboardNotifier extends AsyncNotifier<WeatherDashboardState> {
 
   /// Làm mới dữ liệu khi người dùng kích hoạt Pull-to-refresh
   Future<void> refresh() async {
+    final targetDeviceId = ref.read(selectedDeviceIdProvider);
+    final repo = ref.read(weatherRepositoryProvider);
+    final requestId = ++_activeRequestId;
+
     state = const AsyncValue.loading();
-    state = await AsyncValue.guard(() async {
-      final repo = ref.read(weatherRepositoryProvider);
+    final next = await AsyncValue.guard(() async {
       await repo.refreshAllData();
-      return _fetchData();
+      return _fetchDataForStation(repo, targetDeviceId, requestId);
     });
+
+    if (requestId == _activeRequestId &&
+        ref.read(selectedDeviceIdProvider) == targetDeviceId) {
+      state = next;
+    }
   }
 
-  /// Chuyển đổi sang trạm quan trắc khác (cập nhật selectedDeviceIdProvider & không giữ dữ liệu trạm cũ)
-  Future<void> changeStation(String newStation) async {
-    final newDeviceId = ApiConstants.resolveDeviceIdFromStationName(newStation);
+  /// Chuyển đổi sang trạm quan trắc khác theo station ID thật (tương thích fallback tên hiển thị)
+  Future<void> changeStation(String stationIdOrName) async {
+    final newDeviceId = ApiConstants.resolveDeviceIdFromStationName(stationIdOrName);
+    if (ref.read(selectedDeviceIdProvider) == newDeviceId && state.hasValue) {
+      return;
+    }
     ref.read(selectedDeviceIdProvider.notifier).state = newDeviceId;
-
-    state = const AsyncValue.loading();
-    state = await AsyncValue.guard(() async {
-      final repo = ref.read(weatherRepositoryProvider);
-      await repo.refreshAllData();
-      return _fetchData();
-    });
   }
 }
 

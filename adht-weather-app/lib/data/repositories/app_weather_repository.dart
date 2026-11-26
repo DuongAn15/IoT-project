@@ -39,6 +39,12 @@ class AppWeatherRepository implements WeatherRepository {
           defaultDeviceId: currentDeviceId,
         );
 
+        if (record.deviceId != currentDeviceId) {
+          throw StateError(
+            'Mismatched station response: expected $currentDeviceId, got ${record.deviceId}',
+          );
+        }
+
         final current = WeatherCurrentModel(
           stationId: record.deviceId,
           stationName: ApiConstants.deviceStationMap[record.deviceId] ??
@@ -51,7 +57,7 @@ class AppWeatherRepository implements WeatherRepository {
           isOnline: true,
         );
 
-        // Lưu bản ghi mới nhất vào FILE cục bộ trên app (thay vì lưu database)
+        // Lưu bản ghi mới nhất vào FILE cục bộ trên app theo đúng stationId
         await fileStorage.saveLatest(current);
 
         return current;

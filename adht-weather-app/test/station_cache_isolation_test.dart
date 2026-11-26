@@ -1,10 +1,38 @@
+import 'dart:async';
 import 'dart:io';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:weather_monitoring/core/constants/api_constants.dart';
+import 'package:weather_monitoring/data/models/station_info.dart';
 import 'package:weather_monitoring/data/models/weather_current_model.dart';
+import 'package:weather_monitoring/data/models/weather_daily_summary.dart';
 import 'package:weather_monitoring/data/models/weather_monitoring_record.dart';
+import 'package:weather_monitoring/data/models/weather_point.dart';
 import 'package:weather_monitoring/data/repositories/app_weather_repository.dart';
+import 'package:weather_monitoring/data/repositories/weather_repository.dart';
 import 'package:weather_monitoring/data/storage/latest_weather_file_storage.dart';
+import 'package:weather_monitoring/data/storage/station_catalogue_storage.dart';
+import 'package:weather_monitoring/providers/device_settings_provider.dart';
+import 'package:weather_monitoring/providers/weather_dashboard_provider.dart';
+
+class _DelayedFakeRepo implements WeatherRepository {
+  final String stationId;
+  final Future<WeatherCurrentModel> Function() fetchCurrent;
+
+  _DelayedFakeRepo(this.stationId, this.fetchCurrent);
+
+  @override
+  Future<WeatherCurrentModel> getCurrentWeather() => fetchCurrent();
+
+  @override
+  Future<List<WeatherPoint>> getIntraDayData() async => [];
+
+  @override
+  Future<List<WeatherDailySummary>> get7DaysSummary() async => [];
+
+  @override
+  Future<void> refreshAllData() async {}
+}
 
 void main() {
   test('LatestWeatherFileStorage isolates cache per stationId', () async {
@@ -90,5 +118,78 @@ void main() {
       referenceDate: now,
     );
     expect(summaries.last.totalRainfall, 3.0);
+  });
+
+  test('StationCatalogueStorage persists and restores station list offline', () async {
+    final tempDir = await Directory.systemTemp.createTemp('adht_cat_test_');
+    addTearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    final storage = StationCatalogueStorage(customDirectoryPath: tempDir.path);
+    await storage.saveCatalogue(const [
+      StationInfo(deviceId: 'adht_weather_01', name: 'Station 01', mac: 'AA:BB:CC:DD:EE:01'),
+      StationInfo(deviceId: 'adht_weather_02', name: 'Station 02', mac: 'AA:BB:CC:DD:EE:02'),
+    ]);
+
+    final restored = await storage.readCatalogue();
+    expect(restored.length, 2);
+    expect(restored[1].deviceId, 'adht_weather_02');
+    expect(restored[1].name, 'Station 02');
+  });
+
+  test('WeatherDashboardNotifier discards stale response when switching A -> B', () async {
+    final stationACompleter = Completer<WeatherCurrentModel>();
+    final container = ProviderContainer(
+      overrides: [
+        weatherRepositoryProvider.overrideWith((ref) {
+          final id = ref.watch(selectedDeviceIdProvider);
+          if (id == 'adht_weather_01') {
+            return _DelayedFakeRepo(id, () => stationACompleter.future);
+          }
+          return _DelayedFakeRepo(
+            id,
+            () async => WeatherCurrentModel(
+              stationId: 'adht_weather_02',
+              stationName: 'Station 02',
+              timestamp: DateTime(2026, 11, 26, 12, 0),
+              temperature: 22.0,
+              humidity: 80.0,
+              rainfall: 1.0,
+              windSpeed: 3.0,
+              isOnline: false,
+            ),
+          );
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    // Start loading A
+    final sub = container.listen(weatherDashboardProvider, (_, _) {});
+    addTearDown(sub.close);
+
+    // Switch to B while A is still pending
+    await container.read(weatherDashboardProvider.notifier).changeStation('adht_weather_02');
+    final stateB = await container.read(weatherDashboardProvider.future);
+    expect(stateB.current.stationId, 'adht_weather_02');
+
+    // Complete A late -> must NOT overwrite B
+    stationACompleter.complete(
+      WeatherCurrentModel(
+        stationId: 'adht_weather_01',
+        stationName: 'Station 01',
+        timestamp: DateTime(2026, 11, 26, 12, 0),
+        temperature: 35.0,
+        humidity: 50.0,
+        rainfall: 0.0,
+        windSpeed: 1.0,
+        isOnline: true,
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(container.read(weatherDashboardProvider).valueOrNull?.current.stationId, 'adht_weather_02');
   });
 }

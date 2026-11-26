@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_dimensions.dart';
+import '../../../data/models/station_info.dart';
 
-/// Header thanh điều hướng: chứa Dropdown chọn trạm quan trắc, nút đổi Theme và icon Cài đặt
+/// Header thanh điều hướng: chứa Dropdown chọn trạm quan trắc theo stationId thật, nút đổi Theme và icon Cài đặt
 class AppHeaderBar extends StatelessWidget {
   final String stationName;
-  final List<String> availableStations;
+  final String? selectedStationId;
+  final List<StationInfo>? stations;
   final ValueChanged<String>? onStationChanged;
   final VoidCallback? onSettingsTap;
   final VoidCallback? onThemeToggle;
@@ -15,7 +17,8 @@ class AppHeaderBar extends StatelessWidget {
   const AppHeaderBar({
     super.key,
     required this.stationName,
-    this.availableStations = ApiConstants.availableStations,
+    this.selectedStationId,
+    this.stations,
     this.onStationChanged,
     this.onSettingsTap,
     this.onThemeToggle,
@@ -25,11 +28,15 @@ class AppHeaderBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final catalogue = (stations != null && stations!.isNotEmpty)
+        ? stations!
+        : StationInfo.fallbackCatalogue();
+    final activeId = selectedStationId ??
+        ApiConstants.resolveDeviceIdFromStationName(stationName);
 
-    // Đảm bảo tên trạm hiện tại luôn nằm trong danh sách items
-    final stations = availableStations.contains(stationName)
-        ? availableStations
-        : [stationName, ...availableStations];
+    final effectiveStations = catalogue.any((s) => s.deviceId == activeId)
+        ? catalogue
+        : [StationInfo(deviceId: activeId, name: stationName), ...catalogue];
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -39,11 +46,11 @@ class AppHeaderBar extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Station Dropdown Selector (gần sát tên trạm, không bị kéo xa)
+          // Station Dropdown Selector (dùng deviceId thật làm value)
           Flexible(
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
-                value: stationName,
+                value: activeId,
                 isExpanded: false,
                 icon: Padding(
                   padding: const EdgeInsets.only(left: 4),
@@ -59,11 +66,11 @@ class AppHeaderBar extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                   color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
                 ),
-                items: stations.map((String station) {
+                items: effectiveStations.map((StationInfo station) {
                   return DropdownMenuItem<String>(
-                    value: station,
+                    value: station.deviceId,
                     child: Text(
-                      station,
+                      station.name,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
@@ -71,9 +78,9 @@ class AppHeaderBar extends StatelessWidget {
                     ),
                   );
                 }).toList(),
-                onChanged: (newVal) {
-                  if (newVal != null && newVal != stationName) {
-                    onStationChanged?.call(newVal);
+                onChanged: (newId) {
+                  if (newId != null && newId != activeId) {
+                    onStationChanged?.call(newId);
                   }
                 },
               ),
