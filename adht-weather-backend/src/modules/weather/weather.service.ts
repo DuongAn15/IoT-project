@@ -1,9 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { SupabaseService } from '../database/supabase.service';
 
 /* Forecast-only dependencies; restore with the deferred getForecast implementation.
-import { BadGatewayException, BadRequestException, Logger, ServiceUnavailableException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { BadGatewayException, Logger, ServiceUnavailableException } from '@nestjs/common';
 import axios from 'axios';
 import type { WeatherForecast } from './types/forecast.types';
 import { buildForecast } from './utils/forecast.helpers';
@@ -13,18 +13,34 @@ const OPENWEATHER_FORECAST_URL = 'https://api.openweathermap.org/data/2.5/foreca
 
 @Injectable()
 export class WeatherService {
-    constructor(private readonly supabaseService: SupabaseService) { }
+    constructor(
+        private readonly supabaseService: SupabaseService,
+        @Optional() private readonly configService?: ConfigService,
+    ) { }
+
+    private assertAllowedDevice(deviceId?: string): string | undefined {
+        if (deviceId === undefined) return undefined;
+        const trimmed = deviceId.trim();
+        if (!trimmed || /[/+#\u0000\s]/.test(trimmed)) {
+            throw new BadRequestException('Invalid device_id');
+        }
+        const allowedDevices = this.configService?.get<string[]>('auth.allowedDevices') || [];
+        if (allowedDevices.length > 0 && !allowedDevices.includes(trimmed)) {
+            throw new ForbiddenException(`Access to device ${trimmed} is not allowed`);
+        }
+        return trimmed;
+    }
 
     async getLatest(deviceId?: string) {
-        // TODO: Viết code lấy số đo mới nhất từ SupabaseService
-        return this.supabaseService.getLatest(deviceId);
+        const resolvedId = this.assertAllowedDevice(deviceId);
+        return this.supabaseService.getLatest(resolvedId);
     }
 
     async getHistory(deviceId: string, range: string = '24h') {
-        // TODO: Viết code lấy dữ liệu lịch sử đã downsample từ SupabaseService
-        const data = await this.supabaseService.getHistory(deviceId, range);
+        const resolvedId = this.assertAllowedDevice(deviceId) || '';
+        const data = await this.supabaseService.getHistory(resolvedId, range);
         return {
-            device_id: deviceId,
+            device_id: resolvedId,
             range,
             points_count: data.length,
             data,

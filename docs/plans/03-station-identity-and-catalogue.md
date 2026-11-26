@@ -1,6 +1,6 @@
 # P03 — Station identity và catalogue
 
-**Trạng thái:** Planned
+**Trạng thái:** Implemented on branch `feat/p03-station-identity-and-catalogue` (P03a identity/race-guard & P03b catalogue/pagination/access filter verified)
 **Mục tiêu:** mọi màn hình và request dùng station ID thật, không đổi nhãn trên dữ liệu của trạm khác; catalogue có nguồn từ backend.
 
 ## Phạm vi

@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/api_constants.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_dimensions.dart';
+import '../../data/models/station_info.dart';
 import '../../providers/device_settings_provider.dart';
+import '../../providers/station_catalogue_provider.dart';
 
 /// Màn hình Cài Đặt Trạm: Chọn Trạm, Điều Khiển Command & Cấu Hình Config
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -147,6 +149,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// Dropdown chọn trạm đo
   Widget _buildStationSelector(String currentStationId) {
     final theme = Theme.of(context);
+    final catalogue = ref.watch(stationCatalogueProvider).valueOrNull ??
+        StationInfo.fallbackCatalogue();
+    final stations = catalogue.any((s) => s.deviceId == currentStationId)
+        ? catalogue
+        : [
+            StationInfo(
+              deviceId: currentStationId,
+              name: ApiConstants.deviceStationMap[currentStationId] ?? currentStationId,
+            ),
+            ...catalogue,
+          ];
 
     return Card(
       elevation: 1,
@@ -177,11 +190,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
                 ),
               ),
-              items: ApiConstants.deviceStationMap.entries.map((entry) {
+              items: stations.map((station) {
                 return DropdownMenuItem<String>(
-                  value: entry.key,
+                  value: station.deviceId,
                   child: Text(
-                    '${entry.key} (${entry.value})',
+                    '${station.deviceId} (${station.name})',
                     style: const TextStyle(fontWeight: FontWeight.w500),
                     overflow: TextOverflow.ellipsis,
                   ),

@@ -6,6 +6,8 @@ import '../../core/utils/date_time_formatter.dart';
 import '../../core/utils/weather_unit_helper.dart';
 import '../../providers/history_7d_provider.dart';
 import '../../providers/intra_day_provider.dart';
+import '../../providers/device_settings_provider.dart';
+import '../../providers/station_catalogue_provider.dart';
 import '../../providers/theme_mode_provider.dart';
 import '../../providers/weather_dashboard_provider.dart';
 import '../widgets/charts/intra_day_spline_chart.dart';
@@ -73,12 +75,14 @@ class MainDashboardScreen extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // 1. Station Header Bar (Dropdown chọn trạm, icon đổi Theme & icon Cài đặt)
+                    // 1. Station Header Bar (Dropdown chọn trạm theo stationId thật, icon đổi Theme & Cài đặt)
                     AppHeaderBar(
                       stationName: state.current.stationName,
+                      selectedStationId: ref.watch(selectedDeviceIdProvider),
+                      stations: ref.watch(stationCatalogueProvider).valueOrNull,
                       isDark: isDark,
-                      onStationChanged: (newStation) {
-                        ref.read(weatherDashboardProvider.notifier).changeStation(newStation);
+                      onStationChanged: (newStationId) {
+                        ref.read(weatherDashboardProvider.notifier).changeStation(newStationId);
                       },
                       onThemeToggle: () {
                         ref.read(themeModeProvider.notifier).toggleTheme();

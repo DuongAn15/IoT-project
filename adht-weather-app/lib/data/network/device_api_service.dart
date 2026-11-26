@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import '../../core/constants/api_constants.dart';
 import '../models/device_command_model.dart';
 import '../models/device_config_model.dart';
+import '../models/station_info.dart';
 import 'api_exceptions.dart';
 import 'api_response.dart';
 import 'dio_client.dart';
@@ -13,6 +14,22 @@ class DeviceApiService {
   DeviceApiService(this._dioClient);
 
   Dio get _dio => _dioClient.dio;
+
+  /// Tải danh sách trạm từ GET /devices
+  Future<List<StationInfo>> fetchDevices() async {
+    try {
+      final response = await _dio.get('/devices');
+      final body = response.data as Map<String, dynamic>;
+      final rawList = body['data'] as List<dynamic>? ?? [];
+      return rawList
+          .whereType<Map<String, dynamic>>()
+          .map(StationInfo.fromJson)
+          .where((s) => s.deviceId.isNotEmpty)
+          .toList();
+    } on DioException catch (e) {
+      throw handleDioError(e);
+    }
+  }
 
   /// Gửi lệnh điều khiển phần cứng xuống thiết bị qua POST /devices/:id/command
   Future<ApiResponse<Map<String, dynamic>>> sendCommand({
