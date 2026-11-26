@@ -16,6 +16,8 @@ class DioClient {
                 headers: {
                   'Content-Type': 'application/json',
                   'Accept': 'application/json',
+                  if (ApiConstants.apiAuthToken.isNotEmpty)
+                    'Authorization': 'Bearer ${ApiConstants.apiAuthToken}',
                 },
               ),
             ) {

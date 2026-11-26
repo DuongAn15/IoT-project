@@ -17,6 +17,21 @@ abstract class ApiConstants {
     'Trạm IoT 03 - Hòa Vang',
   ];
 
+  static String resolveDeviceIdFromStationName(String stationOrId) {
+    if (deviceStationMap.containsKey(stationOrId)) {
+      return stationOrId;
+    }
+    for (final entry in deviceStationMap.entries) {
+      if (entry.value == stationOrId) {
+        return entry.key;
+      }
+    }
+    return defaultStationId;
+  }
+
+  static const String apiAuthToken =
+      String.fromEnvironment('API_AUTH_TOKEN', defaultValue: '');
+
   /// Base URL kết nối Backend Gateway (Cloud Render Online 24/7)
   static const String defaultBaseUrl =
       'https://adht-weather-backend-oo0a.onrender.com/api';

@@ -60,9 +60,9 @@ class AppWeatherRepository implements WeatherRepository {
       dev.log('Lỗi fetchLatestWeather từ API, đọc từ file cache: $e');
     }
 
-    // Fallback: Đọc bản ghi mới nhất từ file cache khi mất mạng
-    final cachedLatest = await fileStorage.readLatest();
-    if (cachedLatest != null) {
+    // Fallback: Đọc bản ghi mới nhất từ file cache theo đúng currentDeviceId khi mất mạng
+    final cachedLatest = await fileStorage.readLatest(deviceId: currentDeviceId);
+    if (cachedLatest != null && cachedLatest.stationId == currentDeviceId) {
       return cachedLatest.copyWith(
         stationName: ApiConstants.deviceStationMap[cachedLatest.stationId] ??
             cachedLatest.stationName,
@@ -201,7 +201,7 @@ class AppWeatherRepository implements WeatherRepository {
           if (r.temperature < minTemp) minTemp = r.temperature;
           if (r.temperature > maxTemp) maxTemp = r.temperature;
           sumHumi += r.humidity;
-          sumRain += r.rainfall;
+          sumRain += r.rainfallMm ?? r.rainfall;
           sumWind += r.windSpeed;
         }
 

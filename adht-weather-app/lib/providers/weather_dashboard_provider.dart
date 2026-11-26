@@ -1,4 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/constants/api_constants.dart';
+import '../data/models/weather_current_model.dart';
+import '../data/models/weather_daily_summary.dart';
+import '../data/models/weather_point.dart';
 import '../data/network/weather_api_service.dart';
 import '../data/repositories/app_weather_repository.dart';
 import '../data/repositories/weather_repository.dart';
@@ -47,12 +51,13 @@ class WeatherDashboardNotifier extends AsyncNotifier<WeatherDashboardState> {
       weeklyFuture,
     ]);
 
+    final current = results[0] as WeatherCurrentModel;
     return WeatherDashboardState(
-      current: results[0] as dynamic,
-      intraDayPoints: results[1] as dynamic,
-      weeklySummaries: results[2] as dynamic,
+      current: current,
+      intraDayPoints: results[1] as List<WeatherPoint>,
+      weeklySummaries: results[2] as List<WeatherDailySummary>,
       lastUpdated: DateTime.now(),
-      isOffline: false,
+      isOffline: !current.isOnline,
     );
   }
 
@@ -66,18 +71,16 @@ class WeatherDashboardNotifier extends AsyncNotifier<WeatherDashboardState> {
     });
   }
 
-  /// Chuyển đổi sang trạm quan trắc khác
+  /// Chuyển đổi sang trạm quan trắc khác (cập nhật selectedDeviceIdProvider & không giữ dữ liệu trạm cũ)
   Future<void> changeStation(String newStation) async {
-    final prev = state.value;
+    final newDeviceId = ApiConstants.resolveDeviceIdFromStationName(newStation);
+    ref.read(selectedDeviceIdProvider.notifier).state = newDeviceId;
+
     state = const AsyncValue.loading();
     state = await AsyncValue.guard(() async {
       final repo = ref.read(weatherRepositoryProvider);
       await repo.refreshAllData();
-      final fresh = await _fetchData();
-      final updatedCurrent = (prev?.current ?? fresh.current).copyWith(
-        stationName: newStation,
-      );
-      return fresh.copyWith(current: updatedCurrent);
+      return _fetchData();
     });
   }
 }
