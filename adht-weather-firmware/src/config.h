@@ -71,9 +71,22 @@
 
 // MQTT Topics (Định danh riêng theo từng trạm DEVICE_ID; Status dùng event stream chung)
 #define TOPIC_TELEMETRY         "adht/weather/" DEVICE_ID "/telemetry"
+#define TOPIC_TELEMETRY_LOG     "adht/weather/" DEVICE_ID "/telemetry/log"
 #define TOPIC_STATUS            "adht/weather/status"
 #define TOPIC_COMMAND           "adht/weather/" DEVICE_ID "/command"
 #define TOPIC_CONFIG            "adht/weather/" DEVICE_ID "/config"
+
+#ifndef DEPLOYMENT_ID
+#define DEPLOYMENT_ID           "dep-001"
+#endif
+
+#ifndef RAIN_CALIBRATION_VERSION
+#define RAIN_CALIBRATION_VERSION "rain-bucket-v1"
+#endif
+
+#ifndef ENABLE_V2_MINUTE_LOG_PUBLISHER
+#define ENABLE_V2_MINUTE_LOG_PUBLISHER 0 // Gate P04: chi bat sau khi backend receiver v2 da san sang
+#endif
 
 // ==========================================
 // 5. TIMING INTERVALS & PROTECTION

@@ -187,6 +187,13 @@ void taskNetwork(void *pvParameters) {
             }
         }
 
+#if ENABLE_V2_MINUTE_LOG_PUBLISHER
+        MinuteLogSample minuteLog;
+        if (sensorMgr.takePendingMinuteLog(minuteLog)) {
+            mqttMgr.publishMinuteLog(minuteLog);
+        }
+#endif
+
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 }

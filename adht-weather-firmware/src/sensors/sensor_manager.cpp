@@ -1,5 +1,6 @@
 #include "sensor_manager.h"
 #include <esp_timer.h>
+#include <time.h>
 
 SensorManager sensorMgr;
 
@@ -30,7 +31,11 @@ SensorManager::SensorManager()
       windGustIndex(0),
       windGustCount(0),
       lastRainTipTime(0),
-      lastRainRateCalculated(0.0f)
+      lastRainRateCalculated(0.0f),
+      rainResetEpoch(0),
+      rainTipCounter(0),
+      minuteSequence(0),
+      hasPendingMinute(false)
 {
     isrMux = portMUX_INITIALIZER_UNLOCKED;
     dataMux = portMUX_INITIALIZER_UNLOCKED;
@@ -64,6 +69,45 @@ void SensorManager::begin() {
     lastWindCalcTime = now;
     lastDhtReadTime = now - SENSOR_READ_INTERVAL_MS;
     lastValidDhtTime = now;
+    resetActiveMinuteWindow(now);
+}
+
+void SensorManager::resetActiveMinuteWindow(uint32_t nowMs) {
+    activeMinute = MinuteLogSample();
+    activeMinute.uptime_start_ms = nowMs;
+    activeMinute.epoch_start_sec = static_cast<int64_t>(time(nullptr));
+    activeMinute.rain_reset_epoch = rainResetEpoch;
+    activeMinute.tip_count_start = rainTipCounter;
+    activeMinute.tip_count_end = rainTipCounter;
+}
+
+void SensorManager::finalizeActiveMinuteWindow(uint32_t nowMs) {
+    activeMinute.uptime_end_ms = nowMs;
+    activeMinute.epoch_end_sec = static_cast<int64_t>(time(nullptr));
+    activeMinute.clock_synchronized =
+        (activeMinute.epoch_start_sec >= 1700000000LL &&
+         activeMinute.epoch_end_sec > activeMinute.epoch_start_sec);
+    activeMinute.window_sequence = ++minuteSequence;
+    activeMinute.tip_count_end = rainTipCounter;
+
+    portENTER_CRITICAL(&dataMux);
+    pendingMinute = activeMinute;
+    hasPendingMinute = true;
+    portEXIT_CRITICAL(&dataMux);
+
+    resetActiveMinuteWindow(nowMs);
+}
+
+bool SensorManager::takePendingMinuteLog(MinuteLogSample &out) {
+    bool found = false;
+    portENTER_CRITICAL(&dataMux);
+    if (hasPendingMinute) {
+        out = pendingMinute;
+        hasPendingMinute = false;
+        found = true;
+    }
+    portEXIT_CRITICAL(&dataMux);
+    return found;
 }
 
 void IRAM_ATTR SensorManager::handleRainInterrupt() {
@@ -92,6 +136,7 @@ void SensorManager::update() {
     // 1. Read DHT11 every SENSOR_READ_INTERVAL_MS (2500ms >= MIN_INTERVAL 2000ms)
     if (static_cast<uint32_t>(now - lastDhtReadTime) >= SENSOR_READ_INTERVAL_MS) {
         lastDhtReadTime = now;
+        activeMinute.dht_expected_count++;
         float rawTemp = dht.readTemperature();
         float rawHumi = dht.readHumidity();
 
@@ -118,6 +163,23 @@ void SensorManager::update() {
             if (filteredHumi > 100.0f) filteredHumi = 100.0f;
 
             lastValidDhtTime = now;
+
+            if (activeMinute.dht_valid_count == 0) {
+                activeMinute.temp_min = filteredTemp;
+                activeMinute.temp_max = filteredTemp;
+                activeMinute.humi_min = filteredHumi;
+                activeMinute.humi_max = filteredHumi;
+            } else {
+                if (filteredTemp < activeMinute.temp_min) activeMinute.temp_min = filteredTemp;
+                if (filteredTemp > activeMinute.temp_max) activeMinute.temp_max = filteredTemp;
+                if (filteredHumi < activeMinute.humi_min) activeMinute.humi_min = filteredHumi;
+                if (filteredHumi > activeMinute.humi_max) activeMinute.humi_max = filteredHumi;
+            }
+            activeMinute.temp_sum += filteredTemp;
+            activeMinute.temp_latest = filteredTemp;
+            activeMinute.humi_sum += filteredHumi;
+            activeMinute.humi_latest = filteredHumi;
+            activeMinute.dht_valid_count++;
 
             portENTER_CRITICAL(&dataMux);
             currentData.temperature = filteredTemp;
@@ -146,6 +208,18 @@ void SensorManager::update() {
 
         // Distance = pulses * circumference; Speed = distance / time
         float speed = (pulses * circumferenceWind) / elapsedSec;
+
+        activeMinute.wind_expected_count++;
+        if (activeMinute.wind_valid_count == 0) {
+            activeMinute.wind_min = speed;
+            activeMinute.wind_max = speed;
+        } else {
+            if (speed < activeMinute.wind_min) activeMinute.wind_min = speed;
+            if (speed > activeMinute.wind_max) activeMinute.wind_max = speed;
+        }
+        activeMinute.wind_sum += speed;
+        activeMinute.wind_latest = speed;
+        activeMinute.wind_valid_count++;
 
         // Push into 10-minute sliding window ring buffer (120 samples x 5s = 600s)
         windGustHistory[windGustIndex] = speed;
@@ -176,6 +250,8 @@ void SensorManager::update() {
     portEXIT_CRITICAL(&isrMux);
 
     if (rainPulses > 0) {
+        rainTipCounter += rainPulses;
+        activeMinute.tip_count_end = rainTipCounter;
         float mmAdded = rainPulses * mmPerPulse;
 
         portENTER_CRITICAL(&dataMux);
@@ -215,6 +291,11 @@ void SensorManager::update() {
             }
         }
     }
+
+    // 4. Close 60-second minute-log window for v2 pipeline
+    if (static_cast<uint32_t>(now - activeMinute.uptime_start_ms) >= (RAIN_SAMPLE_PERIOD_SEC * 1000UL)) {
+        finalizeActiveMinuteWindow(now);
+    }
 }
 
 WeatherData SensorManager::getData() {
@@ -226,9 +307,18 @@ WeatherData SensorManager::getData() {
 }
 
 void SensorManager::resetRainTotal() {
+    uint32_t now = millis();
+    if (static_cast<uint32_t>(now - activeMinute.uptime_start_ms) >= 1000UL) {
+        finalizeActiveMinuteWindow(now);
+    }
+
     portENTER_CRITICAL(&isrMux);
     rainPulseCount = 0;
     portEXIT_CRITICAL(&isrMux);
+
+    rainResetEpoch++;
+    rainTipCounter = 0;
+    resetActiveMinuteWindow(now);
 
     lastRainTipTime = 0;
     lastRainRateCalculated = 0.0f;
