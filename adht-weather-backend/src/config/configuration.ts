@@ -17,6 +17,7 @@ export default (): AppConfig => ({
     apiToken: process.env.API_AUTH_TOKEN?.trim() || undefined,
     webhookSecret: process.env.WEBHOOK_SECRET?.trim() || undefined,
     enableWebhookTelemetry: (process.env.ENABLE_WEBHOOK_TELEMETRY || 'false') === 'true',
+    allowedDevices: parseCorsOrigins(process.env.ALLOWED_DEVICE_IDS),
   },
   mqtt: {
     host: process.env.MQTT_BROKER_HOST || 'xxxxxxxx.ala.asia-southeast1.emqxsl.com',

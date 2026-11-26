@@ -7,6 +7,7 @@ export interface AppConfig {
     apiToken?: string;
     webhookSecret?: string;
     enableWebhookTelemetry: boolean;
+    allowedDevices: string[];
   };
   mqtt: {
     host: string;

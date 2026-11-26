@@ -1,6 +1,6 @@
 # P01 — Security và lỗi cần chặn trước production
 
-**Trạng thái:** Planned — ACL catalog, telemetry write, app read và anon REST denial sau hardening đã xác minh; các phần P01 khác còn pending
+**Trạng thái:** Implemented on branch `feat/p01-security-hardening` — Supabase ACL/anon denial, backend API/WS auth, strict DTO/command/config validation, firmware TLS CA/hostname verification, forecast deferral, và CI secret scan workflow đã hoàn tất; secret rotation trên live thuộc vận hành.
 **Mục tiêu:** đóng các đường điều khiển/truy cập không xác thực và không báo thành công sai, đồng thời giữ protocol hiện hữu.
 
 **Finding P00 cần xử lý:** catalog audit và follow-up read-only ghi nhận `weather_logs` có policy role `{public}` cho SELECT (`qual=true`) và INSERT (`with_check=true`), cùng table grants rộng cho `anon`/`authenticated`. Column grants xác nhận hai role này có INSERT/REFERENCES/SELECT/UPDATE trên mọi cột của cả `devices` và `weather_logs`, bao gồm cột identity `weather_logs.id`. Người dùng xác nhận project đang lưu dữ liệu thật, nên xem đây là finding đang áp dụng trên môi trường live (không phải staging cô lập), dù dữ liệu có thể bỏ. Nếu project được expose qua PostgREST, đây là đường đọc history/chèn dữ liệu chưa được giới hạn. Project ref `umsysvgxprlwpqmblwie` và SQL Editor role `superuser` đã được người dùng cung cấp. Không có policy/grant nào được thay đổi trong P00; xóa rows không khắc phục quyền truy cập.
