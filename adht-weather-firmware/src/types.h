@@ -49,9 +49,22 @@ struct ConfigUpdatePatch {
 struct NetworkStatus {
     bool wifi_connected = false;
     bool mqtt_connected = false;
+    bool provisioning_active = false;
     int wifi_rssi = 0;
     char ip_address[16] = "0.0.0.0";
+    char ap_ssid[24] = "";
+    char ap_pass[16] = "";
+    char ap_url[24] = "http://192.168.4.1";
     uint32_t last_db_sync = 0;
+};
+
+// Versioned NVS record for Wi-Fi credentials with integrity checksum
+struct WifiCredentialsRecord {
+    static constexpr uint16_t CURRENT_VERSION = 1;
+    uint16_t version = CURRENT_VERSION;
+    char ssid[33] = {0};
+    char password[65] = {0};
+    uint32_t crc32 = 0;
 };
 
 #endif // TYPES_H
