@@ -260,3 +260,24 @@ test('SupabaseService.getHistory aligns 24h buckets to clock boundaries across m
     Date.now = originalNow;
   }
 });
+
+test('MqttService rejects v2 minute_log in production when DEVICE_DEPLOYMENTS binding is missing', async () => {
+  const service = new MqttService(
+    {
+      get: (key) => {
+        if (key === 'nodeEnv') return 'production';
+        if (key === 'auth.deviceDeployments') return {};
+        return undefined;
+      },
+    },
+    { saveMinuteLogV2: async () => 'persisted' },
+    { broadcastTelemetry: () => {}, broadcastStatus: () => {} },
+    { checkAndAlert: async () => {} },
+  );
+
+  const valid = readFixture('minute-log-valid.json');
+  const res = await service.processMinuteLogV2(valid.device_id, valid);
+  assert.equal(res.status, 'rejected');
+  assert.equal(res.errorCode, 'identity_mismatch');
+  assert.equal(res.retryable, false);
+});
