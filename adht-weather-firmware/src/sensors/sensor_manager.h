@@ -13,6 +13,7 @@ public:
     void update();
     WeatherData getData();
     void resetRainTotal();
+    bool takePendingMinuteLog(MinuteLogSample &out);
 
     // ISR handlers (called from static ISR wrapper)
     void handleRainInterrupt();
@@ -50,6 +51,16 @@ private:
 
     WeatherData currentData;
     portMUX_TYPE dataMux;
+
+    // P04 v2 minute-log accumulator state
+    uint32_t rainResetEpoch;
+    uint32_t rainTipCounter;
+    uint32_t minuteSequence;
+    MinuteLogSample activeMinute;
+    bool hasPendingMinute;
+    MinuteLogSample pendingMinute;
+    void resetActiveMinuteWindow(uint32_t nowMs);
+    void finalizeActiveMinuteWindow(uint32_t nowMs);
 };
 
 extern SensorManager sensorMgr;

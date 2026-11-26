@@ -67,5 +67,39 @@ struct WifiCredentialsRecord {
     uint32_t crc32 = 0;
 };
 
+// P04 v2 minute-log accumulator snapshot (POD struct safe to copy across cores)
+struct MinuteLogSample {
+    uint32_t window_sequence = 0;
+    uint32_t uptime_start_ms = 0;
+    uint32_t uptime_end_ms = 0;
+    int64_t epoch_start_sec = 0;
+    int64_t epoch_end_sec = 0;
+    bool clock_synchronized = false;
+
+    float temp_sum = 0.0f;
+    float temp_min = 0.0f;
+    float temp_max = 0.0f;
+    float temp_latest = 0.0f;
+
+    float humi_sum = 0.0f;
+    float humi_min = 0.0f;
+    float humi_max = 0.0f;
+    float humi_latest = 0.0f;
+
+    float wind_sum = 0.0f;
+    float wind_min = 0.0f;
+    float wind_max = 0.0f;
+    float wind_latest = 0.0f;
+
+    uint16_t dht_expected_count = 0;
+    uint16_t dht_valid_count = 0;
+    uint16_t wind_expected_count = 0;
+    uint16_t wind_valid_count = 0;
+
+    uint32_t rain_reset_epoch = 0;
+    uint32_t tip_count_start = 0;
+    uint32_t tip_count_end = 0;
+};
+
 #endif // TYPES_H
 

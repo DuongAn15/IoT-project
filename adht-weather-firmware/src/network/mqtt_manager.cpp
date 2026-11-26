@@ -36,7 +36,7 @@ void MqttManager::begin() {
 
     mqttClient.setServer(MQTT_BROKER_HOST, MQTT_BROKER_PORT);
     mqttClient.setCallback(staticCallback);
-    mqttClient.setBufferSize(768);
+    mqttClient.setBufferSize(1152);
     mqttClient.setSocketTimeout(5);           // 5s MQTT socket timeout
 }
 
@@ -111,8 +111,8 @@ bool MqttManager::isConnected() {
     return mqttClient.connected();
 }
 
-void MqttManager::enqueueBacklog(const char *payload) {
-    if (!payload || payload[0] == '\0') return;
+void MqttManager::enqueueBacklog(const char *topic, const char *payload) {
+    if (!topic || !payload || payload[0] == '\0') return;
     size_t writeIdx;
     if (backlogCount < TELEMETRY_BACKLOG_CAPACITY) {
         writeIdx = (backlogHead + backlogCount) % TELEMETRY_BACKLOG_CAPACITY;
@@ -122,13 +122,14 @@ void MqttManager::enqueueBacklog(const char *payload) {
         writeIdx = backlogHead;
         backlogHead = (backlogHead + 1) % TELEMETRY_BACKLOG_CAPACITY;
     }
-    snprintf(backlog[writeIdx], TELEMETRY_PAYLOAD_MAX_BYTES, "%s", payload);
+    snprintf(backlog[writeIdx].topic, sizeof(backlog[writeIdx].topic), "%s", topic);
+    snprintf(backlog[writeIdx].payload, TELEMETRY_PAYLOAD_MAX_BYTES, "%s", payload);
 }
 
 void MqttManager::flushBacklog() {
     size_t flushed = 0;
     while (backlogCount > 0 && mqttClient.connected() && flushed < 2) {
-        if (!mqttClient.publish(TOPIC_TELEMETRY, backlog[backlogHead])) {
+        if (!mqttClient.publish(backlog[backlogHead].topic, backlog[backlogHead].payload)) {
             break;
         }
         backlogHead = (backlogHead + 1) % TELEMETRY_BACKLOG_CAPACITY;
@@ -161,7 +162,7 @@ void MqttManager::publishTelemetry(const WeatherData &data, int rssi) {
     serializeJson(doc, buffer, sizeof(buffer));
 
     if (!mqttClient.connected()) {
-        enqueueBacklog(buffer);
+        enqueueBacklog(TOPIC_TELEMETRY, buffer);
         Serial.printf("[MQTT] Offline, queued telemetry seq=%lu (backlog=%u)\n",
                       static_cast<unsigned long>(telemetrySequence),
                       static_cast<unsigned int>(backlogCount));
@@ -173,8 +174,101 @@ void MqttManager::publishTelemetry(const WeatherData &data, int rssi) {
     if (ok) {
         Serial.printf("[MQTT] Published telemetry to [%s]: %s\n", TOPIC_TELEMETRY, buffer);
     } else {
-        enqueueBacklog(buffer);
+        enqueueBacklog(TOPIC_TELEMETRY, buffer);
         Serial.println("[MQTT] Publish telemetry failed; queued to backlog!");
+    }
+}
+
+static void formatIsoUtc(int64_t epochSec, char *out, size_t outSize) {
+    time_t t = static_cast<time_t>(epochSec);
+    struct tm tmUtc;
+    gmtime_r(&t, &tmUtc);
+    strftime(out, outSize, "%Y-%m-%dT%H:%M:%SZ", &tmUtc);
+}
+
+void MqttManager::publishMinuteLog(const MinuteLogSample &sample) {
+    JsonDocument doc;
+    doc["schema_version"] = 2;
+    doc["type"] = "minute_log";
+    doc["device_id"] = DEVICE_ID;
+    doc["deployment_id"] = DEPLOYMENT_ID;
+    doc["boot_id"] = bootId;
+    doc["window_sequence"] = sample.window_sequence;
+
+    if (sample.clock_synchronized) {
+        doc["clock_quality"] = "synchronized";
+        char startIso[24];
+        char endIso[24];
+        formatIsoUtc(sample.epoch_start_sec, startIso, sizeof(startIso));
+        formatIsoUtc(sample.epoch_end_sec, endIso, sizeof(endIso));
+        doc["interval_start"] = startIso;
+        doc["interval_end"] = endIso;
+    } else {
+        doc["clock_quality"] = "unsynchronized";
+        doc["uptime_start_ms"] = sample.uptime_start_ms;
+        doc["uptime_end_ms"] = sample.uptime_end_ms;
+    }
+
+    JsonObject metrics = doc["metrics"].to<JsonObject>();
+    if (sample.dht_valid_count > 0) {
+        JsonObject temp = metrics["temperature"].to<JsonObject>();
+        temp["unit"] = "degC";
+        temp["sum"] = round(sample.temp_sum * 100.0f) / 100.0f;
+        temp["count"] = sample.dht_valid_count;
+        temp["min"] = round(sample.temp_min * 10.0f) / 10.0f;
+        temp["max"] = round(sample.temp_max * 10.0f) / 10.0f;
+        temp["latest"] = round(sample.temp_latest * 10.0f) / 10.0f;
+
+        JsonObject humi = metrics["humidity"].to<JsonObject>();
+        humi["unit"] = "percent_rh";
+        humi["sum"] = round(sample.humi_sum * 100.0f) / 100.0f;
+        humi["count"] = sample.dht_valid_count;
+        humi["min"] = round(sample.humi_min * 10.0f) / 10.0f;
+        humi["max"] = round(sample.humi_max * 10.0f) / 10.0f;
+        humi["latest"] = round(sample.humi_latest * 10.0f) / 10.0f;
+    }
+    if (sample.wind_valid_count > 0) {
+        JsonObject wind = metrics["wind_speed"].to<JsonObject>();
+        wind["unit"] = "m/s";
+        wind["sum"] = round(sample.wind_sum * 100.0f) / 100.0f;
+        wind["count"] = sample.wind_valid_count;
+        wind["min"] = round(sample.wind_min * 10.0f) / 10.0f;
+        wind["max"] = round(sample.wind_max * 10.0f) / 10.0f;
+        wind["latest"] = round(sample.wind_latest * 10.0f) / 10.0f;
+    }
+
+    JsonObject rain = doc["rain"].to<JsonObject>();
+    char epochStr[36];
+    snprintf(epochStr, sizeof(epochStr), "%s:reset-%lu",
+             bootId, static_cast<unsigned long>(sample.rain_reset_epoch));
+    rain["counter_epoch"] = epochStr;
+    rain["calibration_version"] = RAIN_CALIBRATION_VERSION;
+    rain["tip_count_start"] = sample.tip_count_start;
+    rain["tip_count_end"] = sample.tip_count_end;
+
+    JsonObject quality = doc["quality"].to<JsonObject>();
+    uint32_t covMs = sample.uptime_end_ms - sample.uptime_start_ms;
+    quality["dht_expected_count"] = sample.dht_expected_count;
+    quality["dht_valid_count"] = sample.dht_valid_count;
+    quality["wind_expected_count"] = sample.wind_expected_count;
+    quality["wind_valid_count"] = sample.wind_valid_count;
+    quality["coverage_ms"] = covMs;
+    quality["rain_coverage_ms"] = covMs;
+
+    char buffer[TELEMETRY_PAYLOAD_MAX_BYTES];
+    size_t len = serializeJson(doc, buffer, sizeof(buffer));
+    if (len >= sizeof(buffer) - 1) {
+        Serial.println("[MQTT] v2 minute_log exceeded buffer size; dropped");
+        return;
+    }
+
+    if (!mqttClient.connected() || !mqttClient.publish(TOPIC_TELEMETRY_LOG, buffer)) {
+        enqueueBacklog(TOPIC_TELEMETRY_LOG, buffer);
+        Serial.printf("[MQTT] Queued v2 minute_log seq=%lu\n",
+                      static_cast<unsigned long>(sample.window_sequence));
+    } else {
+        Serial.printf("[MQTT] Published v2 minute_log seq=%lu\n",
+                      static_cast<unsigned long>(sample.window_sequence));
     }
 }
 
