@@ -42,11 +42,13 @@ _inject_possible_paths()
 import ssl
 import time
 import json
+import uuid
 import random
 import signal
 import argparse
 import threading
-from typing import Dict, Any
+from datetime import datetime, timezone
+from typing import Dict, Any, Optional
 
 try:
     import paho.mqtt.client as mqtt
@@ -158,9 +160,23 @@ NODE_01_FALLBACK_PROFILE = {
 }
 
 class SimulatedEsp32Node:
-    """Đại diện cho 1 thiết bị ESP32 ảo với đầy đủ cảm biến và giao tiếp MQTTS."""
+    """Đại diện cho 1 thiết bị ESP32 ảo với đầy đủ cảm biến và giao tiếp MQTTS (khớp firmware hiện tại)."""
 
-    def __init__(self, profile: Dict[str, Any], host: str, port: int, user: str, password: str, interval: float = 5.0, use_tls: bool = True, ca_file: str = None):
+    MM_PER_TIP = ((1000000.0 / 9498.0) * 6.0) / 1000.0
+
+    def __init__(
+        self,
+        profile: Dict[str, Any],
+        host: str,
+        port: int,
+        user: str,
+        password: str,
+        interval: float = 5.0,
+        use_tls: bool = True,
+        ca_file: str = None,
+        enable_v2: bool = False,
+        deployment_id: str = "dep-001",
+    ):
         self.profile = profile
         self.device_id = profile["id"]
         self.name = profile["name"]
@@ -171,13 +187,21 @@ class SimulatedEsp32Node:
         self.password = password
         self.interval = interval
         self.use_tls = use_tls
+        self.enable_v2 = enable_v2
+        self.deployment_id = deployment_id
+
+        self.boot_id = uuid.uuid4().hex[:16]
+        self.telemetry_seq = 0
+        self.window_seq = 0
+        self.rain_reset_epoch = 0
+        self.rain_tip_counter = 0
 
         self.temp = profile["base_temp"]
         self.humi = profile["base_humi"]
         self.wind_speed = profile["base_wind"]
         self.wind_max = profile["base_wind"] * 1.3
         self.rain_rate = profile["base_rain"]
-        self.rain_total = 8.5 if profile["base_rain"] > 0 else 0.0
+        self.rain_total = 0.0
         self.rssi = -60 + random.randint(-8, 5)
         self.start_time = time.time()
 
@@ -186,14 +210,16 @@ class SimulatedEsp32Node:
             "temp_min": 10.0,
             "humi_max": 90.0,
             "wind_max": 15.0,
-            "rain_max": 50.0,
+            "rain_max": 30.0,
             "auto_warning": True,
             "buzzer": True
         }
 
         self.led_state = False
+        self.led_override = False
         self.is_connected = False
         self.running = True
+        self._reset_minute_window()
 
         try:
             from paho.mqtt.enums import CallbackAPIVersion
@@ -208,14 +234,23 @@ class SimulatedEsp32Node:
             self.client.tls_set_context(context)
         self.client.reconnect_delay_set(min_delay=1, max_delay=30)
 
-        # LWT riêng của node (QoS 1, retain True)
+        # LWT trên topic chung adht/weather/status (khớp config.h)
         lwt_payload = json.dumps({"status": "offline", "device": self.device_id})
-        self.client.will_set(f"adht/weather/{self.device_id}/status", lwt_payload, qos=1, retain=True)
+        self.client.will_set("adht/weather/status", lwt_payload, qos=1, retain=True)
 
         self.client.on_connect = self._on_connect
         self.client.on_disconnect = self._on_disconnect
         self.client.on_message = self._on_message
         self.client.on_connect_fail = self._on_connect_fail
+
+    def _reset_minute_window(self):
+        now_dt = datetime.now(timezone.utc)
+        self._win_start_dt = now_dt
+        self._win_start_ts = time.time()
+        self._win_tip_start = self.rain_tip_counter
+        self._win_temp_vals = []
+        self._win_humi_vals = []
+        self._win_wind_vals = []
 
     def _log(self, msg: str, color: str = None):
         c = color or self.color
@@ -228,17 +263,15 @@ class SimulatedEsp32Node:
             protocol = "MQTTS" if self.use_tls else "MQTT"
             self._log(f"✅ Kết nối {protocol} thành công ({self.host}:{self.port})", C_GREEN)
 
-            # Báo Online
+            # Báo Online trên topic chung adht/weather/status
             online_payload = json.dumps({
                 "status": "online",
                 "device": self.device_id,
                 "ip": f"192.168.1.{random.randint(10, 250)}"
             })
-            self.client.publish(f"adht/weather/{self.device_id}/status", online_payload, qos=1, retain=True)
+            self.client.publish("adht/weather/status", online_payload, qos=1, retain=True)
 
-            # Subscribe nhận lệnh điều khiển & cấu hình riêng cho từng node (QoS 1)
-            self.client.subscribe("adht/weather/command", qos=1)
-            self.client.subscribe("adht/weather/config", qos=1)
+            # Chỉ subscribe topic command & config định danh riêng của trạm (khớp mqtt_manager.cpp)
             self.client.subscribe(f"adht/weather/{self.device_id}/command", qos=1)
             self.client.subscribe(f"adht/weather/{self.device_id}/config", qos=1)
         else:
@@ -291,20 +324,51 @@ class SimulatedEsp32Node:
                 self._log(f"Lỗi parse config JSON: {e}", C_RED)
 
     def _handle_command(self, cmd: str, arg: str):
+        arg_str = str(arg or "").strip()
         if cmd == "buzzer":
-            ms = int(arg) if arg.isdigit() else 500
+            parsed = int(arg_str) if arg_str.isdigit() else 300
+            ms = max(50, min(10000, parsed))
             self._log(f"🔔 [LỆNH APP] BẬT CÒI CẢNH BÁO ({ms} ms) -> Bíp... Bíp...", C_RED)
         elif cmd == "led":
-            self.led_state = not self.led_state
+            low = arg_str.lower()
+            if low in ("on", "true"):
+                self.led_override = True
+                self.led_state = True
+            elif low in ("0", "off", "false"):
+                self.led_override = True
+                self.led_state = False
+            elif low == "auto":
+                self.led_override = False
+                self.led_state = False
+            else:
+                self.led_override = True
+                self.led_state = not self.led_state
+            mode = "MANUAL" if self.led_override else "AUTO"
             st = "BẬT (ON)" if self.led_state else "TẮT (OFF)"
-            self._log(f"💡 [LỆNH APP] ĐỔI TRẠNG THÁI ĐÈN LED -> {st}", C_YELLOW)
-        elif cmd == "reset":
-            self._log(f"🔄 [LỆNH APP] KHỞI ĐỘNG LẠI ESP32 (REBOOT) THEO YÊU CẦU...", C_CYAN)
-            self.client.publish(f"adht/weather/{self.device_id}/status", json.dumps({"status": "offline", "device": self.device_id}), qos=1, retain=True)
-            time.sleep(1.5)
+            self._log(f"💡 [LỆNH APP] LED mode={mode} state={st}", C_YELLOW)
+        elif cmd in ("reset", "reboot"):
+            self._log("🔄 [LỆNH APP] KHỞI ĐỘNG LẠI ESP32 (REBOOT) THEO YÊU CẦU...", C_CYAN)
+            self.client.publish("adht/weather/status", json.dumps({"status": "offline", "device": self.device_id}), qos=1, retain=True)
+            time.sleep(0.5)
+            self.boot_id = uuid.uuid4().hex[:16]
+            self.telemetry_seq = 0
+            self.window_seq = 0
+            self.rain_reset_epoch = 0
+            self.rain_tip_counter = 0
+            self.rain_total = 0.0
             self.start_time = time.time()
-            self.client.publish(f"adht/weather/{self.device_id}/status", json.dumps({"status": "online", "device": self.device_id}), qos=1, retain=True)
-            self._log(f"✅ ESP32 ĐÃ KHỞI ĐỘNG XONG VÀ ONLINE TRỞ LẠI!", C_GREEN)
+            self._reset_minute_window()
+            self.client.publish("adht/weather/status", json.dumps({"status": "online", "device": self.device_id}), qos=1, retain=True)
+            self._log("✅ ESP32 ĐÃ KHỞI ĐỘNG XONG VÀ ONLINE TRỞ LẠI!", C_GREEN)
+        elif cmd == "reset_rain":
+            if self.enable_v2 and (time.time() - self._win_start_ts) >= 1.0:
+                self._publish_v2_minute_log()
+            self.rain_reset_epoch += 1
+            self.rain_tip_counter = 0
+            self.rain_total = 0.0
+            self.rain_rate = 0.0
+            self._reset_minute_window()
+            self._log("🌧️ [LỆNH APP] Đã reset lượng mưa & tăng rain_reset_epoch", C_CYAN)
         else:
             self._log(f"❓ Nhận lệnh không xác định: cmd='{cmd}', arg='{arg}'", C_YELLOW)
 
@@ -324,9 +388,82 @@ class SimulatedEsp32Node:
         if p["base_rain"] > 0:
             self.rain_rate += random.uniform(-2.0, 2.0)
             self.rain_rate = max(5.0, min(80.0, self.rain_rate))
-            self.rain_total += (self.rain_rate / 3600.0) * self.interval
+            mm_delta = (self.rain_rate / 3600.0) * self.interval
+            tips = max(0, int(round(mm_delta / self.MM_PER_TIP)))
+            if tips > 0:
+                self.rain_tip_counter += tips
+                self.rain_total += tips * self.MM_PER_TIP
         else:
             self.rain_rate = 0.0
+
+        self._win_temp_vals.append(round(self.temp, 1))
+        self._win_humi_vals.append(round(self.humi, 1))
+        self._win_wind_vals.append(round(self.wind_speed, 1))
+
+    def _publish_v2_minute_log(self):
+        end_dt = datetime.now(timezone.utc)
+        cov_ms = max(1000, int((time.time() - self._win_start_ts) * 1000))
+        self.window_seq += 1
+
+        t_vals = self._win_temp_vals or [round(self.temp, 1)]
+        h_vals = self._win_humi_vals or [round(self.humi, 1)]
+        w_vals = self._win_wind_vals or [round(self.wind_speed, 1)]
+
+        payload = {
+            "schema_version": 2,
+            "type": "minute_log",
+            "device_id": self.device_id,
+            "deployment_id": self.deployment_id,
+            "boot_id": self.boot_id,
+            "window_sequence": self.window_seq,
+            "clock_quality": "synchronized",
+            "interval_start": self._win_start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "interval_end": end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "metrics": {
+                "temperature": {
+                    "unit": "degC",
+                    "sum": round(sum(t_vals), 2),
+                    "count": len(t_vals),
+                    "min": min(t_vals),
+                    "max": max(t_vals),
+                    "latest": t_vals[-1],
+                },
+                "humidity": {
+                    "unit": "percent_rh",
+                    "sum": round(sum(h_vals), 2),
+                    "count": len(h_vals),
+                    "min": min(h_vals),
+                    "max": max(h_vals),
+                    "latest": h_vals[-1],
+                },
+                "wind_speed": {
+                    "unit": "m/s",
+                    "sum": round(sum(w_vals), 2),
+                    "count": len(w_vals),
+                    "min": min(w_vals),
+                    "max": max(w_vals),
+                    "latest": w_vals[-1],
+                },
+            },
+            "rain": {
+                "counter_epoch": f"{self.boot_id}:reset-{self.rain_reset_epoch}",
+                "calibration_version": "rain-bucket-v1",
+                "tip_count_start": self._win_tip_start,
+                "tip_count_end": self.rain_tip_counter,
+            },
+            "quality": {
+                "dht_expected_count": len(t_vals),
+                "dht_valid_count": len(t_vals),
+                "wind_expected_count": len(w_vals),
+                "wind_valid_count": len(w_vals),
+                "coverage_ms": cov_ms,
+                "rain_coverage_ms": cov_ms,
+            },
+        }
+        topic = f"adht/weather/{self.device_id}/telemetry/log"
+        self.client.publish(topic, json.dumps(payload), qos=0)
+        self._log(f"📦 Published v2 minute_log seq={self.window_seq} (tips {self._win_tip_start}->{self.rain_tip_counter})", C_BLUE)
+        self._reset_minute_window()
 
     def start(self):
         self.client.connect_async(self.host, self.port, keepalive=60)
@@ -342,10 +479,14 @@ class SimulatedEsp32Node:
                 continue
 
             self._update_physics()
+            self.telemetry_seq += 1
             uptime_sec = int(time.time() - self.start_time)
 
             payload = {
                 "device_id": self.device_id,
+                "boot_id": self.boot_id,
+                "sequence": self.telemetry_seq,
+                "sample_id": f"{self.device_id}:{self.boot_id}:{self.telemetry_seq}",
                 "temp": round(self.temp, 1),
                 "humi": round(self.humi, 1),
                 "rain_rate": round(self.rain_rate, 2),
@@ -357,10 +498,11 @@ class SimulatedEsp32Node:
             }
 
             raw_json = json.dumps(payload)
-            # Publish QoS 0 lên topic chung (EMQX Rule Engine tự ghi Supabase)
-            self.client.publish("adht/weather/telemetry", raw_json, qos=0)
-            # Publish topic riêng của node
+            # Chỉ publish lên topic định danh riêng của trạm (khớp mqtt_manager.cpp)
             self.client.publish(f"adht/weather/{self.device_id}/telemetry", raw_json, qos=0)
+
+            if self.enable_v2 and (time.time() - self._win_start_ts) >= 60.0:
+                self._publish_v2_minute_log()
 
             alert_str = ""
             if self.temp >= self.sys_config["temp_max"]:
@@ -379,7 +521,7 @@ class SimulatedEsp32Node:
         self.running = False
         if self.is_connected:
             self._log("Đang gửi bản tin Offline và ngắt kết nối...", C_YELLOW)
-            self.client.publish(f"adht/weather/{self.device_id}/status", json.dumps({"status": "offline", "device": self.device_id}), qos=1, retain=True)
+            self.client.publish("adht/weather/status", json.dumps({"status": "offline", "device": self.device_id}), qos=1, retain=True)
             time.sleep(0.3)
         self.client.loop_stop()
         self.client.disconnect()
@@ -411,6 +553,16 @@ def main():
         "--env-file",
         help="Đường dẫn file cấu hình (.env hoặc env); ưu tiên hơn tự tìm file",
     )
+    parser.add_argument(
+        "--v2",
+        action="store_true",
+        help="Bật phát bản tin v2 minute_log mỗi 60s lên adht/weather/{id}/telemetry/log",
+    )
+    parser.add_argument(
+        "--deployment-id",
+        default=None,
+        help="deployment_id dùng cho bản tin v2 (mặc định đọc DEPLOYMENT_ID hoặc dep-001)",
+    )
     args = parser.parse_args()
     try:
         env = find_and_load_env(args.env_file)
@@ -420,6 +572,8 @@ def main():
         broker_pass = env.get("MQTT_PASSWORD", env.get("MQTT_PASS", ""))
         use_tls = env.get("MQTT_USE_TLS", "true").lower() == "true"
         ca_file = env.get("MQTT_CA_FILE") or None
+        enable_v2 = args.v2 or env.get("ENABLE_V2_MINUTE_LOG_PUBLISHER", "0") == "1"
+        deployment_id = args.deployment_id or env.get("DEPLOYMENT_ID", "dep-001")
         if not broker_host or "xxxx" in broker_host:
             raise ValueError("Thiếu MQTT_BROKER_HOST hợp lệ; chọn đúng file bằng --env-file")
         if "://" in broker_host or "/" in broker_host:
@@ -463,6 +617,8 @@ def main():
             interval=args.interval,
             use_tls=use_tls,
             ca_file=ca_file,
+            enable_v2=enable_v2,
+            deployment_id=deployment_id,
         )
         nodes.append(node)
         node.start()
