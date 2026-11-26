@@ -75,8 +75,13 @@ export class DevicesService {
     return this.supabaseService.createDevice(dto);
   }
 
-  getDevices() {
-    return this.supabaseService.getDevices();
+  async getDevices() {
+    const devices = await this.supabaseService.getDevices();
+    const allowedDevices = this.configService?.get<string[]>('auth.allowedDevices') || [];
+    if (allowedDevices.length === 0) {
+      return devices;
+    }
+    return devices.filter((device) => allowedDevices.includes(device.device_id));
   }
 
   getDevice(deviceId: string) {

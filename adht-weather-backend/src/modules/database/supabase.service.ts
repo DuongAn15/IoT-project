@@ -76,7 +76,7 @@ export class SupabaseService {
   async getDevices(): Promise<Device[]> {
     const devices: Device[] = [];
     const pageSize = 500;
-    for (let offset = 0; ; offset += pageSize) {
+    for (let offset = 0; ; ) {
       const { data, error } = await this.client.from('devices')
         .select('device_id,name,mac')
         .order('device_id', { ascending: true })
@@ -86,8 +86,9 @@ export class SupabaseService {
         this.logger.error(`Failed to fetch devices: ${this.describeError(error)}`);
         throw new ServiceUnavailableException('Unable to load devices');
       }
+      if (!data?.length) return devices;
       devices.push(...data);
-      if (data.length < pageSize) return devices;
+      offset += data.length;
     }
   }
 

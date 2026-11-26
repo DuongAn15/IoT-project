@@ -42,10 +42,11 @@ test('lists all devices across multiple database pages', async () => {
   const { controller, calls } = setup([
     { data: page, error: null },
     { data: [device], error: null },
+    { data: [], error: null },
   ]);
   assert.equal((await controller.getDevices()).length, 501);
   assert.deepEqual(calls.filter(call => call[0] === 'range'), [
-    ['range', 0, 499], ['range', 500, 999],
+    ['range', 0, 499], ['range', 500, 999], ['range', 501, 1000],
   ]);
 });
 

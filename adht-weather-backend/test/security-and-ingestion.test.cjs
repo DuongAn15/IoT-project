@@ -14,6 +14,7 @@ const { MqttService } = require('../dist/modules/mqtt/mqtt.service');
 const { TelemetryService } = require('../dist/modules/telemetry/telemetry.service');
 const { TelemetryGateway } = require('../dist/modules/websocket/telemetry.gateway');
 const { DevicesService } = require('../dist/modules/devices/devices.service');
+const { WeatherService } = require('../dist/modules/weather/weather.service');
 const { SendCommandDto } = require('../dist/modules/devices/dto/send-command.dto');
 const { UpdateConfigDto } = require('../dist/modules/devices/dto/update-config.dto');
 
@@ -149,4 +150,28 @@ test('DevicesService rejects empty config, temp_min >= temp_max, invalid args, a
     () => svc.sendCommand('adht_weather_02', { cmd: 'reboot' }),
     ForbiddenException,
   );
+});
+
+test('DevicesService.getDevices and WeatherService filter/enforce ALLOWED_DEVICE_IDS', async () => {
+  const config = { get: (key) => (key === 'auth.allowedDevices' ? ['adht_weather_01'] : undefined) };
+  const devices = new DevicesService(
+    {},
+    {
+      getDevices: async () => [
+        { device_id: 'adht_weather_01', name: 'Station 1', mac: 'AA:BB:CC:DD:EE:01' },
+        { device_id: 'adht_weather_02', name: 'Station 2', mac: 'AA:BB:CC:DD:EE:02' },
+      ],
+    },
+    config,
+  );
+  const list = await devices.getDevices();
+  assert.deepEqual(list.map((d) => d.device_id), ['adht_weather_01']);
+
+  const weather = new WeatherService(
+    { getLatest: async (id) => ({ device_id: id }), getHistory: async () => [] },
+    config,
+  );
+  assert.deepEqual(await weather.getLatest('adht_weather_01'), { device_id: 'adht_weather_01' });
+  await assert.rejects(() => weather.getLatest('adht_weather_02'), ForbiddenException);
+  await assert.rejects(() => weather.getHistory('adht_weather_02', '24h'), ForbiddenException);
 });
