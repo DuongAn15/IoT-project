@@ -1,6 +1,6 @@
 # P02 — Wi-Fi provisioning và nút vật lý
 
-**Trạng thái:** Planned
+**Trạng thái:** Implemented on branch `feat/p02-wifi-provisioning-and-buttons` (code/build verified; board physical acceptance pending)
 **Mục tiêu:** bỏ Wi-Fi credentials compile-time; cho phép setup lần đầu và đổi mạng bằng điện thoại, không mất credentials tốt khi nhập sai.
 
 ## Phạm vi

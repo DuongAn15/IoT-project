@@ -77,6 +77,38 @@ void OledManager::nextPage() {
     }
 }
 
+void OledManager::nextPageClamped() {
+    portENTER_CRITICAL(&oledMux);
+    if (currentPage + 1 < PAGE_COUNT) {
+        currentPage++;
+    }
+    lastActivityMs = millis();
+    isPeriodicTourActive = false;
+    bool needTurnOn = screenSaverActive;
+    screenSaverActive = false;
+    portEXIT_CRITICAL(&oledMux);
+
+    if (needTurnOn && oledReady) {
+        display.oled_command(SH110X_DISPLAYON);
+    }
+}
+
+void OledManager::prevPage() {
+    portENTER_CRITICAL(&oledMux);
+    if (currentPage > 0) {
+        currentPage--;
+    }
+    lastActivityMs = millis();
+    isPeriodicTourActive = false;
+    bool needTurnOn = screenSaverActive;
+    screenSaverActive = false;
+    portEXIT_CRITICAL(&oledMux);
+
+    if (needTurnOn && oledReady) {
+        display.oled_command(SH110X_DISPLAYON);
+    }
+}
+
 void OledManager::setPage(uint8_t page) {
     portENTER_CRITICAL(&oledMux);
     currentPage = page % PAGE_COUNT;
@@ -215,6 +247,27 @@ void OledManager::renderPageSystem(const WeatherData &weather, const NetworkStat
     display.printf("Uptime: %lu s", static_cast<unsigned long>(uptimeSec));
 }
 
+void OledManager::renderProvisioningScreen(const NetworkStatus &net) {
+    display.setTextSize(1);
+    display.setCursor(0, 0);
+    display.print("WIFI SETUP PORTAL");
+    display.drawFastHLine(0, 10, 128, SH110X_WHITE);
+
+    display.setCursor(0, 15);
+    display.print("SSID:");
+    display.setCursor(0, 24);
+    display.print(net.ap_ssid);
+
+    display.setCursor(0, 35);
+    display.print("PASS:");
+    display.setCursor(34, 35);
+    display.print(net.ap_pass);
+
+    display.drawFastHLine(0, 47, 128, SH110X_WHITE);
+    display.setCursor(0, 52);
+    display.print(net.ap_url);
+}
+
 void OledManager::update(const WeatherData &weather, const NetworkStatus &net, const char *alertMessage) {
     if (!oledReady) return;
 
@@ -296,17 +349,21 @@ void OledManager::update(const WeatherData &weather, const NetworkStatus &net, c
     // 4. Render active page
     display.clearDisplay();
 
-    switch (page) {
-        case PAGE_EXTREMES:
-            renderPageExtremes(weather, alertMessage);
-            break;
-        case PAGE_SYSTEM:
-            renderPageSystem(weather, net);
-            break;
-        case PAGE_OVERVIEW:
-        default:
-            renderPageOverview(weather, net, alertMessage);
-            break;
+    if (net.provisioning_active) {
+        renderProvisioningScreen(net);
+    } else {
+        switch (page) {
+            case PAGE_EXTREMES:
+                renderPageExtremes(weather, alertMessage);
+                break;
+            case PAGE_SYSTEM:
+                renderPageSystem(weather, net);
+                break;
+            case PAGE_OVERVIEW:
+            default:
+                renderPageOverview(weather, net, alertMessage);
+                break;
+        }
     }
 
     display.display();
