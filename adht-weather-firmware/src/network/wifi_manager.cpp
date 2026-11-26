@@ -41,6 +41,7 @@ void WifiManager::loop() {
             if (justConnected) {
                 Serial.println("[WiFi] Connected successfully!");
                 Serial.printf("[WiFi] IP Address: %s (RSSI: %d dBm)\n", ipStr.c_str(), rssi);
+                configTime(0, 0, "pool.ntp.org", "time.nist.gov", "time.google.com");
             }
         } else {
             portENTER_CRITICAL(&statusMux);

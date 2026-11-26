@@ -1,5 +1,8 @@
 #include "mqtt_manager.h"
+#include "mqtt_ca_cert.h"
 #include <ArduinoJson.h>
+#include <esp_system.h>
+#include <time.h>
 
 MqttManager mqttMgr;
 
@@ -11,18 +14,29 @@ MqttManager::MqttManager()
     : mqttClient(secureClient),
       lastReconnectAttempt(0),
       onCommand(nullptr),
-      onConfig(nullptr)
-{}
+      onConfig(nullptr),
+      telemetrySequence(0),
+      backlogHead(0),
+      backlogCount(0)
+{
+    memset(bootId, 0, sizeof(bootId));
+    memset(backlog, 0, sizeof(backlog));
+}
 
 void MqttManager::begin() {
-    // Enable insecure TLS so we do not have to hardcode changing root CA certificates
-    secureClient.setInsecure();
+    uint32_t r1 = esp_random();
+    uint32_t r2 = esp_random();
+    snprintf(bootId, sizeof(bootId), "%08lx%08lx",
+             static_cast<unsigned long>(r1), static_cast<unsigned long>(r2));
+
+    // Verify broker TLS certificate chain and hostname against embedded Root CAs
+    secureClient.setCACert(MQTT_ROOT_CA);
     secureClient.setConnectionTimeout(5000);  // 5s TCP connect timeout
     secureClient.setHandshakeTimeout(10);     // 10s TLS handshake timeout
 
     mqttClient.setServer(MQTT_BROKER_HOST, MQTT_BROKER_PORT);
     mqttClient.setCallback(staticCallback);
-    mqttClient.setBufferSize(512);
+    mqttClient.setBufferSize(768);
     mqttClient.setSocketTimeout(5);           // 5s MQTT socket timeout
 }
 
@@ -36,6 +50,12 @@ void MqttManager::setConfigCallback(ConfigUpdateCallback cb) {
 
 bool MqttManager::reconnect() {
     if (WiFi.status() != WL_CONNECTED) {
+        return false;
+    }
+
+    // X.509 certificate validity requires an accurate system clock via SNTP.
+    if (time(nullptr) < 1700000000L) {
+        Serial.println("[MQTT] Waiting for NTP time sync before TLS connect...");
         return false;
     }
 
@@ -77,10 +97,13 @@ void MqttManager::loop() {
         uint32_t now = millis();
         if (now - lastReconnectAttempt > 5000) {
             lastReconnectAttempt = now;
-            reconnect();
+            if (reconnect()) {
+                flushBacklog();
+            }
         }
     } else {
         mqttClient.loop();
+        flushBacklog();
     }
 }
 
@@ -88,11 +111,43 @@ bool MqttManager::isConnected() {
     return mqttClient.connected();
 }
 
+void MqttManager::enqueueBacklog(const char *payload) {
+    if (!payload || payload[0] == '\0') return;
+    size_t writeIdx;
+    if (backlogCount < TELEMETRY_BACKLOG_CAPACITY) {
+        writeIdx = (backlogHead + backlogCount) % TELEMETRY_BACKLOG_CAPACITY;
+        backlogCount++;
+    } else {
+        // Ring buffer full: overwrite oldest sample
+        writeIdx = backlogHead;
+        backlogHead = (backlogHead + 1) % TELEMETRY_BACKLOG_CAPACITY;
+    }
+    snprintf(backlog[writeIdx], TELEMETRY_PAYLOAD_MAX_BYTES, "%s", payload);
+}
+
+void MqttManager::flushBacklog() {
+    size_t flushed = 0;
+    while (backlogCount > 0 && mqttClient.connected() && flushed < 2) {
+        if (!mqttClient.publish(TOPIC_TELEMETRY, backlog[backlogHead])) {
+            break;
+        }
+        backlogHead = (backlogHead + 1) % TELEMETRY_BACKLOG_CAPACITY;
+        backlogCount--;
+        flushed++;
+    }
+}
+
 void MqttManager::publishTelemetry(const WeatherData &data, int rssi) {
-    if (!mqttClient.connected()) return;
+    telemetrySequence++;
 
     JsonDocument doc;
     doc["device_id"] = DEVICE_ID;
+    doc["boot_id"] = bootId;
+    doc["sequence"] = telemetrySequence;
+    char sampleId[64];
+    snprintf(sampleId, sizeof(sampleId), "%s:%s:%lu",
+             DEVICE_ID, bootId, static_cast<unsigned long>(telemetrySequence));
+    doc["sample_id"] = sampleId;
     doc["temp"] = round(data.temperature * 10.0f) / 10.0f;
     doc["humi"] = round(data.humidity * 10.0f) / 10.0f;
     doc["rain_rate"] = round(data.rain_rate * 100.0f) / 100.0f;
@@ -102,15 +157,24 @@ void MqttManager::publishTelemetry(const WeatherData &data, int rssi) {
     doc["rssi"] = rssi;
     doc["uptime"] = millis() / 1000;
 
-    char buffer[384];
+    char buffer[TELEMETRY_PAYLOAD_MAX_BYTES];
     serializeJson(doc, buffer, sizeof(buffer));
+
+    if (!mqttClient.connected()) {
+        enqueueBacklog(buffer);
+        Serial.printf("[MQTT] Offline, queued telemetry seq=%lu (backlog=%u)\n",
+                      static_cast<unsigned long>(telemetrySequence),
+                      static_cast<unsigned int>(backlogCount));
+        return;
+    }
 
     // Publish duy nhất lên topic định danh riêng của trạm (TOPIC_TELEMETRY: adht/weather/{DEVICE_ID}/telemetry)
     bool ok = mqttClient.publish(TOPIC_TELEMETRY, buffer);
     if (ok) {
         Serial.printf("[MQTT] Published telemetry to [%s]: %s\n", TOPIC_TELEMETRY, buffer);
     } else {
-        Serial.println("[MQTT] Publish telemetry failed!");
+        enqueueBacklog(buffer);
+        Serial.println("[MQTT] Publish telemetry failed; queued to backlog!");
     }
 }
 
