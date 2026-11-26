@@ -1,6 +1,6 @@
 # P04 — MQTT telemetry pipeline v2
 
-**Trạng thái:** In progress on branch `feat/p04-mqtt-telemetry-pipeline-v2` — receiver v1/v2, durable dedup journal + SQL migration (`docs/p04-minute-log-v2-migration.sql`), deployment binding, simulator v2, và firmware minute-log accumulator đã triển khai; firmware publisher còn gated (`ENABLE_V2_MINUTE_LOG_PUBLISHER=0`), vẫn dùng `PubSubClient` QoS 0 + RAM backlog 12 slot (ESP-MQTT QoS 1 và canary board test là bước kế tiếp trước production sign-off).
+**Trạng thái:** Backend v2 persistence (`weather_logs_v2`), union history/latest, `V2_CUTOVER_ENABLED`, và production `DEVICE_DEPLOYMENTS` binding đã triển khai; firmware accumulator đã có và publisher còn gated (`ENABLE_V2_MINUTE_LOG_PUBLISHER=0`, `PubSubClient` QoS 0 + RAM backlog 12 slot). Production sign-off chờ canary/QoS/hardware tests.
 **Mục tiêu:** lịch sử log idempotent, live/state/event tách semantics; backend sẵn sàng trước khi firmware phát v2.
 
 ## Phạm vi và các chặng
@@ -29,5 +29,12 @@ P00/P01, registry binding cần thiết từ P03. Receiver/fixtures có thể ph
 ## Rollout/rollback
 
 Dual-read/receiver trước publisher. Mốc cutover xác định theo station; không trộn raw 5s với log phút. Rollback giữ reader legacy và provenance để không double-count.
+
+## Đề xuất nâng cấp firmware sau P04 (Deferred)
+
+1. **Chuyển `PubSubClient` (QoS 0) sang `esp_mqtt_client` (ESP-MQTT) QoS 1:**
+   - Hiện `PubSubClient` chỉ hỗ trợ publish QoS 0 (không có `PUBACK` từ broker cho từng bản tin gửi lên). Khi yêu cầu bảo đảm giao nhận ở mức transport cho production diện rộng, thay bằng `esp_mqtt_client` để bật QoS 1 + kiểm tra heap/reconnect/fragmentation trên board thật.
+2. **Lưu offline backlog xuống Flash/LittleFS/NVS có giới hạn wear:**
+   - Hiện firmware dùng RAM ring buffer 12 slot (đủ bù tối đa 12 phút khi mất Wi-Fi/MQTT tạm thời, nhưng mất dữ liệu chưa gửi nếu mất điện đột ngột). Khi cần bảo toàn log phút qua mất điện, chuyển backlog sang LittleFS/NVS với ring buffer cố định và wear-leveling guard.
 
 **Tham chiếu:** `FW-PLAN-02–05`, `BE-PLAN-02`, `CROSS-01/03`; MQ-01–06, DT-01/02.
