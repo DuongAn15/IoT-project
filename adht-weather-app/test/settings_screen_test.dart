@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -160,6 +161,27 @@ void main() {
       );
       expect(find.text('Phiên bản: desired v3 · reported v2'), findsOneWidget);
     });
+
+    test('DeviceConfigNotifier discards stale loadStationState response after switching station', () async {
+      final repo = _FakeDeviceRepo();
+      final container = ProviderContainer(
+        overrides: [deviceRepositoryProvider.overrideWithValue(repo)],
+      );
+      addTearDown(container.dispose);
+
+      // Switch selected station to B while A's loadStationState is delayed
+      repo.delayedStationId = 'adht_weather_01';
+      final loadA = container.read(deviceConfigProvider.notifier).loadStationState('adht_weather_01');
+      container.read(selectedDeviceIdProvider.notifier).state = 'adht_weather_02';
+      repo.desiredVersion = 5;
+      await container.read(deviceConfigProvider.notifier).loadStationState('adht_weather_02');
+      expect(container.read(deviceConfigProvider).desiredVersion, 5);
+
+      repo.releaseDelayedLoad(desiredVersion: 99);
+      await loadA;
+      // Must still show station B's version 5, not stale station A's 99
+      expect(container.read(deviceConfigProvider).desiredVersion, 5);
+    });
   });
 }
 
@@ -168,12 +190,18 @@ class _FakeDeviceRepo implements DeviceRepository {
   DeviceConfigModel initialDesiredConfig;
   int desiredVersion;
   int reportedVersion;
+  String? delayedStationId;
+  Completer<int>? _delayCompleter;
 
   _FakeDeviceRepo({
     DeviceConfigModel? initialDesiredConfig,
     this.desiredVersion = 0,
     this.reportedVersion = 0,
   }) : initialDesiredConfig = initialDesiredConfig ?? DeviceConfigModel.initialDefault();
+
+  void releaseDelayedLoad({required int desiredVersion}) {
+    _delayCompleter?.complete(desiredVersion);
+  }
 
   @override
   Future<bool> sendCommand({
@@ -218,9 +246,14 @@ class _FakeDeviceRepo implements DeviceRepository {
 
   @override
   Future<StationStateSnapshot> getStationState(String deviceId) async {
+    int resolvedDesired = desiredVersion;
+    if (delayedStationId == deviceId) {
+      _delayCompleter = Completer<int>();
+      resolvedDesired = await _delayCompleter!.future;
+    }
     return StationStateSnapshot(
       deviceId: deviceId,
-      desiredVersion: desiredVersion,
+      desiredVersion: resolvedDesired,
       desiredConfig: initialDesiredConfig,
       reportedVersion: reportedVersion,
     );

@@ -165,6 +165,7 @@ final deviceCommandProvider =
 
 class DeviceConfigState {
   final DeviceConfigModel config;
+  final int snapshotRevision;
   final int desiredVersion;
   final int reportedVersion;
   final String? activeOperationId;
@@ -175,6 +176,7 @@ class DeviceConfigState {
 
   const DeviceConfigState({
     required this.config,
+    this.snapshotRevision = 0,
     this.desiredVersion = 0,
     this.reportedVersion = 0,
     this.activeOperationId,
@@ -186,6 +188,7 @@ class DeviceConfigState {
 
   DeviceConfigState copyWith({
     DeviceConfigModel? config,
+    int? snapshotRevision,
     int? desiredVersion,
     int? reportedVersion,
     String? activeOperationId,
@@ -197,6 +200,7 @@ class DeviceConfigState {
   }) {
     return DeviceConfigState(
       config: config ?? this.config,
+      snapshotRevision: snapshotRevision ?? this.snapshotRevision,
       desiredVersion: desiredVersion ?? this.desiredVersion,
       reportedVersion: reportedVersion ?? this.reportedVersion,
       activeOperationId: activeOperationId ?? this.activeOperationId,
@@ -210,6 +214,7 @@ class DeviceConfigState {
 
 class DeviceConfigNotifier extends StateNotifier<DeviceConfigState> {
   final Ref ref;
+  int _activeLoadId = 0;
 
   DeviceConfigNotifier(this.ref)
       : super(
@@ -269,10 +274,16 @@ class DeviceConfigNotifier extends StateNotifier<DeviceConfigState> {
 
   Future<void> loadStationState(String deviceId) async {
     final repo = ref.read(deviceRepositoryProvider);
+    final loadId = ++_activeLoadId;
     try {
       final snapshot = await repo.getStationState(deviceId);
+      if (loadId != _activeLoadId ||
+          ref.read(selectedDeviceIdProvider) != deviceId) {
+        return;
+      }
       state = state.copyWith(
         config: snapshot.desiredConfig,
+        snapshotRevision: state.snapshotRevision + 1,
         desiredVersion: snapshot.desiredVersion,
         reportedVersion: snapshot.reportedVersion,
       );
@@ -335,8 +346,13 @@ class DeviceConfigNotifier extends StateNotifier<DeviceConfigState> {
   Future<void> reconcileActiveConfig() async {
     final deviceId = ref.read(selectedDeviceIdProvider);
     final repo = ref.read(deviceRepositoryProvider);
+    final loadId = ++_activeLoadId;
     try {
       final snapshot = await repo.getStationState(deviceId);
+      if (loadId != _activeLoadId ||
+          ref.read(selectedDeviceIdProvider) != deviceId) {
+        return;
+      }
       OperationLifecycleStatus? opStatus = state.operationStatus;
       final opId = state.activeOperationId;
       if (opId != null && opId.isNotEmpty) {
@@ -348,13 +364,20 @@ class DeviceConfigNotifier extends StateNotifier<DeviceConfigState> {
           opStatus = op.status;
         } catch (_) {}
       }
+      if (loadId != _activeLoadId ||
+          ref.read(selectedDeviceIdProvider) != deviceId) {
+        return;
+      }
       state = state.copyWith(
         desiredVersion: snapshot.desiredVersion,
         reportedVersion: snapshot.reportedVersion,
         operationStatus: opStatus,
       );
     } catch (_) {
-      state = state.copyWith(operationStatus: OperationLifecycleStatus.unknown);
+      if (loadId == _activeLoadId &&
+          ref.read(selectedDeviceIdProvider) == deviceId) {
+        state = state.copyWith(operationStatus: OperationLifecycleStatus.unknown);
+      }
     }
   }
 

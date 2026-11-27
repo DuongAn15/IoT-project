@@ -118,9 +118,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       }
     });
 
-    // Lắng nghe trạng thái Config để hiển thị SnackBar và đồng bộ input khi tải state
+    // Lắng nghe trạng thái Config để hiển thị SnackBar và đồng bộ input khi tải state từ server
     ref.listen<DeviceConfigState>(deviceConfigProvider, (prev, next) {
-      if (prev?.config != next.config) {
+      if (prev?.snapshotRevision != next.snapshotRevision) {
         _syncControllers(next.config);
       }
       if (next.lastSuccessMessage != null &&
