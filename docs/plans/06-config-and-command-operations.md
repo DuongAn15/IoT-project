@@ -1,6 +1,6 @@
 # P06 — Config và command operations
 
-**Trạng thái:** Planned
+**Trạng thái:** In Progress
 **Mục tiêu:** phân biệt desired, published, accepted, persisted, applied và kết quả thực thi xuyên BE–FW–App.
 
 ## Phạm vi và thứ tự
