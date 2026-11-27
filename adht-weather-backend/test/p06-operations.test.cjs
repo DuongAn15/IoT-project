@@ -147,7 +147,30 @@ test('DeviceOperationsService validates ACK deployment_id, version, kind, expiry
     assert.equal(ignored, null);
     assert.equal(devices.getOperation('adht_weather_01', cfgV1.operation_id).status, 'published');
 
-    // Matching deployment_id ACK for v1 updates reported_config to v1 snapshot (humi_max still 90, NOT v2's 80)
+    // Mismatched version ACK (e.g. 999 for v1) and missing version ACK must be rejected
+    const missingVersion = ops.handleDeviceAck('adht_weather_01', {
+      request_id: cfgV1.operation_id,
+      device_id: 'adht_weather_01',
+      deployment_id: 'dep-01',
+      boot_id: 'boot-1',
+      kind: 'config',
+      status: 'applied',
+    });
+    assert.equal(missingVersion, null);
+
+    const wrongVersion = ops.handleDeviceAck('adht_weather_01', {
+      request_id: cfgV1.operation_id,
+      device_id: 'adht_weather_01',
+      deployment_id: 'dep-01',
+      boot_id: 'boot-1',
+      kind: 'config',
+      status: 'applied',
+      version: 999,
+    });
+    assert.equal(wrongVersion, null);
+    assert.equal(devices.getOperation('adht_weather_01', cfgV1.operation_id).status, 'published');
+
+    // Matching deployment_id & exact version ACK for v1 updates reported_config to v1 snapshot
     mqttMock.ackCb('adht_weather_01', {
       request_id: cfgV1.operation_id,
       device_id: 'adht_weather_01',
@@ -160,6 +183,59 @@ test('DeviceOperationsService validates ACK deployment_id, version, kind, expiry
     const op = devices.getOperation('adht_weather_01', cfgV1.operation_id);
     assert.equal(op.status, 'applied');
     assert.equal(op.ack_boot_id, 'boot-1');
+
+    // Late publish failure must NOT overwrite device 'applied' status
+    const lateFail = ops.markPublishResult('adht_weather_01', cfgV1.operation_id, false);
+    assert.equal(lateFail.status, 'applied');
+
+    // Queued operation survives restart, stays queued if publish fails, and recovers on reconnect
+    const queuedCmd = ops.createCommandOperation('adht_weather_01', {
+      cmd: 'led',
+      arg: 'on',
+      request_id: 'outbox-cmd-1',
+    });
+    assert.equal(queuedCmd.operation.status, 'queued');
+    const reloadedOps = new DeviceOperationsService(config);
+    let brokerOnline = false;
+    const recoveredMqtt = {
+      setDeviceAckHandler() {},
+      setBrokerConnectHandler(cb) {
+        this.connectCb = cb;
+      },
+      async publishCommand(id, payload) {
+        if (!brokerOnline) return false;
+        mqttCalls.push({ id, payload });
+        return true;
+      },
+      async publishConfig() {
+        return brokerOnline;
+      },
+    };
+    const recoveredDevices = new DevicesService(recoveredMqtt, {}, config, reloadedOps);
+    assert.equal(await recoveredDevices.recoverPendingOperations(), 0);
+    assert.equal(reloadedOps.getOperation('adht_weather_01', 'outbox-cmd-1').status, 'queued');
+
+    brokerOnline = true;
+    recoveredMqtt.connectCb();
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(reloadedOps.getOperation('adht_weather_01', 'outbox-cmd-1').status, 'published');
+
+    // Ledger write failure must roll back RAM (desired_version and request_id)
+    const unWritableConfig = {
+      get(key) {
+        if (key === 'OPERATION_LEDGER_FILE') return '/proc/invalid-ledger-dir/ledger.json';
+        return undefined;
+      },
+    };
+    const failingOps = new DeviceOperationsService(unWritableConfig);
+    assert.throws(() =>
+      failingOps.createConfigOperation('adht_weather_01', {
+        temp_max: 44,
+        request_id: 'rollback-cfg-1',
+      }),
+    );
+    assert.equal(failingOps.getStationState('adht_weather_01').desired_version, 0);
+    assert.throws(() => failingOps.getOperation('adht_weather_01', 'rollback-cfg-1'));
 
     const st = devices.getStationState('adht_weather_01');
     assert.equal(st.reported_version, 1);

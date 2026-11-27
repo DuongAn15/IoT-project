@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomUUID } from 'crypto';
@@ -133,7 +134,7 @@ export class DeviceOperationsService {
     }
   }
 
-  private saveLedger(): void {
+  private saveLedger(throwOnError = false): void {
     if (!this.ledgerFile) return;
     try {
       fs.mkdirSync(path.dirname(this.ledgerFile), { recursive: true });
@@ -144,8 +145,11 @@ export class DeviceOperationsService {
       const tmpFile = `${this.ledgerFile}.tmp`;
       fs.writeFileSync(tmpFile, JSON.stringify(data));
       fs.renameSync(tmpFile, this.ledgerFile);
-    } catch {
-      this.logger.warn('Failed to persist operation ledger file');
+    } catch (error) {
+      this.logger.error('Failed to persist operation ledger file');
+      if (throwOnError) {
+        throw new ServiceUnavailableException('Unable to persist operation ledger');
+      }
     }
   }
 
@@ -237,7 +241,15 @@ export class DeviceOperationsService {
       this.requestIndex.set(this.opKey(deviceId, dto.request_id), key);
     }
     this.trimLedger();
-    this.saveLedger();
+    try {
+      this.saveLedger(true);
+    } catch (error) {
+      this.operations.delete(key);
+      if (dto.request_id) {
+        this.requestIndex.delete(this.opKey(deviceId, dto.request_id));
+      }
+      throw error;
+    }
     return { operation: op, duplicate: false };
   }
 
@@ -294,7 +306,9 @@ export class DeviceOperationsService {
       );
     }
 
-    const nextVersion = station.desired_version + 1;
+    const prevVersion = station.desired_version;
+    const prevConfig = { ...station.desired_config };
+    const nextVersion = prevVersion + 1;
     station.desired_version = nextVersion;
     station.desired_config = merged;
 
@@ -321,7 +335,17 @@ export class DeviceOperationsService {
       this.requestIndex.set(this.opKey(deviceId, dto.request_id), key);
     }
     this.trimLedger();
-    this.saveLedger();
+    try {
+      this.saveLedger(true);
+    } catch (error) {
+      station.desired_version = prevVersion;
+      station.desired_config = prevConfig;
+      this.operations.delete(key);
+      if (dto.request_id) {
+        this.requestIndex.delete(this.opKey(deviceId, dto.request_id));
+      }
+      throw error;
+    }
     return { operation: op, duplicate: false, mergedConfig: merged };
   }
 
@@ -330,18 +354,45 @@ export class DeviceOperationsService {
     if (!op) return undefined;
     const nowIso = new Date().toISOString();
     if (published) {
-      if (op.status === 'queued') {
-        op.status = 'published';
-      }
       op.broker_acked_at = nowIso;
-    } else {
-      op.status = 'failed';
-      op.error_code = 'broker_publish_failed';
-      op.error_message = 'MQTT broker did not acknowledge publish';
     }
-    op.updated_at = nowIso;
-    this.saveLedger();
+    // Never overwrite a status already reported by the device or already terminal.
+    if (op.status === 'queued') {
+      // A missing PUBACK is ambiguous: the broker may already have delivered the message.
+      // Keep the same request ID in the outbox and retry until expiry.
+      op.status = published ? 'published' : 'queued';
+      if (!published) {
+        op.error_code = 'broker_publish_unknown';
+        op.error_message = 'Awaiting broker receipt; retry with the same request ID';
+      } else {
+        delete op.error_code;
+        delete op.error_message;
+      }
+      op.updated_at = nowIso;
+      this.saveLedger();
+    } else if (published) {
+      op.updated_at = nowIso;
+      this.saveLedger();
+    }
     return op;
+  }
+
+  async recoverPendingOutbox(
+    publishFn: (op: OperationRecord) => Promise<boolean>,
+  ): Promise<number> {
+    let publishedCount = 0;
+    for (const op of this.operations.values()) {
+      this.refreshExpiry(op);
+      if (op.status !== 'queued') continue;
+      try {
+        const ok = await publishFn(op);
+        this.markPublishResult(op.device_id, op.operation_id, ok);
+        if (ok) publishedCount++;
+      } catch {
+        // Keep operation in 'queued' state so a subsequent reconnect can retry it.
+      }
+    }
+    return publishedCount;
   }
 
   handleDeviceAck(topicDeviceId: string, ack: DeviceAckPayload): OperationRecord | null {
@@ -376,11 +427,10 @@ export class DeviceOperationsService {
 
     if (
       op.kind === 'config' &&
-      ack.version !== undefined &&
       op.desired_version !== undefined &&
-      ack.version < op.desired_version
+      ack.version !== op.desired_version
     ) {
-      this.logger.warn(`Ignored stale config ACK version ${ack.version} < ${op.desired_version}`);
+      this.logger.warn(`Ignored config ACK with missing/mismatched version ${String(ack.version)} != ${op.desired_version}`);
       return null;
     }
 

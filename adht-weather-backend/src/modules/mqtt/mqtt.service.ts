@@ -87,7 +87,8 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
             this.logger.error('MQTT subscribe failed; check broker permissions');
             return;
           }
-          this.logger.log('Subscribed to telemetry (v1/v2) and status topics');
+          this.logger.log('Subscribed to telemetry (v1/v2), ACK, and status topics');
+          this.brokerConnectHandler?.();
         },
       );
     });
@@ -369,9 +370,14 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   }
 
   private deviceAckHandler?: (deviceId: string, payload: Record<string, unknown>) => void;
+  private brokerConnectHandler?: () => void;
 
   setDeviceAckHandler(handler: (deviceId: string, payload: Record<string, unknown>) => void): void {
     this.deviceAckHandler = handler;
+  }
+
+  setBrokerConnectHandler(handler: () => void): void {
+    this.brokerConnectHandler = handler;
   }
 
   publishCommand(deviceId: string, command: SendCommandDto | Record<string, unknown>): Promise<boolean> {

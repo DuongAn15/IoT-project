@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, Logger, NotFoundExc
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { Device } from '../devices/types/device.types';
+import type { OperationRecord, StationConfigSnapshot } from '../devices/device-operations.service';
 import type { DerivedMinuteLogRecord } from '../telemetry/minute-log-v2';
 
 export interface WeatherRecord {
@@ -70,6 +71,68 @@ export class SupabaseService {
         detectSessionInUrl: false,
       },
     });
+  }
+
+  // P06 operation ledger. PostgreSQL functions own the transaction and row locks.
+  async createP06Operation(args: {
+    deviceId: string; kind: 'command' | 'config'; payload: Record<string, unknown>;
+    requestId?: string; expectedVersion?: number; expiresAt: string; deploymentId?: string;
+  }): Promise<{ operation: OperationRecord; duplicate: boolean }> {
+    const { data, error } = await this.client.rpc('p06_create_operation', {
+      p_device: args.deviceId, p_kind: args.kind, p_payload: args.payload,
+      p_request: args.requestId ?? null, p_expected: args.expectedVersion ?? null,
+      p_expires: args.expiresAt, p_deployment: args.deploymentId ?? null,
+    });
+    if (error) {
+      if (error.code === '23505' || error.code === '40001') throw new ConflictException(error.message);
+      if (error.code === '22023') throw new BadRequestException(error.message);
+      this.logger.error(`P06 operation creation failed: ${this.describeError(error)}`);
+      throw new ServiceUnavailableException('Unable to create operation');
+    }
+    return data as { operation: OperationRecord; duplicate: boolean };
+  }
+
+  async getP06State(deviceId: string) {
+    const { data, error } = await this.client.from('p06_station_state').select('*')
+      .eq('device_id', deviceId).maybeSingle();
+    if (error) throw new ServiceUnavailableException('Unable to load station state');
+    const recent = await this.client.from('p06_operations').select('*')
+      .eq('device_id', deviceId).order('created_at', { ascending: false }).limit(20);
+    if (recent.error) throw new ServiceUnavailableException('Unable to load station operations');
+    const defaults: StationConfigSnapshot = {
+      temp_max: 38, temp_min: 10, humi_max: 90, wind_max: 15, rain_max: 30,
+      auto_warning: true, buzzer: true,
+    };
+    return data ? { ...data, recent_operations: recent.data ?? [] } : {
+      device_id: deviceId, desired_version: 0, desired_config: defaults,
+      reported_version: 0, reported_config: null, recent_operations: recent.data ?? [],
+    };
+  }
+
+  async getP06Operation(deviceId: string, operationId: string): Promise<OperationRecord> {
+    const { data, error } = await this.client.from('p06_operations').select('*')
+      .eq('device_id', deviceId).eq('operation_id', operationId).maybeSingle();
+    if (error) throw new ServiceUnavailableException('Unable to load operation');
+    if (!data) throw new NotFoundException(`Operation ${operationId} not found for ${deviceId}`);
+    return data as OperationRecord;
+  }
+
+  async claimP06Operations(): Promise<OperationRecord[]> {
+    const { data, error } = await this.client.rpc('p06_claim_operations', { p_limit: 20 });
+    if (error) throw new ServiceUnavailableException('Unable to claim operation outbox');
+    return (data ?? []) as OperationRecord[];
+  }
+
+  async markP06Publish(deviceId: string, operationId: string, published: boolean): Promise<void> {
+    const { error } = await this.client.rpc('p06_publish_result', {
+      p_device: deviceId, p_operation: operationId, p_published: published,
+    });
+    if (error) throw new ServiceUnavailableException('Unable to record broker result');
+  }
+
+  async applyP06Ack(deviceId: string, ack: Record<string, unknown>): Promise<void> {
+    const { error } = await this.client.rpc('p06_apply_ack', { p_device: deviceId, p_ack: ack });
+    if (error) throw new ServiceUnavailableException('Unable to record device ACK');
   }
 
   async createDevice(device: Device): Promise<Device> {
