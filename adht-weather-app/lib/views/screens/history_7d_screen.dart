@@ -82,7 +82,7 @@ class History7dScreen extends ConsumerWidget {
                           ApiConstants.stationLocationMap[id] ??
                           'Chưa có vị trí trạm';
                       return Text(
-                        'Vị trí: $location · Thời gian: giờ trên thiết bị',
+                        'Vị trí: $location',
                         style: theme.textTheme.bodySmall,
                       );
                     },
@@ -209,11 +209,23 @@ class History7dScreen extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Lịch sử các ngày',
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
+        Row(
+          children: [
+            Text(
+              'Lịch sử các ngày',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(width: AppDimensions.spaceXs),
+            Text(
+              DateTimeFormatter.formatGmtOffset(),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.textTheme.bodySmall?.color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: AppDimensions.spaceSm),
         Card(

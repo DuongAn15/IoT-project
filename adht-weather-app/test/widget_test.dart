@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:weather_monitoring/core/utils/date_time_formatter.dart';
 import 'package:weather_monitoring/core/utils/weather_unit_helper.dart';
 import 'package:weather_monitoring/data/models/weather_current_model.dart';
 import 'package:weather_monitoring/data/models/weather_daily_summary.dart';
@@ -104,6 +105,8 @@ void main() {
       expect(find.byIcon(Icons.settings_outlined), findsOneWidget);
       expect(find.text('Thời tiết hôm nay'), findsOneWidget);
       expect(find.text('Lịch sử'), findsOneWidget);
+      expect(find.textContaining('giờ trên thiết bị'), findsNothing);
+      expect(find.text(DateTimeFormatter.formatGmtOffset()), findsWidgets);
     });
 
     testWidgets(
@@ -184,5 +187,15 @@ void main() {
         expect(find.text('Bản ghi đo gần nhất'), findsNothing);
       },
     );
+
+    test('DateTimeFormatter.formatGmtOffset formats positive, zero, half-hour and negative offsets', () {
+      expect(DateTimeFormatter.formatGmtOffset(Duration.zero), 'GMT+0');
+      expect(DateTimeFormatter.formatGmtOffset(const Duration(hours: 7)), 'GMT+7');
+      expect(
+        DateTimeFormatter.formatGmtOffset(const Duration(hours: 5, minutes: 30)),
+        'GMT+5:30',
+      );
+      expect(DateTimeFormatter.formatGmtOffset(const Duration(hours: -5)), 'GMT-5');
+    });
   });
 }

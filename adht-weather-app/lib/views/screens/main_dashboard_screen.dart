@@ -139,11 +139,24 @@ class MainDashboardScreen extends ConsumerWidget {
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Text(
-                                      'Thời tiết hôm nay',
-                                      style: theme.textTheme.titleMedium?.copyWith(
-                                        fontWeight: FontWeight.w700,
-                                      ),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'Thời tiết hôm nay',
+                                          style: theme.textTheme.titleMedium?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(width: AppDimensions.spaceXs),
+                                        Text(
+                                          DateTimeFormatter.formatGmtOffset(),
+                                          style: theme.textTheme.labelSmall?.copyWith(
+                                            color: theme.textTheme.bodySmall?.color,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                     TextButton(
                                       style: TextButton.styleFrom(
@@ -242,11 +255,24 @@ class MainDashboardScreen extends ConsumerWidget {
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Text(
-                                      'Lịch sử',
-                                      style: theme.textTheme.titleMedium?.copyWith(
-                                        fontWeight: FontWeight.w700,
-                                      ),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'Lịch sử',
+                                          style: theme.textTheme.titleMedium?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(width: AppDimensions.spaceXs),
+                                        Text(
+                                          DateTimeFormatter.formatGmtOffset(),
+                                          style: theme.textTheme.labelSmall?.copyWith(
+                                            color: theme.textTheme.bodySmall?.color,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                     TextButton(
                                       style: TextButton.styleFrom(

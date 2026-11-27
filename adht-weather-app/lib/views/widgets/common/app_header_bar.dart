@@ -136,7 +136,7 @@ class AppHeaderBar extends StatelessWidget {
             ],
           ),
           Text(
-            'Vị trí: $location · Thời gian: giờ trên thiết bị',
+            'Vị trí: $location',
             style: theme.textTheme.bodySmall,
           ),
         ],

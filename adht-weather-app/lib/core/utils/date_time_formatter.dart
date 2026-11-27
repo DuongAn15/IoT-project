@@ -102,4 +102,18 @@ abstract class DateTimeFormatter {
     final dateStr = formatShortDate(dateTime);
     return 'Cập nhật: $timeStr $dateStr';
   }
+
+  /// Định dạng độ lệch múi giờ động của thiết bị (ví dụ: "GMT+7", "GMT+5:30", "GMT-5", "GMT+0")
+  static String formatGmtOffset([Duration? offset]) {
+    final effective = offset ?? DateTime.now().timeZoneOffset;
+    final totalMinutes = effective.inMinutes;
+    if (totalMinutes == 0) return 'GMT+0';
+    final sign = totalMinutes > 0 ? '+' : '-';
+    final absMinutes = totalMinutes.abs();
+    final hours = absMinutes ~/ 60;
+    final minutes = absMinutes % 60;
+    if (minutes == 0) return 'GMT$sign$hours';
+    final minStr = minutes.toString().padLeft(2, '0');
+    return 'GMT$sign$hours:$minStr';
+  }
 }
