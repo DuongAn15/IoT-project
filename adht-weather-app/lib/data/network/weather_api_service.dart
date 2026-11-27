@@ -31,11 +31,12 @@ class WeatherApiService {
     }
   }
 
-  /// Gọi GET /weather/history?device_id=...&range=...&since=...
+  /// Gọi GET /weather/history?device_id=...&range=...&since=...&timezone=...
   Future<ApiResponse<Map<String, dynamic>>> fetchHistory({
     required String deviceId,
     required String range,
     String? since,
+    String timezone = ApiConstants.defaultStationTimezone,
   }) async {
     try {
       final response = await _dio.get(
@@ -43,6 +44,7 @@ class WeatherApiService {
         queryParameters: {
           'device_id': deviceId,
           'range': range,
+          'timezone': timezone,
           if (since != null && since.isNotEmpty) 'since': since,
         },
       );

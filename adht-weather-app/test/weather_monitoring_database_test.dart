@@ -758,7 +758,100 @@ void main() {
         now.toIso8601String(),
       );
 
+      final scopedKey = WeatherMonitoringDao.buildCursorSeriesKey(
+        range: '24h',
+        resolution: '600s',
+        timezone: 'Asia/Ho_Chi_Minh',
+      );
+      expect(scopedKey, '24h:600s:Asia/Ho_Chi_Minh:v${ApiConstants.databaseVersion}');
+
+      final withCoverage = WeatherMonitoringRecord.fromJson({
+        'device_id': 'adht_weather_01',
+        'temp': 26.0,
+        'humi': 70.0,
+        'rain_rate': 0.0,
+        'rainfall_mm': 0.5,
+        'wind_speed': 1.2,
+        'coverage': 0.75,
+        'revision': 1764216000000,
+        'is_partial': true,
+        'source': 'v2',
+        'rain_quality': 'observed',
+        'recorded_at': now.toIso8601String(),
+      });
+      await dao.saveIndayHistoryAndCleanup(
+        [withCoverage],
+        deviceId: 'adht_weather_01',
+        syncCursorIso: now.toIso8601String(),
+        cursorSeriesKey: scopedKey,
+      );
+      final indayRows = await dao.getIndayRecords(deviceId: 'adht_weather_01');
+      expect(indayRows.last.coverage, 0.75);
+      expect(indayRows.last.revision, 1764216000000);
+      expect(indayRows.last.isPartial, isTrue);
+      expect(
+        await dao.getSyncCursor(deviceId: 'adht_weather_01', series: scopedKey),
+        now.toIso8601String(),
+      );
+
       await (await upgraded.database).close();
+    });
+
+    test('boundary bucket correction upserts without duplication when re-synced at exact cursor', () async {
+      final db = AppDatabase.withFactory(databaseFactoryFfi);
+      final dao = WeatherMonitoringDao(db);
+      await dao.clearAll();
+
+      final bucketTimeUtc = DateTime.now().toUtc();
+      final bucketCursor = bucketTimeUtc.toIso8601String();
+
+      // First sync of current open bucket
+      await dao.saveIndayHistoryAndCleanup(
+        [
+          WeatherMonitoringRecord(
+            deviceId: 'adht_weather_01',
+            temperature: 26.0,
+            humidity: 70.0,
+            rainfall: 0.0,
+            rainfallMm: 0.2,
+            windSpeed: 1.0,
+            source: 'v2',
+            rainQuality: 'observed',
+            sampleCount: 3,
+            recordedAt: bucketTimeUtc.toLocal(),
+          ),
+        ],
+        deviceId: 'adht_weather_01',
+        syncCursorIso: bucketCursor,
+      );
+
+      // Second sync with updated values for the same boundary bucket
+      await dao.saveIndayHistoryAndCleanup(
+        [
+          WeatherMonitoringRecord(
+            deviceId: 'adht_weather_01',
+            temperature: 27.5,
+            humidity: 72.0,
+            rainfall: 1.2,
+            rainfallMm: 0.8,
+            windSpeed: 1.8,
+            source: 'v2',
+            rainQuality: 'observed',
+            sampleCount: 10,
+            recordedAt: bucketTimeUtc.toLocal(),
+          ),
+        ],
+        deviceId: 'adht_weather_01',
+        syncCursorIso: bucketCursor,
+      );
+
+      final rows = await dao.getIndayRecords(deviceId: 'adht_weather_01');
+      expect(rows.length, 1);
+      expect(rows.first.temperature, 27.5);
+      expect(rows.first.rainfallMm, 0.8);
+      expect(rows.first.sampleCount, 10);
+
+      await (await db.database).close();
     });
   });
 }

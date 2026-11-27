@@ -55,6 +55,7 @@ abstract class ApiConstants {
   static const String tableWeatherInday = 'weather_inday';
   static const String tableWeatherWeek = 'weather_week';
   static const String tableSyncCursors = 'sync_cursors';
+  static const String defaultStationTimezone = 'Asia/Ho_Chi_Minh';
   static const String latestWeatherFileName = 'latest_weather.json';
   static const int cacheRetentionDays = 7;
   static const int cacheRetentionHoursInday = 24;

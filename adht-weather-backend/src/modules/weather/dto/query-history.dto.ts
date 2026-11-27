@@ -12,8 +12,19 @@ export class QueryHistoryDto {
   @IsOptional()
   range?: string = '24h';
 
-  @ApiPropertyOptional({ example: '2026-11-27T00:00:00.000Z', description: 'Mốc UTC incremental sync (>= since)' })
+  @ApiPropertyOptional({
+    example: '2026-11-27T00:00:00.000Z',
+    description: 'Mốc UTC incremental sync (inclusive >= since; client upsert idempotently theo bucket)',
+  })
   @IsISO8601()
   @IsOptional()
   since?: string;
+
+  @ApiPropertyOptional({
+    example: 'Asia/Ho_Chi_Minh',
+    description: 'IANA timezone của trạm để căn bucket theo giờ địa phương (mặc định Asia/Ho_Chi_Minh)',
+  })
+  @IsString()
+  @IsOptional()
+  timezone?: string = 'Asia/Ho_Chi_Minh';
 }

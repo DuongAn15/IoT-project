@@ -1,6 +1,6 @@
 # P05 — History, aggregation và local-first app
 
-**Trạng thái:** Done
+**Trạng thái:** In Progress
 **Mục tiêu:** API và biểu đồ biểu diễn đúng đơn vị/thống kê; app sync phần thiếu, cache đúng station và không xóa nội dung khi refresh.
 
 ## Phạm vi

@@ -36,12 +36,18 @@ export class WeatherService {
         return this.supabaseService.getLatest(resolvedId);
     }
 
-    async getHistory(deviceId: string, range: string = '24h', since?: string) {
+    async getHistory(
+        deviceId: string,
+        range: string = '24h',
+        since?: string,
+        timezone: string = 'Asia/Ho_Chi_Minh',
+    ) {
         const resolvedId = this.assertAllowedDevice(deviceId) || '';
-        const data = await this.supabaseService.getHistory(resolvedId, range, since);
+        const data = await this.supabaseService.getHistory(resolvedId, range, since, timezone);
         return {
             device_id: resolvedId,
             range,
+            timezone,
             points_count: data.length,
             data,
         };

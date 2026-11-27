@@ -157,12 +157,12 @@ void main() {
 
     final yesterdaySummary = summaries[summaries.length - 2];
     expect(yesterdaySummary.hasData, isTrue);
-    expect(yesterdaySummary.hasObservedRainfall, isFalse);
+    expect(yesterdaySummary.hasRainfallAmount, isFalse);
     expect(yesterdaySummary.rainQuality, 'unknown');
     expect(yesterdaySummary.totalRainfall, 0.0);
 
     final todaySummary = summaries.last;
-    expect(todaySummary.hasObservedRainfall, isTrue);
+    expect(todaySummary.hasRainfallAmount, isTrue);
     expect(todaySummary.rainQuality, 'observed');
     expect(todaySummary.totalRainfall, 0.8);
     expect(todaySummary.minTemperature, 25.2);

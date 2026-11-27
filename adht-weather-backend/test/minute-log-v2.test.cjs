@@ -336,7 +336,201 @@ test('SupabaseService.getHistory exposes temp_min, temp_max, provenance, and res
     assert.equal(history[0].sample_count, 2);
     assert.equal(history[0].source, 'v2');
     assert.equal(history[0].rain_quality, 'observed');
+    assert.equal(history[0].coverage, 0.2);
+    assert.equal(history[0].is_partial, true);
+    assert.equal(history[0].revision, Date.parse('2026-11-27T00:15:00.000Z'));
     assert.ok(gteCalls.some(([, val]) => val === sinceIso));
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test('SupabaseService.getHistory aligns buckets to station timezone, updates revision on inclusive since, and respects V2_CUTOVER_AT', async () => {
+  const originalNow = Date.now;
+  const originalCutover = process.env.V2_CUTOVER_AT;
+  Date.now = () => Date.parse('2026-11-27T02:00:00.000Z');
+  process.env.V2_CUTOVER_AT = '2026-11-27T01:00:00.000Z';
+
+  try {
+    const svc = Object.create(SupabaseService.prototype);
+    svc.table = 'weather_logs';
+    svc.v2Table = 'weather_logs_v2';
+    svc.logger = { error() {}, warn() {}, log() {} };
+    const v1Rows = [
+      {
+        device_id: 'adht_weather_01',
+        temperature: 20,
+        humidity: 70,
+        rain_rate: 0,
+        wind_speed: 1,
+        created_at: '2026-11-27T00:35:00.000Z', // before cutover
+      },
+      {
+        device_id: 'adht_weather_01',
+        temperature: 99,
+        humidity: 99,
+        rain_rate: 99,
+        wind_speed: 99,
+        created_at: '2026-11-27T01:35:00.000Z', // after cutover -> ignored
+      },
+    ];
+    const v2Rows = [
+      {
+        device_id: 'adht_weather_01',
+        temperature: 25,
+        humidity: 60,
+        rain_rate: 0,
+        rainfall_mm: 0.4,
+        wind_speed: 2,
+        recorded_at: '2026-11-27T01:35:00.000Z', // after cutover
+      },
+    ];
+
+    const makeMockClient = () => {
+      const doneTables = new Set();
+      return {
+        from: (table) => {
+          const rows = table === 'weather_logs_v2' ? v2Rows : v1Rows;
+          const query = {};
+          for (const m of ['select', 'eq', 'gte', 'lte', 'order', 'range']) {
+            query[m] = () => query;
+          }
+          query.returns = async () => {
+            if (doneTables.has(table)) return { data: [], error: null };
+            doneTables.add(table);
+            return { data: rows, error: null };
+          };
+          return query;
+        },
+      };
+    };
+
+    svc.client = makeMockClient();
+
+    // Asia/Kolkata (+05:30) 1h bucket (3600s):
+    // 00:35 UTC = 06:05 IST -> 06:00 IST (00:30 UTC)
+    // 01:35 UTC = 07:05 IST -> 07:00 IST (01:30 UTC)
+    const kolkataHistory = await svc.getHistory('adht_weather_01', '7d', undefined, 'Asia/Kolkata');
+    assert.equal(kolkataHistory.length, 2);
+    assert.equal(kolkataHistory[0].recorded_at, '2026-11-27T00:30:00.000Z');
+    assert.equal(kolkataHistory[0].source, 'v1_legacy');
+    assert.equal(kolkataHistory[1].recorded_at, '2026-11-27T01:30:00.000Z');
+    assert.equal(kolkataHistory[1].source, 'v2');
+
+    // In Asia/Ho_Chi_Minh (+07:00) 7d bucket (3600s): 00:35 UTC (07:35 ICT) -> 00:00 UTC, 01:35 UTC (08:35 ICT) -> 01:00 UTC
+    svc.client = makeMockClient();
+    const ictHistory = await svc.getHistory('adht_weather_01', '7d', undefined, 'Asia/Ho_Chi_Minh');
+    assert.equal(ictHistory.length, 2);
+    assert.equal(ictHistory[0].recorded_at, '2026-11-27T00:00:00.000Z');
+    assert.equal(ictHistory[0].source, 'v1_legacy');
+    assert.equal(ictHistory[1].recorded_at, '2026-11-27T01:00:00.000Z');
+    assert.equal(ictHistory[1].source, 'v2');
+    assert.equal(ictHistory[1].temp, 25);
+
+    const firstRev = ictHistory[1].revision;
+
+    // Simulate open bucket receiving another minute log and re-syncing with inclusive since at bucket boundary
+    v2Rows.push({
+      device_id: 'adht_weather_01',
+      temperature: 27,
+      humidity: 62,
+      rain_rate: 1.2,
+      rainfall_mm: 0.6,
+      wind_speed: 2.5,
+      recorded_at: '2026-11-27T01:40:00.000Z',
+    });
+    svc.client = makeMockClient();
+    const resync = await svc.getHistory(
+      'adht_weather_01',
+      '7d',
+      '2026-11-27T01:00:00.000Z',
+      'Asia/Ho_Chi_Minh',
+    );
+    const updatedBucket = resync.find((b) => b.recorded_at === '2026-11-27T01:00:00.000Z');
+    assert.ok(updatedBucket);
+    assert.equal(updatedBucket.sample_count, 2);
+    assert.equal(updatedBucket.rainfall_mm, 1.0);
+    assert.ok(updatedBucket.revision > firstRev);
+
+    await assert.rejects(
+      () => svc.getHistory('adht_weather_01', '24h', undefined, 'Invalid/Timezone'),
+      /valid IANA timezone/,
+    );
+  } finally {
+    Date.now = originalNow;
+    if (originalCutover === undefined) {
+      delete process.env.V2_CUTOVER_AT;
+    } else {
+      process.env.V2_CUTOVER_AT = originalCutover;
+    }
+  }
+});
+
+test('SupabaseService.getHistory weights averages by valid sample counts and computes true coverage from quality fields', async () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse('2026-11-27T01:00:00.000Z');
+  try {
+    const svc = Object.create(SupabaseService.prototype);
+    svc.table = 'weather_logs';
+    svc.v2Table = 'weather_logs_v2';
+    svc.logger = { error() {}, warn() {}, log() {} };
+
+    const responses = [
+      { data: [], error: null },
+      {
+        data: [
+          {
+            device_id: 'adht_weather_01',
+            temperature: 20.0,
+            humidity: 60.0,
+            rain_rate: 0.0,
+            rainfall_mm: 0.0,
+            wind_speed: 1.0,
+            coverage_ms: 30000,
+            rain_coverage_ms: 30000,
+            dht_expected_count: 10,
+            dht_valid_count: 1,
+            wind_expected_count: 10,
+            wind_valid_count: 1,
+            recorded_at: '2026-11-27T00:01:00.000Z',
+          },
+          {
+            device_id: 'adht_weather_01',
+            temperature: 30.0,
+            humidity: 80.0,
+            rain_rate: 6.0,
+            rainfall_mm: 0.1,
+            wind_speed: 4.0,
+            coverage_ms: 60000,
+            rain_coverage_ms: 60000,
+            dht_expected_count: 10,
+            dht_valid_count: 9,
+            wind_expected_count: 10,
+            wind_valid_count: 9,
+            recorded_at: '2026-11-27T00:02:00.000Z',
+          },
+        ],
+        error: null,
+      },
+      { data: [], error: null },
+    ];
+    const query = {};
+    for (const m of ['select', 'eq', 'gte', 'lte', 'order', 'range']) {
+      query[m] = () => query;
+    }
+    query.returns = async () => responses.shift();
+    svc.client = { from: () => query };
+
+    // 24h bucket = 600s = 600_000ms
+    const history = await svc.getHistory('adht_weather_01', '24h');
+    assert.equal(history.length, 1);
+    // Weighted temp: (20*1 + 30*9) / 10 = 29.0 (simple mean would be 25.0)
+    assert.equal(history[0].temp, 29.0);
+    // Weighted wind: (1*1 + 4*9) / 10 = 3.7
+    assert.equal(history[0].wind_speed, 3.7);
+    // Effective coverage: (30000*(1/10) + 60000*(9/10)) / 600000 = 57000 / 600000 = 0.095
+    assert.equal(history[0].coverage, 0.095);
+    assert.equal(history[0].is_partial, true);
   } finally {
     Date.now = originalNow;
   }

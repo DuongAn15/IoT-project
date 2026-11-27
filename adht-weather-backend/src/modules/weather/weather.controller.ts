@@ -27,10 +27,18 @@ export class WeatherController {
   }
 
   @Get('history')
-  @ApiOperation({ summary: 'Truy vấn dữ liệu lịch sử đã được làm mịn (Downsampled)' })
+  @ApiOperation({
+    summary: 'Truy vấn dữ liệu lịch sử đã được làm mịn (Downsampled)',
+    description: 'Hỗ trợ incremental sync với `since` (inclusive >= since để client upsert bucket đang mở) và căn bucket theo `timezone` của trạm.',
+  })
   @ApiResponse({ status: 200, description: 'Danh sách điểm dữ liệu vẽ biểu đồ fl_chart' })
   getHistory(@Query() query: QueryHistoryDto) {
-    return this.weatherService.getHistory(query.device_id, query.range, query.since);
+    return this.weatherService.getHistory(
+      query.device_id,
+      query.range,
+      query.since,
+      query.timezone,
+    );
   }
 
   /* Forecast endpoint is deferred; re-enable only with an approved forecast scope.

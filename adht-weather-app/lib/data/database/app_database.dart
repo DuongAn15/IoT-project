@@ -58,6 +58,9 @@ class AppDatabase {
         sample_count INTEGER,
         temp_min REAL,
         temp_max REAL,
+        coverage REAL,
+        revision INTEGER,
+        is_partial INTEGER,
         recorded_at TEXT NOT NULL,
         timestamp INTEGER NOT NULL,
         UNIQUE(device_id, recorded_at) ON CONFLICT REPLACE
@@ -84,6 +87,9 @@ class AppDatabase {
         sample_count INTEGER,
         temp_min REAL,
         temp_max REAL,
+        coverage REAL,
+        revision INTEGER,
+        is_partial INTEGER,
         recorded_at TEXT NOT NULL,
         timestamp INTEGER NOT NULL,
         UNIQUE(device_id, recorded_at) ON CONFLICT REPLACE
@@ -139,6 +145,9 @@ class AppDatabase {
         await _addColumnIfMissing(db, table, 'sample_count', 'INTEGER');
         await _addColumnIfMissing(db, table, 'temp_min', 'REAL');
         await _addColumnIfMissing(db, table, 'temp_max', 'REAL');
+        await _addColumnIfMissing(db, table, 'coverage', 'REAL');
+        await _addColumnIfMissing(db, table, 'revision', 'INTEGER');
+        await _addColumnIfMissing(db, table, 'is_partial', 'INTEGER');
       }
       await _createSyncCursorsTable(db);
     }

@@ -17,6 +17,15 @@ class WeatherMonitoringDao {
   String get tableWeek => ApiConstants.tableWeatherWeek;
   String get tableSyncCursors => ApiConstants.tableSyncCursors;
 
+  static String buildCursorSeriesKey({
+    required String range,
+    required String resolution,
+    String timezone = ApiConstants.defaultStationTimezone,
+    int version = ApiConstants.databaseVersion,
+  }) {
+    return '$range:$resolution:$timezone:v$version';
+  }
+
   Future<String?> getSyncCursor({
     required String deviceId,
     required String series,
@@ -127,6 +136,7 @@ class WeatherMonitoringDao {
     List<WeatherMonitoringRecord> records, {
     String? deviceId,
     String? syncCursorIso,
+    String cursorSeriesKey = '24h',
   }) async {
     final db = await _appDatabase.database;
     final cutoff = DateTime.now()
@@ -154,7 +164,7 @@ class WeatherMonitoringDao {
           tableSyncCursors,
           {
             'device_id': deviceId,
-            'series': '24h',
+            'series': cursorSeriesKey,
             'last_synced_at': syncCursorIso,
           },
           conflictAlgorithm: ConflictAlgorithm.replace,
@@ -268,6 +278,7 @@ class WeatherMonitoringDao {
     List<WeatherMonitoringRecord> records, {
     String? deviceId,
     String? syncCursorIso,
+    String cursorSeriesKey = '7d',
   }) async {
     final db = await _appDatabase.database;
     final cutoffTimestamp = DateTime.now()
@@ -295,7 +306,7 @@ class WeatherMonitoringDao {
           tableSyncCursors,
           {
             'device_id': deviceId,
-            'series': '7d',
+            'series': cursorSeriesKey,
             'last_synced_at': syncCursorIso,
           },
           conflictAlgorithm: ConflictAlgorithm.replace,

@@ -15,6 +15,9 @@ class WeatherMonitoringRecord {
   final int? sampleCount;
   final double? tempMin;
   final double? tempMax;
+  final double? coverage;
+  final int? revision;
+  final bool? isPartial;
   final DateTime recordedAt;
   final int timestamp; // millisecondsSinceEpoch
 
@@ -31,6 +34,9 @@ class WeatherMonitoringRecord {
     this.sampleCount,
     this.tempMin,
     this.tempMax,
+    this.coverage,
+    this.revision,
+    this.isPartial,
     required this.recordedAt,
     int? timestamp,
   }) : timestamp = timestamp ?? recordedAt.millisecondsSinceEpoch;
@@ -50,6 +56,9 @@ class WeatherMonitoringRecord {
       if (sampleCount != null) 'sample_count': sampleCount,
       if (tempMin != null) 'temp_min': tempMin,
       if (tempMax != null) 'temp_max': tempMax,
+      if (coverage != null) 'coverage': coverage,
+      if (revision != null) 'revision': revision,
+      if (isPartial != null) 'is_partial': isPartial! ? 1 : 0,
       // Lưu ISO8601 chuẩn UTC nguyên bản vào SQLite
       'recorded_at': recordedAt.toUtc().toIso8601String(),
       'timestamp': timestamp,
@@ -83,6 +92,9 @@ class WeatherMonitoringRecord {
       sampleCount: (map['sample_count'] as num?)?.toInt(),
       tempMin: (map['temp_min'] as num?)?.toDouble(),
       tempMax: (map['temp_max'] as num?)?.toDouble(),
+      coverage: (map['coverage'] as num?)?.toDouble(),
+      revision: (map['revision'] as num?)?.toInt(),
+      isPartial: map['is_partial'] == null ? null : (map['is_partial'] as num) != 0,
       recordedAt: parsedDate,
       timestamp: tsRaw ?? parsedDate.millisecondsSinceEpoch,
     );
@@ -108,6 +120,9 @@ class WeatherMonitoringRecord {
       sampleCount: (json['sample_count'] as num?)?.toInt(),
       tempMin: (json['temp_min'] as num?)?.toDouble(),
       tempMax: (json['temp_max'] as num?)?.toDouble(),
+      coverage: (json['coverage'] as num?)?.toDouble(),
+      revision: (json['revision'] as num?)?.toInt(),
+      isPartial: json['is_partial'] as bool?,
       recordedAt: date,
       timestamp: date.millisecondsSinceEpoch,
     );

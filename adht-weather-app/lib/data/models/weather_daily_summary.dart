@@ -7,7 +7,7 @@ class WeatherDailySummary {
   final double maxTemperature; // °C
   final double avgHumidity; // %
   final double totalRainfall; // mm (tổng tích lũy trong ngày)
-  final bool hasObservedRainfall; // false nếu chỉ có dữ liệu legacy không có rainfall_mm
+  final bool hasRainfallAmount; // false nếu chỉ có dữ liệu legacy không có rainfall_mm
   final String? rainQuality; // 'observed' | 'estimated' | 'unknown'
   final double avgWindSpeed; // m/s
   final bool hasData;
@@ -20,7 +20,7 @@ class WeatherDailySummary {
     required this.maxTemperature,
     required this.avgHumidity,
     required this.totalRainfall,
-    this.hasObservedRainfall = true,
+    this.hasRainfallAmount = true,
     this.rainQuality,
     required this.avgWindSpeed,
     this.hasData = true,
@@ -39,7 +39,7 @@ class WeatherDailySummary {
       maxTemperature: 0.0,
       avgHumidity: 0.0,
       totalRainfall: 0.0,
-      hasObservedRainfall: false,
+      hasRainfallAmount: false,
       rainQuality: null,
       avgWindSpeed: 0.0,
       hasData: false,

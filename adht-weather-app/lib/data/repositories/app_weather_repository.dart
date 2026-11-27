@@ -19,12 +19,14 @@ class AppWeatherRepository implements WeatherRepository {
   final WeatherMonitoringDao dao;
   final LatestWeatherFileStorage fileStorage;
   final String currentDeviceId;
+  final String stationTimezone;
 
   AppWeatherRepository({
     required this.apiService,
     required this.dao,
     LatestWeatherFileStorage? fileStorage,
     this.currentDeviceId = ApiConstants.defaultStationId,
+    this.stationTimezone = ApiConstants.defaultStationTimezone,
   }) : fileStorage = fileStorage ?? LatestWeatherFileStorage();
 
   @override
@@ -99,8 +101,8 @@ class AppWeatherRepository implements WeatherRepository {
         latest = candidate;
       }
     }
-    // Advance by 1ms so backend .gte('created_at', since) does not re-fetch the boundary row.
-    return latest.add(const Duration(milliseconds: 1)).toIso8601String();
+    // Keep cursor at exact bucket boundary so open/updated current bucket is re-fetched and upserted idempotently.
+    return latest.toIso8601String();
   }
 
   @override
@@ -109,14 +111,20 @@ class AppWeatherRepository implements WeatherRepository {
     final now = DateTime.now();
 
     try {
+      final cursorKey = WeatherMonitoringDao.buildCursorSeriesKey(
+        range: '24h',
+        resolution: '600s',
+        timezone: stationTimezone,
+      );
       final since = await dao.getSyncCursor(
         deviceId: currentDeviceId,
-        series: '24h',
+        series: cursorKey,
       );
       final response = await apiService.fetchHistory(
         deviceId: currentDeviceId,
         range: '24h',
         since: since,
+        timezone: stationTimezone,
       );
 
       final rawList = response.data['data'] as List<dynamic>? ?? [];
@@ -132,6 +140,7 @@ class AppWeatherRepository implements WeatherRepository {
         records,
         deviceId: currentDeviceId,
         syncCursorIso: _latestRecordCursorIso(records),
+        cursorSeriesKey: cursorKey,
       );
     } catch (e) {
       dev.log('Lỗi fetchHistory 24h, đọc từ bảng weather_inday: $e');
@@ -153,14 +162,20 @@ class AppWeatherRepository implements WeatherRepository {
   @override
   Future<List<WeatherDailySummary>> get7DaysSummary() async {
     try {
+      final cursorKey = WeatherMonitoringDao.buildCursorSeriesKey(
+        range: '7d',
+        resolution: '3600s',
+        timezone: stationTimezone,
+      );
       final since = await dao.getSyncCursor(
         deviceId: currentDeviceId,
-        series: '7d',
+        series: cursorKey,
       );
       final response = await apiService.fetchHistory(
         deviceId: currentDeviceId,
         range: '7d',
         since: since,
+        timezone: stationTimezone,
       );
 
       final rawList = response.data['data'] as List<dynamic>? ?? [];
@@ -176,6 +191,7 @@ class AppWeatherRepository implements WeatherRepository {
         records,
         deviceId: currentDeviceId,
         syncCursorIso: _latestRecordCursorIso(records),
+        cursorSeriesKey: cursorKey,
       );
     } catch (e) {
       dev.log('Lỗi fetchHistory 7d từ mạng, sử dụng dữ liệu bảng weather_week: $e');
@@ -252,7 +268,7 @@ class AppWeatherRepository implements WeatherRepository {
             avgHumidity: double.parse((sumHumi / count).toStringAsFixed(1)),
             totalRainfall:
                 hasAnyRainfallMm ? double.parse(sumRain.toStringAsFixed(1)) : 0.0,
-            hasObservedRainfall: hasAnyRainfallMm,
+            hasRainfallAmount: hasAnyRainfallMm,
             rainQuality: !hasAnyRainfallMm
                 ? 'unknown'
                 : (allObserved ? 'observed' : 'estimated'),

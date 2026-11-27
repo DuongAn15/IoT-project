@@ -69,6 +69,12 @@ export interface DerivedMinuteLogRecord {
   wind_speed: number;
   rain_rate: number;
   rainfall_mm: number;
+  coverage_ms: number;
+  rain_coverage_ms: number;
+  dht_expected_count: number;
+  dht_valid_count: number;
+  wind_expected_count: number;
+  wind_valid_count: number;
   recorded_at: string;
 }
 
@@ -302,6 +308,12 @@ export function validateAndDeriveMinuteLogV2(
       wind_speed: Number(windAvg.toFixed(2)),
       rain_rate: rainRateAvg,
       rainfall_mm: rainfallMm,
+      coverage_ms: raw.quality.coverage_ms,
+      rain_coverage_ms: raw.quality.rain_coverage_ms,
+      dht_expected_count: raw.quality.dht_expected_count,
+      dht_valid_count: raw.quality.dht_valid_count,
+      wind_expected_count: raw.quality.wind_expected_count,
+      wind_valid_count: raw.quality.wind_valid_count,
       recorded_at: recordedAtIso,
     },
   };
