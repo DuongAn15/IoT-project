@@ -52,26 +52,6 @@ static void configureWatchdog() {
 #endif
 }
 
-static constexpr size_t CMD_DEDUP_CAPACITY = 16;
-static char recentCmdRequestIds[CMD_DEDUP_CAPACITY][65] = {{0}};
-static size_t recentCmdHead = 0;
-
-static bool isDuplicateCommandRequest(const String &requestId) {
-    if (requestId.length() == 0) return false;
-    for (size_t i = 0; i < CMD_DEDUP_CAPACITY; ++i) {
-        if (recentCmdRequestIds[i][0] != '\0' && requestId.equals(recentCmdRequestIds[i])) {
-            return true;
-        }
-    }
-    return false;
-}
-
-static void recordCommandRequest(const String &requestId) {
-    if (requestId.length() == 0) return;
-    snprintf(recentCmdRequestIds[recentCmdHead], sizeof(recentCmdRequestIds[0]), "%s", requestId.c_str());
-    recentCmdHead = (recentCmdHead + 1) % CMD_DEDUP_CAPACITY;
-}
-
 static bool isIsoExpired(const char *expiresAt) {
     if (!expiresAt || expiresAt[0] == '\0') return false;
     time_t nowEpoch = time(nullptr);
@@ -96,13 +76,30 @@ void handleMqttCommand(const String &cmd, const String &arg, const String &reque
     Serial.printf("[MAIN] Received Command: '%s' (arg: '%s', req: '%s')\n",
                   cmd.c_str(), arg.c_str(), requestId.c_str());
 
-    if (isIsoExpired(expiresAt.c_str())) {
-        mqttMgr.publishOperationAck(requestId.c_str(), "command", "failed", 0, "expired", "Command expired before execution");
+    int priorState = storageMgr.commandRequestState(requestId);
+    if (priorState == 2) {
+        mqttMgr.publishOperationAck(requestId.c_str(), "command", "applied");
         return;
     }
-    if (isDuplicateCommandRequest(requestId)) {
-        Serial.printf("[COMMAND] Duplicate request_id '%s' ignored (idempotent)\n", requestId.c_str());
-        mqttMgr.publishOperationAck(requestId.c_str(), "command", "applied");
+    if (priorState == 1) {
+        mqttMgr.publishOperationAck(requestId.c_str(), "command", "accepted", 0,
+                                    "result_unknown", "Command was interrupted before its result was saved");
+        return;
+    }
+    if (isIsoExpired(expiresAt.c_str())) {
+        mqttMgr.publishOperationAck(requestId.c_str(), "command", "failed", 0,
+                                    "expired", "Command expired before execution");
+        return;
+    }
+    if (cmd != "buzzer" && cmd != "led" && cmd != "reset" &&
+        cmd != "reboot" && cmd != "reset_rain") {
+        mqttMgr.publishOperationAck(requestId.c_str(), "command", "rejected", 0,
+                                    "unknown_command", "Unsupported command");
+        return;
+    }
+    if (!storageMgr.rememberCommandRequest(requestId)) {
+        mqttMgr.publishOperationAck(requestId.c_str(), "command", "failed", 0,
+                                    "nvs_write_failed", "Could not persist command request ID");
         return;
     }
 
@@ -157,7 +154,11 @@ void handleMqttCommand(const String &cmd, const String &arg, const String &reque
         mqttMgr.publishOperationAck(requestId.c_str(), "command", "rejected", 0, "unknown_command", "Unsupported command");
         return;
     }
-    recordCommandRequest(requestId);
+    if (!storageMgr.markCommandApplied(requestId)) {
+        mqttMgr.publishOperationAck(requestId.c_str(), "command", "accepted", 0,
+                                    "result_unknown", "Command ran but result could not be saved");
+        return;
+    }
     mqttMgr.publishOperationAck(requestId.c_str(), "command", "applied");
 }
 
@@ -178,7 +179,20 @@ void handleMqttConfig(const ConfigUpdatePatch &patch) {
         return;
     }
     if (patch.has_version && patch.version == merged.version) {
-        mqttMgr.publishOperationAck(patch.request_id, "config", "applied", merged.version);
+        auto floatEq = [](float a, float b) { return fabsf(a - b) < 0.01f; };
+        bool sameContent =
+            (!patch.has_temp_max || floatEq(patch.temp_max, merged.temp_max_alert)) &&
+            (!patch.has_temp_min || floatEq(patch.temp_min, merged.temp_min_alert)) &&
+            (!patch.has_humi_max || floatEq(patch.humi_max, merged.humi_max_alert)) &&
+            (!patch.has_wind_max || floatEq(patch.wind_max, merged.wind_max_alert)) &&
+            (!patch.has_rain_max || floatEq(patch.rain_max, merged.rain_max_alert)) &&
+            (!patch.has_auto_warning || patch.auto_warning == merged.auto_warning_enabled) &&
+            (!patch.has_buzzer || patch.buzzer == merged.buzzer_enabled);
+        if (sameContent) {
+            mqttMgr.publishOperationAck(patch.request_id, "config", "applied", merged.version);
+        } else {
+            mqttMgr.publishOperationAck(patch.request_id, "config", "rejected", merged.version, "version_conflict", "Same version with different config payload");
+        }
         return;
     }
 

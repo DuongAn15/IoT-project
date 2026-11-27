@@ -1,5 +1,6 @@
 #include "mqtt_manager.h"
 #include "mqtt_ca_cert.h"
+#include "../storage/storage_manager.h"
 #include <ArduinoJson.h>
 #include <esp_system.h>
 #include <time.h>
@@ -98,11 +99,13 @@ void MqttManager::loop() {
         if (now - lastReconnectAttempt > 5000) {
             lastReconnectAttempt = now;
             if (reconnect()) {
+                flushPendingAcks();
                 flushBacklog();
             }
         }
     } else {
         mqttClient.loop();
+        flushPendingAcks();
         flushBacklog();
     }
 }
@@ -272,6 +275,18 @@ void MqttManager::publishMinuteLog(const MinuteLogSample &sample) {
     }
 }
 
+void MqttManager::flushPendingAcks() {
+    if (!mqttClient.connected()) return;
+    size_t sent = 0;
+    for (size_t i = 0; i < StorageManager::ACK_SLOTS && sent < 2; ++i) {
+        String payload = storageMgr.pendingAck(i);
+        if (payload.isEmpty()) continue;
+        if (!mqttClient.publish(TOPIC_ACK, payload.c_str())) break;
+        storageMgr.clearPendingAck(i);
+        sent++;
+    }
+}
+
 void MqttManager::publishOperationAck(
     const char *requestId,
     const char *kind,
@@ -300,11 +315,17 @@ void MqttManager::publishOperationAck(
 
     char buffer[384];
     serializeJson(doc, buffer, sizeof(buffer));
-    if (mqttClient.connected()) {
-        mqttClient.publish(TOPIC_ACK, buffer);
-    } else {
-        enqueueBacklog(TOPIC_ACK, buffer);
+    if (!storageMgr.savePendingAck(String(buffer))) {
+        // Do not silently drop an ACK if the persistent queue is full or NVS failed.
+        Serial.println("[MQTT] ACK NVS queue full or write failed");
+        if (mqttClient.connected() && !mqttClient.publish(TOPIC_ACK, buffer)) {
+            enqueueBacklog(TOPIC_ACK, buffer);
+        } else if (!mqttClient.connected()) {
+            enqueueBacklog(TOPIC_ACK, buffer);
+        }
+        return;
     }
+    flushPendingAcks();
 }
 
 void MqttManager::onMessageReceived(char *topic, byte *payload, unsigned int length) {

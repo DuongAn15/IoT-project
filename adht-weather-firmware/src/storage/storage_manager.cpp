@@ -1,5 +1,7 @@
 #include "storage_manager.h"
 #include <string.h>
+#include <time.h>
+#include <stdlib.h>
 
 StorageManager storageMgr;
 
@@ -8,6 +10,92 @@ StorageManager::StorageManager() {}
 void StorageManager::begin() {
     prefs.begin("adht_cfg", false);
     wifiPrefs.begin("adht_wifi", false);
+    operationPrefs.begin("adht_ops", false);
+}
+
+// Keep command IDs longer than the maximum backend TTL (3600 seconds).
+static constexpr time_t COMMAND_ID_RETENTION_SEC = 3900;
+
+static String commandIdFromRecord(const String &value) {
+    int separator = value.indexOf(':', 2);
+    return separator < 0 ? "" : value.substring(separator + 1);
+}
+
+int StorageManager::commandRequestState(const String &requestId) {
+    if (requestId.isEmpty()) return 0;
+    for (size_t i = 0; i < COMMAND_SLOTS; ++i) {
+        char key[12];
+        snprintf(key, sizeof(key), "cmd_%u", static_cast<unsigned>(i));
+        String value = operationPrefs.getString(key, "");
+        if (commandIdFromRecord(value) != requestId) continue;
+        if (value.startsWith("A:")) return 2;
+        if (value.startsWith("P:")) return 1;
+    }
+    return 0;
+}
+
+bool StorageManager::rememberCommandRequest(const String &requestId) {
+    if (requestId.isEmpty()) return true; // Legacy command without P06 ID.
+    if (commandRequestState(requestId) != 0) return true;
+    const uint32_t head = operationPrefs.getUInt("cmd_head", 0) % COMMAND_SLOTS;
+    const time_t now = time(nullptr);
+    for (size_t offset = 0; offset < COMMAND_SLOTS; ++offset) {
+        size_t slot = (head + offset) % COMMAND_SLOTS;
+        char key[12];
+        snprintf(key, sizeof(key), "cmd_%u", static_cast<unsigned>(slot));
+        String old = operationPrefs.getString(key, "");
+        time_t writtenAt = old.length() > 2
+            ? static_cast<time_t>(strtoll(old.c_str() + 2, nullptr, 10)) : 0;
+        if (!old.isEmpty() && (writtenAt <= 0 || now < writtenAt ||
+            now - writtenAt <= COMMAND_ID_RETENTION_SEC)) continue;
+        String value = "P:" + String(static_cast<long long>(now)) + ":" + requestId;
+        if (operationPrefs.putString(key, value) != value.length() ||
+            operationPrefs.getString(key, "") != value) return false;
+        operationPrefs.putUInt("cmd_head", (slot + 1) % COMMAND_SLOTS);
+        return true; // Marker is durable even if the head write fails.
+    }
+    return false; // Never evict an unexpired ID and risk running a duplicate.
+}
+
+bool StorageManager::markCommandApplied(const String &requestId) {
+    if (requestId.isEmpty()) return true;
+    for (size_t i = 0; i < COMMAND_SLOTS; ++i) {
+        char key[12];
+        snprintf(key, sizeof(key), "cmd_%u", static_cast<unsigned>(i));
+        String old = operationPrefs.getString(key, "");
+        if (!old.startsWith("P:") || commandIdFromRecord(old) != requestId) continue;
+        String value = "A" + old.substring(1);
+        return operationPrefs.putString(key, value) == value.length() &&
+            operationPrefs.getString(key, "") == value;
+    }
+    return false;
+}
+
+bool StorageManager::savePendingAck(const String &payload) {
+    if (payload.isEmpty() || payload.length() > 383) return false;
+    for (size_t i = 0; i < ACK_SLOTS; ++i) {
+        char key[12];
+        snprintf(key, sizeof(key), "ack_%u", static_cast<unsigned>(i));
+        if (operationPrefs.getString(key, "").isEmpty()) {
+            return operationPrefs.putString(key, payload) == payload.length() &&
+                operationPrefs.getString(key, "") == payload;
+        }
+    }
+    return false;
+}
+
+String StorageManager::pendingAck(size_t index) {
+    if (index >= ACK_SLOTS) return "";
+    char key[12];
+    snprintf(key, sizeof(key), "ack_%u", static_cast<unsigned>(index));
+    return operationPrefs.getString(key, "");
+}
+
+void StorageManager::clearPendingAck(size_t index) {
+    if (index >= ACK_SLOTS) return;
+    char key[12];
+    snprintf(key, sizeof(key), "ack_%u", static_cast<unsigned>(index));
+    operationPrefs.remove(key);
 }
 
 uint32_t StorageManager::computeConfigCrc(const SystemConfigNvsRecord &rec) {

@@ -51,6 +51,7 @@ private:
 
     void enqueueBacklog(const char *topic, const char *payload);
     void flushBacklog();
+    void flushPendingAcks();
     bool reconnect();
     void onMessageReceived(char *topic, byte *payload, unsigned int length);
     static void staticCallback(char *topic, byte *payload, unsigned int length);
