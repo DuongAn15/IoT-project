@@ -49,32 +49,31 @@ void main() {
     test(
       'Multiple toMap and fromMap roundtrips should not drift or add hours',
       () {
+        final expected = DateTime.utc(2026, 11, 11, 10, 0).toLocal();
         final initial = WeatherMonitoringRecord.fromJson({
           'device_id': 'adht_weather_01',
           'temp': 24.5,
           'humi': 55.0,
           'rain_rate': 0.0,
           'wind_speed': 1.2,
-          'recorded_at': '2026-11-11T10:00:00.000Z', // 17:00 GMT+7
+          'recorded_at': '2026-11-11T10:00:00.000Z',
         });
 
-        expect(initial.recordedAt.hour, equals(17));
+        expect(initial.recordedAt, equals(expected));
 
         // Roundtrip 1
         final map1 = initial.toMap();
         final round1 = WeatherMonitoringRecord.fromMap(map1);
-        expect(round1.recordedAt.hour, equals(17));
-        expect(round1.recordedAt.day, equals(11));
+        expect(round1.recordedAt, equals(expected));
 
         // Roundtrip 2
         final map2 = round1.toMap();
         final round2 = WeatherMonitoringRecord.fromMap(map2);
-        expect(round2.recordedAt.hour, equals(17));
-        expect(round2.recordedAt.day, equals(11));
+        expect(round2.recordedAt, equals(expected));
       },
     );
 
-    test('fromJson should parse backend API item correctly and convert UTC to GMT+7', () {
+    test('fromJson should parse backend API item correctly and convert UTC to device local time', () {
       final json = {
         'device_id': 'adht_weather_01',
         'temp': 26.3,
@@ -84,19 +83,17 @@ void main() {
         'recorded_at': '2026-11-10T12:00:00.000Z',
       };
 
+      final expected = DateTime.utc(2026, 11, 10, 12, 0).toLocal();
       final record = WeatherMonitoringRecord.fromJson(json);
       expect(record.deviceId, 'adht_weather_01');
       expect(record.temperature, 26.3);
       expect(record.humidity, 80.5);
       expect(record.rainfall, 2.5);
       expect(record.windSpeed, 5.4);
-      // 12:00 UTC + 7 tiếng = 19:00 GMT+7 (giờ Việt Nam)
-      expect(record.recordedAt.hour, equals(19));
-      expect(record.recordedAt.minute, equals(0));
+      expect(record.recordedAt, equals(expected));
     });
 
-    test('parseUtcToLocal handles day rollover correctly (e.g. 19:00 UTC to next day local time)', () {
-      // 19:00 UTC ngày 10/11 -> cộng 7 tiếng = 02:00 ngày 11/11 GMT+7
+    test('parseUtcToLocal converts UTC instant to device local time consistently', () {
       final json = {
         'device_id': 'adht_weather_01',
         'temp': 24.0,
@@ -106,10 +103,13 @@ void main() {
         'recorded_at': '2026-11-10T19:00:00.000Z',
       };
 
+      final expected = DateTime.utc(2026, 11, 10, 19, 0).toLocal();
       final record = WeatherMonitoringRecord.fromJson(json);
-      expect(record.recordedAt.day, equals(11));
-      expect(record.recordedAt.hour, equals(2));
-      expect(record.toWeatherPoint().minutesFromMidnight, equals(2 * 60));
+      expect(record.recordedAt, equals(expected));
+      expect(
+        record.toWeatherPoint().minutesFromMidnight,
+        equals(expected.hour * 60 + expected.minute),
+      );
     });
 
     test('toWeatherPoint converts record for chart consumption', () {
@@ -789,17 +789,23 @@ void main() {
             d.day == today.day;
       }).toList();
 
+      final firstExpected = DateTime.parse('2026-11-11T05:43:32.048Z').toLocal();
+      final lastExpected = DateTime.parse('2026-11-11T10:53:32.048Z').toLocal();
       expect(todayRecords.length, equals(9));
-      expect(todayRecords.first.recordedAt.hour, equals(12));
-      expect(todayRecords.first.recordedAt.minute, equals(43));
-      expect(todayRecords.last.recordedAt.hour, equals(17));
-      expect(todayRecords.last.recordedAt.minute, equals(53));
+      expect(todayRecords.first.recordedAt, equals(firstExpected));
+      expect(todayRecords.last.recordedAt, equals(lastExpected));
 
       // Kiểm tra toàn bộ điểm đo trong ngày được chuyển sang WeatherPoint
       final points = todayRecords.map((r) => r.toWeatherPoint()).toList();
       expect(points.length, equals(9));
-      expect(points.first.minutesFromMidnight, equals(12 * 60 + 43));
-      expect(points.last.minutesFromMidnight, equals(17 * 60 + 53));
+      expect(
+        points.first.minutesFromMidnight,
+        equals(firstExpected.hour * 60 + firstExpected.minute),
+      );
+      expect(
+        points.last.minutesFromMidnight,
+        equals(lastExpected.hour * 60 + lastExpected.minute),
+      );
     });
   });
 

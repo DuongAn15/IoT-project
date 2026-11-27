@@ -13,6 +13,8 @@ import 'package:weather_monitoring/views/screens/intra_day_detail_screen.dart';
 
 /// Fake repository dùng riêng cho việc cô lập môi trường Widget Tests
 class _TestStubWeatherRepository implements WeatherRepository {
+  final bool cutoverDay;
+  _TestStubWeatherRepository({this.cutoverDay = false});
   @override
   Future<WeatherCurrentModel> getCurrentWeather() async {
     return WeatherCurrentModel(
@@ -48,7 +50,8 @@ class _TestStubWeatherRepository implements WeatherRepository {
       final date = now.subtract(Duration(days: 6 - i));
       return WeatherDailySummary(
         date: date,
-        dayOfWeek: '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}',
+        dayOfWeek:
+            '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}',
         avgTemperature: 28.0 + (i * 0.2),
         minTemperature: 25.0,
         maxTemperature: 31.0,
@@ -56,6 +59,8 @@ class _TestStubWeatherRepository implements WeatherRepository {
         totalRainfall: 0.0,
         avgWindSpeed: 10.0,
         hasData: true,
+        isPartial: cutoverDay && i == 6,
+        isCutoverDay: cutoverDay && i == 6,
       );
     });
   }
@@ -67,7 +72,10 @@ class _TestStubWeatherRepository implements WeatherRepository {
 void main() {
   group('WeatherUnitHelper Tests', () {
     test('WeatherUnitHelper qualitative assessments return valid strings', () {
-      expect(WeatherUnitHelper.getTemperatureAssessment(28.0), contains('Ấm áp'));
+      expect(
+        WeatherUnitHelper.getTemperatureAssessment(28.0),
+        contains('Ấm áp'),
+      );
       expect(WeatherUnitHelper.getHumidityAssessment(65.0), equals('Dễ chịu'));
       expect(WeatherUnitHelper.getRainfallAssessment(0.0), equals('Không mưa'));
       expect(WeatherUnitHelper.getWindAssessment(12.0), equals('Cấp 3'));
@@ -75,11 +83,15 @@ void main() {
   });
 
   group('Widget Navigation & Render Tests', () {
-    testWidgets('App renders correctly with dashboard and header actions', (WidgetTester tester) async {
+    testWidgets('App renders correctly with dashboard and header actions', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            weatherRepositoryProvider.overrideWithValue(_TestStubWeatherRepository()),
+            weatherRepositoryProvider.overrideWithValue(
+              _TestStubWeatherRepository(),
+            ),
           ],
           child: const WeatherMonitoringApp(),
         ),
@@ -94,56 +106,83 @@ void main() {
       expect(find.text('Lịch sử'), findsOneWidget);
     });
 
-    testWidgets('History7dScreen renders "Lịch sử các ngày" and concise temperature metric', (WidgetTester tester) async {
+    testWidgets(
+      'History7dScreen renders "Lịch sử các ngày" and concise temperature metric',
+      (WidgetTester tester) async {
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              weatherRepositoryProvider.overrideWithValue(
+                _TestStubWeatherRepository(),
+              ),
+            ],
+            child: const MaterialApp(home: History7dScreen()),
+          ),
+        );
+
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        // Verify section header
+        expect(find.text('Lịch sử các ngày'), findsOneWidget);
+        expect(find.text('Chi tiết tổng hợp từng ngày'), findsNothing);
+        expect(find.text('Nhiệt độ TB'), findsWidgets);
+      },
+    );
+
+    testWidgets('History7dScreen labels the cutover day as partial', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            weatherRepositoryProvider.overrideWithValue(_TestStubWeatherRepository()),
+            weatherRepositoryProvider.overrideWithValue(
+              _TestStubWeatherRepository(cutoverDay: true),
+            ),
           ],
-          child: const MaterialApp(
-            home: History7dScreen(),
-          ),
+          child: const MaterialApp(home: History7dScreen()),
         ),
       );
-
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
-
-      // Verify section header
-      expect(find.text('Lịch sử các ngày'), findsOneWidget);
-      expect(find.text('Chi tiết tổng hợp từng ngày'), findsNothing);
-      expect(find.text('Nhiệt độ TB'), findsWidgets);
-    });
-
-    testWidgets('IntraDayDetailScreen renders metric chips, chart and "Bản ghi gần nhất" without interval chips', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            weatherRepositoryProvider.overrideWithValue(_TestStubWeatherRepository()),
-          ],
-          child: const MaterialApp(
-            home: IntraDayDetailScreen(),
-          ),
-        ),
+      expect(
+        find.text('Ngày chuyển đổi v1 → v2 · Dữ liệu một phần'),
+        findsOneWidget,
       );
-
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-
-      // Verify interval chips are removed completely
-      expect(find.text('15 phút'), findsNothing);
-      expect(find.text('30 phút'), findsNothing);
-      expect(find.text('1 tiếng'), findsNothing);
-      expect(find.text('5 phút'), findsNothing);
-      expect(find.text('Bước đo:'), findsNothing);
-
-      // Verify metric chips exist
-      expect(find.text('Nhiệt độ'), findsOneWidget);
-      expect(find.text('Độ ẩm'), findsOneWidget);
-
-      // Verify section header
-      expect(find.text('Bản ghi gần nhất'), findsOneWidget);
-      expect(find.text('Bản ghi đo gần nhất'), findsNothing);
     });
+
+    testWidgets(
+      'IntraDayDetailScreen renders metric chips, chart and "Bản ghi gần nhất" without interval chips',
+      (WidgetTester tester) async {
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              weatherRepositoryProvider.overrideWithValue(
+                _TestStubWeatherRepository(),
+              ),
+            ],
+            child: const MaterialApp(home: IntraDayDetailScreen()),
+          ),
+        );
+
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        // Verify interval chips are removed completely
+        expect(find.text('15 phút'), findsNothing);
+        expect(find.text('30 phút'), findsNothing);
+        expect(find.text('1 tiếng'), findsNothing);
+        expect(find.text('5 phút'), findsNothing);
+        expect(find.text('Bước đo:'), findsNothing);
+
+        // Verify metric chips exist
+        expect(find.text('Nhiệt độ'), findsOneWidget);
+        expect(find.text('Độ ẩm'), findsOneWidget);
+
+        // Verify section header
+        expect(find.text('Bản ghi gần nhất'), findsOneWidget);
+        expect(find.text('Bản ghi đo gần nhất'), findsNothing);
+      },
+    );
   });
 }

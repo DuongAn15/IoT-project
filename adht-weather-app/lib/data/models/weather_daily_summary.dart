@@ -7,10 +7,13 @@ class WeatherDailySummary {
   final double maxTemperature; // °C
   final double avgHumidity; // %
   final double totalRainfall; // mm (tổng tích lũy trong ngày)
-  final bool hasRainfallAmount; // false nếu chỉ có dữ liệu legacy không có rainfall_mm
+  final bool
+  hasRainfallAmount; // false nếu chỉ có dữ liệu legacy không có rainfall_mm
   final String? rainQuality; // 'observed' | 'estimated' | 'unknown'
   final double avgWindSpeed; // m/s
   final bool hasData;
+  final bool isPartial;
+  final bool isCutoverDay;
 
   const WeatherDailySummary({
     required this.date,
@@ -24,6 +27,8 @@ class WeatherDailySummary {
     this.rainQuality,
     required this.avgWindSpeed,
     this.hasData = true,
+    this.isPartial = false,
+    this.isCutoverDay = false,
   });
 
   /// Tạo bản ghi cho ngày không có dữ liệu đo đạc (None)

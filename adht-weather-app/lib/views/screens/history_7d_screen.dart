@@ -236,104 +236,124 @@ class History7dScreen extends ConsumerWidget {
 
               return Padding(
                 padding: const EdgeInsets.all(AppDimensions.spaceMd),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Ngày tháng cụ thể dd/MM (ví dụ 05/11)
-                    SizedBox(
-                      width: 76,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            shortDateStr,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: isToday
-                                  ? (isDark
-                                        ? AppColors.primaryDark
-                                        : AppColors.primaryLight)
-                                  : null,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            isToday ? 'Hôm nay' : '${summary.date.year}',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: isToday
-                                  ? (isDark
-                                        ? AppColors.primaryDark
-                                        : AppColors.primaryLight)
-                                  : (isDark
-                                        ? AppColors.textMutedDark
-                                        : AppColors.textMutedLight),
-                              fontWeight: isToday
-                                  ? FontWeight.w600
-                                  : FontWeight.normal,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    // Metrics breakdown (Hiển thị None nếu ngày không có dữ liệu)
-                    Expanded(
-                      child: summary.hasData
-                          ? Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceAround,
-                              children: [
-                                // Temp
-                                _buildColumnMetric(
-                                  theme: theme,
-                                  label: 'Nhiệt độ TB',
-                                  value:
-                                      '${summary.avgTemperature.toStringAsFixed(1)}°C',
-                                ),
-
-                                // Humidity
-                                _buildColumnMetric(
-                                  theme: theme,
-                                  label: 'Độ ẩm TB',
-                                  value:
-                                      '${summary.avgHumidity.toStringAsFixed(0)}%',
-                                ),
-
-                                // Rainfall
-                                _buildColumnMetric(
-                                  theme: theme,
-                                  label: 'Mưa',
-                                  value: !summary.hasRainfallAmount
-                                      ? '--'
-                                      : summary.totalRainfall > 0
-                                      ? '${summary.rainQuality == 'estimated' ? '~' : ''}${summary.totalRainfall.toStringAsFixed(1)} mm'
-                                      : '0 mm',
-                                  valueColor:
-                                      summary.hasRainfallAmount &&
-                                          summary.totalRainfall > 0
-                                      ? AppColors.rainfall
+                    Row(
+                      children: [
+                        // Ngày tháng cụ thể dd/MM (ví dụ 05/11)
+                        SizedBox(
+                          width: 76,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                shortDateStr,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: isToday
+                                      ? (isDark
+                                            ? AppColors.primaryDark
+                                            : AppColors.primaryLight)
                                       : null,
                                 ),
-
-                                // Wind
-                                _buildColumnMetric(
-                                  theme: theme,
-                                  label: 'Gió TB',
-                                  value:
-                                      '${summary.avgWindSpeed.toStringAsFixed(1)} m/s',
-                                ),
-                              ],
-                            )
-                          : Center(
-                              child: Text(
-                                'None (Không có dữ liệu)',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: isDark
-                                      ? AppColors.textMutedDark
-                                      : AppColors.textMutedLight,
-                                  fontStyle: FontStyle.italic,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                isToday ? 'Hôm nay' : '${summary.date.year}',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: isToday
+                                      ? (isDark
+                                            ? AppColors.primaryDark
+                                            : AppColors.primaryLight)
+                                      : (isDark
+                                            ? AppColors.textMutedDark
+                                            : AppColors.textMutedLight),
+                                  fontWeight: isToday
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
                                 ),
                               ),
-                            ),
+                            ],
+                          ),
+                        ),
+
+                        // Metrics breakdown (Hiển thị None nếu ngày không có dữ liệu)
+                        Expanded(
+                          child: summary.hasData
+                              ? Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceAround,
+                                  children: [
+                                    // Temp
+                                    _buildColumnMetric(
+                                      theme: theme,
+                                      label: 'Nhiệt độ TB',
+                                      value:
+                                          '${summary.avgTemperature.toStringAsFixed(1)}°C',
+                                    ),
+
+                                    // Humidity
+                                    _buildColumnMetric(
+                                      theme: theme,
+                                      label: 'Độ ẩm TB',
+                                      value:
+                                          '${summary.avgHumidity.toStringAsFixed(0)}%',
+                                    ),
+
+                                    // Rainfall
+                                    _buildColumnMetric(
+                                      theme: theme,
+                                      label: 'Mưa',
+                                      value: !summary.hasRainfallAmount
+                                          ? '--'
+                                          : summary.totalRainfall > 0
+                                          ? '${summary.rainQuality == 'estimated' ? '~' : ''}${summary.totalRainfall.toStringAsFixed(1)} mm'
+                                          : '0 mm',
+                                      valueColor:
+                                          summary.hasRainfallAmount &&
+                                              summary.totalRainfall > 0
+                                          ? AppColors.rainfall
+                                          : null,
+                                    ),
+
+                                    // Wind
+                                    _buildColumnMetric(
+                                      theme: theme,
+                                      label: 'Gió TB',
+                                      value:
+                                          '${summary.avgWindSpeed.toStringAsFixed(1)} m/s',
+                                    ),
+                                  ],
+                                )
+                              : Center(
+                                  child: Text(
+                                    'None (Không có dữ liệu)',
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: isDark
+                                          ? AppColors.textMutedDark
+                                          : AppColors.textMutedLight,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ),
+                        ),
+                      ],
                     ),
+                    if (summary.isCutoverDay || summary.isPartial)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          summary.isCutoverDay
+                              ? 'Ngày chuyển đổi v1 → v2 · Dữ liệu một phần'
+                              : 'Dữ liệu một phần',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: isDark
+                                ? AppColors.textSecondaryDark
+                                : AppColors.textSecondaryLight,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               );

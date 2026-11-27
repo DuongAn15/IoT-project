@@ -302,7 +302,7 @@ test('SupabaseService.getHistory exposes temp_min, temp_max, provenance, and res
             rain_rate: 0,
             rainfall_mm: 0.5,
             wind_speed: 1.5,
-            recorded_at: '2026-11-27T00:10:00.000Z',
+            recorded_at: '2026-11-27T00:11:00.000Z',
           },
           {
             device_id: 'adht_weather_01',
@@ -616,5 +616,78 @@ test('SupabaseService.getHistory groups records by UTC day boundaries supplied b
     assert.deepEqual(history.map(point => point.rainfall_mm), [0.2, 0.3]);
   } finally {
     Date.now = originalNow;
+  }
+});
+
+test('daily history assigns a synchronized log ending at midnight to the previous local day', async () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse('2026-11-27T12:00:00.000Z');
+  try {
+    const svc = Object.create(SupabaseService.prototype);
+    svc.table = 'weather_logs';
+    svc.v2Table = 'weather_logs_v2';
+    svc.logger = { error() {} };
+    const rows = [
+      { recorded_at: '2026-11-20T17:00:00.000Z', clock_quality: 'synchronized', rainfall_mm: 9 }, // ends at from: excluded
+      { recorded_at: '2026-11-26T17:00:00.000Z', clock_quality: 'synchronized', rainfall_mm: 0.4 }, // ends at midnight
+      { recorded_at: '2026-11-26T17:00:00.000Z', clock_quality: 'unsynchronized', rainfall_mm: 0.1 }, // receive instant belongs to new day
+      { recorded_at: '2026-11-27T12:00:00.000Z', clock_quality: 'synchronized', rainfall_mm: 0.2 }, // ends at to: included
+    ].map(row => ({ device_id: 's', temperature: 25, humidity: 70, rain_rate: 0,
+      wind_speed: 2, coverage_ms: 60000, dht_valid_count: 1, ...row }));
+    const results = { weather_logs: [[], []], weather_logs_v2: [rows, []] };
+    svc.client = { from(table) {
+      const query = {};
+      for (const name of ['select', 'eq', 'gte', 'lte', 'order', 'range']) query[name] = () => query;
+      query.returns = async () => ({ data: results[table].shift(), error: null });
+      return query;
+    } };
+    const starts = Array.from({ length: 8 }, (_, i) =>
+      new Date(Date.parse('2026-11-20T17:00:00.000Z') + i * 86400000).toISOString());
+    const data = await svc.getHistory('s', '7d', undefined, 'UTC', starts[0],
+      '2026-11-27T12:00:00.000Z', starts);
+    assert.deepEqual(data.map(row => [row.recorded_at, row.rainfall_mm]), [
+      ['2026-11-25T17:00:00.000Z', 0.4],
+      ['2026-11-26T17:00:00.000Z', 0.3],
+    ]);
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test('daily history marks the v1 to v2 cutover day as partial', async () => {
+  const originalNow = Date.now;
+  const originalCutover = process.env.V2_CUTOVER_AT;
+  Date.now = () => Date.parse('2026-11-27T12:00:00.000Z');
+  process.env.V2_CUTOVER_AT = '2026-11-26T10:30:00.000Z';
+  try {
+    const svc = Object.create(SupabaseService.prototype);
+    svc.table = 'weather_logs';
+    svc.v2Table = 'weather_logs_v2';
+    svc.logger = { error() {} };
+    const results = {
+      weather_logs: [[{ device_id: 's', temperature: 10, humidity: 50, rain_rate: 0,
+        wind_speed: 2, created_at: '2026-11-26T10:00:00.000Z' }], []],
+      weather_logs_v2: [[{ device_id: 's', temperature: 30, humidity: 70, rain_rate: 0,
+        rainfall_mm: 0.3, wind_speed: 2, recorded_at: '2026-11-26T11:00:00.000Z',
+        clock_quality: 'synchronized' }], []],
+    };
+    svc.client = { from(table) {
+      const query = {};
+      for (const name of ['select', 'eq', 'gte', 'lte', 'order', 'range']) query[name] = () => query;
+      query.returns = async () => ({ data: results[table].shift(), error: null });
+      return query;
+    } };
+    const starts = Array.from({ length: 8 }, (_, i) =>
+      new Date(Date.parse('2026-11-20T17:00:00.000Z') + i * 86400000).toISOString());
+    const data = await svc.getHistory('s', '7d', undefined, 'UTC', starts[0],
+      '2026-11-27T12:00:00.000Z', starts);
+    assert.equal(data.length, 1);
+    assert.equal(data[0].temp, 30);
+    assert.equal(data[0].source, 'v2_cutover');
+    assert.equal(data[0].is_partial, true);
+  } finally {
+    Date.now = originalNow;
+    if (originalCutover === undefined) delete process.env.V2_CUTOVER_AT;
+    else process.env.V2_CUTOVER_AT = originalCutover;
   }
 });

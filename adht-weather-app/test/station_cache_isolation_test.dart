@@ -202,6 +202,27 @@ void main() {
     },
   );
 
+  test('cutover provenance and partial coverage reach the daily summary', () {
+    final now = DateTime(2026, 11, 27, 12);
+    final summaries = AppWeatherRepository.buildContinuous7DaysSummary([
+      WeatherMonitoringRecord(
+        deviceId: 'adht_weather_01',
+        temperature: 30,
+        humidity: 60,
+        rainfall: 0,
+        rainfallMm: 0.3,
+        windSpeed: 2,
+        source: 'v2_cutover',
+        isPartial: true,
+        recordedAt: now,
+      ),
+    ], referenceDate: now);
+    expect(summaries.last.isCutoverDay, isTrue);
+    expect(summaries.last.isPartial, isTrue);
+    expect(summaries.last.totalRainfall, 0.3);
+    expect(summaries[summaries.length - 2].isCutoverDay, isFalse);
+  });
+
   test(
     'StationCatalogueStorage persists and restores station list offline',
     () async {

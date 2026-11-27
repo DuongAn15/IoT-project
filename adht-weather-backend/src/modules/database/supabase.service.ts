@@ -19,7 +19,7 @@ export interface WeatherRecord {
   revision?: number;
   is_partial?: boolean;
   utc_offset_minutes?: number;
-  source?: 'v2' | 'v1_legacy';
+  source?: 'v2' | 'v2_cutover' | 'v1_legacy';
   rain_quality?: 'observed' | 'estimated';
   recorded_at: string;
 }
@@ -35,6 +35,7 @@ interface WeatherLogRow {
 
 interface WeatherLogV2Row {
   recorded_at: string;
+  clock_quality?: 'synchronized' | 'unsynchronized';
   device_id: string;
   temperature: number;
   humidity: number;
@@ -51,7 +52,7 @@ interface WeatherLogV2Row {
 
 const WEATHER_COLUMNS = 'created_at,device_id,temperature,humidity,rain_rate,wind_speed';
 const WEATHER_V2_COLUMNS =
-  'recorded_at,device_id,temperature,humidity,rain_rate,rainfall_mm,wind_speed,coverage_ms,rain_coverage_ms,dht_expected_count,dht_valid_count,wind_expected_count,wind_valid_count';
+  'recorded_at,clock_quality,device_id,temperature,humidity,rain_rate,rainfall_mm,wind_speed,coverage_ms,rain_coverage_ms,dht_expected_count,dht_valid_count,wind_expected_count,wind_valid_count';
 const HISTORY_PAGE_SIZE = 500;
 const HISTORY_RANGES = {
   '1h': { duration: 3600, bucket: 60 },
@@ -486,9 +487,13 @@ export class SupabaseService {
 
           for (const row of data) {
             const time = Date.parse(row.recorded_at);
-            if (time < start || time >= end) continue;
+            // Synchronized minute logs represent [interval_start, interval_end).
+            // Assign a log ending exactly on a bucket boundary to the preceding bucket.
+            // Unsynchronized logs use received_at, which is an instant, not an interval end.
+            const sampleTime = row.clock_quality === 'unsynchronized' ? time : time - 1;
+            if (sampleTime < start || sampleTime >= end) continue;
             if (hasCutover && time < cutoverMs) continue;
-            const bucketTime = bucketFor(time);
+            const bucketTime = bucketFor(sampleTime);
             const covMs = row.coverage_ms ?? 60000;
             const rainCovMs = row.rain_coverage_ms ?? covMs;
             const dhtWeight = row.dht_valid_count ?? covMs;
@@ -532,6 +537,8 @@ export class SupabaseService {
         : bucketMs;
       const v2 = v2Buckets.get(bucketTime);
       if (v2) {
+        const cutoverDay = Boolean(boundaries && hasCutover && v1Buckets.has(bucketTime) &&
+          bucketTime < cutoverMs && cutoverMs < boundaries[boundaries.indexOf(bucketTime) + 1]);
         const coverage = Math.min(1, Number((v2.effectiveCoverageMsSum / bucketDurationMs).toFixed(3)));
         return {
           device_id: v2.deviceId,
@@ -545,9 +552,9 @@ export class SupabaseService {
           sample_count: v2.count,
           coverage,
           revision: v2.latestRowMs,
-          is_partial: (boundaries ? end < boundaries[boundaries.indexOf(bucketTime) + 1] : end < bucketTime + bucketMs) || coverage < 1,
+          is_partial: cutoverDay || (boundaries ? end < boundaries[boundaries.indexOf(bucketTime) + 1] : end < bucketTime + bucketMs) || coverage < 1,
           utc_offset_minutes: utcOffsetMinutes,
-          source: 'v2',
+          source: cutoverDay ? 'v2_cutover' : 'v2',
           rain_quality: 'observed',
           recorded_at: new Date(bucketTime).toISOString(),
         };

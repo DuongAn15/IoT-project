@@ -301,6 +301,8 @@ class AppWeatherRepository implements WeatherRepository {
                 ? 'unknown'
                 : (allObserved ? 'observed' : 'estimated'),
             avgWindSpeed: double.parse((sumWind / count).toStringAsFixed(1)),
+            isCutoverDay: dayRecords.any((r) => r.source == 'v2_cutover'),
+            isPartial: dayRecords.any((r) => r.isPartial == true),
             hasData: true,
           ),
         );

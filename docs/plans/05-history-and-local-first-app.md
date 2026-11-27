@@ -43,7 +43,7 @@
 ## Nghiệm thu
 
 - Cùng timestamp UTC hiển thị theo giờ điện thoại; hai điện thoại ở hai múi giờ có nhãn giờ/ngày khác nhau nhưng số đo giống nhau. Giao diện ghi rõ vị trí trạm và nguồn giờ hiển thị.
-- Mẫu sát 00:00 local nằm đúng ngày trên biểu đồ trong ngày và tổng hợp 7 ngày; `rainfall_mm` cộng đúng, `rain_rate` không bị cộng thành amount. Ngày hiện tại và bucket thiếu coverage được đánh dấu partial trong API.
+- Minute log đồng bộ kết thúc đúng 00:00 local thuộc bucket/ngày trước (khoảng đo nửa mở); log chưa đồng bộ dùng thời điểm nhận. Mẫu sát 00:00 local nằm đúng ngày trên biểu đồ trong ngày và tổng hợp 7 ngày; `rainfall_mm` cộng đúng, `rain_rate` không bị cộng thành amount. Ngày hiện tại, bucket thiếu coverage và ngày có cả v1 trước cutover lẫn v2 sau cutover được đánh dấu partial trong API; app hiển thị rõ “Ngày chuyển đổi v1 → v2 · Dữ liệu một phần”.
 - Bản ghi đến muộn hoặc correction cập nhật bucket tương ứng; paging không bỏ sót hàng. Cache cursor được ghi atomically với các hàng liên quan.
 - Offline sau nâng cấp v3/v4 vẫn đọc được dữ liệu đo cũ đúng trạm. Đổi múi giờ điện thoại không xóa cache đo; tổng hợp ngày có ranh giới cũ không được trình bày như dữ liệu ngày mới. Lỗi API một resource không xóa resource khác.
 - Catalogue có vị trí khi online và fallback offline. Chuyển trạm A → B khi response A về muộn không hiển thị dữ liệu A dưới tên B.
