@@ -216,14 +216,27 @@ test('DeviceOperationsService validates ACK deployment_id, version, kind, expiry
     assert.equal(reloadedOps.getOperation('adht_weather_01', 'outbox-cmd-1').status, 'queued');
 
     brokerOnline = true;
+    let resolvePublish;
+    const publishedPromise = new Promise((resolve) => {
+      resolvePublish = resolve;
+    });
+    const origPublish = recoveredMqtt.publishCommand;
+    recoveredMqtt.publishCommand = async (id, payload) => {
+      const ok = await origPublish.call(recoveredMqtt, id, payload);
+      if (ok) resolvePublish();
+      return ok;
+    };
     recoveredMqtt.connectCb();
-    await new Promise((r) => setTimeout(r, 20));
+    await publishedPromise;
+    await new Promise((r) => setImmediate(r));
     assert.equal(reloadedOps.getOperation('adht_weather_01', 'outbox-cmd-1').status, 'published');
 
     // Ledger write failure must roll back RAM (desired_version and request_id)
+    const blockingFile = path.join(tmpDir, 'not-a-directory');
+    fs.writeFileSync(blockingFile, 'x');
     const unWritableConfig = {
       get(key) {
-        if (key === 'OPERATION_LEDGER_FILE') return '/proc/invalid-ledger-dir/ledger.json';
+        if (key === 'OPERATION_LEDGER_FILE') return path.join(blockingFile, 'ledger.json');
         return undefined;
       },
     };
