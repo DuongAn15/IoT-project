@@ -1,4 +1,5 @@
 #include "sensor_manager.h"
+#include <driver/gpio.h>
 #include <esp_timer.h>
 #include <time.h>
 
@@ -30,8 +31,8 @@ SensorManager::SensorManager()
       lastValidDhtTime(0),
       windGustIndex(0),
       windGustCount(0),
-      lastRainTipTime(0),
-      lastRainRateCalculated(0.0f),
+      rainTipHead(0),
+      rainTipWindowCount(0),
       rainResetEpoch(0),
       rainTipCounter(0),
       minuteSequence(0),
@@ -55,8 +56,9 @@ void SensorManager::begin() {
     windGustIndex = 0;
     windGustCount = 0;
     memset(windGustHistory, 0, sizeof(windGustHistory));
-    lastRainTipTime = 0;
-    lastRainRateCalculated = 0.0f;
+    memset(rainTipTimestamps, 0, sizeof(rainTipTimestamps));
+    rainTipHead = 0;
+    rainTipWindowCount = 0;
 
     pinMode(PIN_RAIN_SENSOR, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(PIN_RAIN_SENSOR), isrRainPulse, FALLING);
@@ -111,6 +113,9 @@ bool SensorManager::takePendingMinuteLog(MinuteLogSample &out) {
 }
 
 void IRAM_ATTR SensorManager::handleRainInterrupt() {
+    if (gpio_get_level(static_cast<gpio_num_t>(PIN_RAIN_SENSOR)) != 0) {
+        return; // Reject sub-microsecond EMI spikes that already returned HIGH
+    }
     portENTER_CRITICAL_ISR(&isrMux);
     uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
     if (static_cast<uint32_t>(now - lastRainDebounce) >= RAIN_DEBOUNCE_MS) {
@@ -242,7 +247,7 @@ void SensorManager::update() {
         portEXIT_CRITICAL(&dataMux);
     }
 
-    // 3. Fast Rain Rate calculation (instant delta-t) & Continuous Accumulation
+    // 3. Sliding-window Rain Rate calculation (180s window) & Continuous Accumulation
     uint32_t rainPulses = 0;
     portENTER_CRITICAL(&isrMux);
     rainPulses = rainPulseCount;
@@ -258,39 +263,15 @@ void SensorManager::update() {
         currentData.rain_total += mmAdded;
         portEXIT_CRITICAL(&dataMux);
 
-        if (lastRainTipTime > 0) {
-            float deltaSec = (now - lastRainTipTime) / 1000.0f;
-            if (deltaSec > 0.0f && deltaSec <= RAIN_TIMEOUT_SEC) {
-                lastRainRateCalculated = mmAdded * (3600.0f / deltaSec);
-            } else {
-                lastRainRateCalculated = mmAdded * (3600.0f / static_cast<float>(RAIN_TIMEOUT_SEC));
-            }
-        } else {
-            lastRainRateCalculated = mmAdded * (3600.0f / static_cast<float>(RAIN_TIMEOUT_SEC));
-        }
-        lastRainTipTime = now;
-
-        portENTER_CRITICAL(&dataMux);
-        currentData.rain_rate = lastRainRateCalculated;
-        portEXIT_CRITICAL(&dataMux);
-    } else if (lastRainTipTime > 0) {
-        // No pulse in this tick: apply decay or timeout
-        float idleSec = (now - lastRainTipTime) / 1000.0f;
-        if (idleSec >= RAIN_TIMEOUT_SEC) {
-            lastRainRateCalculated = 0.0f;
-            portENTER_CRITICAL(&dataMux);
-            currentData.rain_rate = 0.0f;
-            portEXIT_CRITICAL(&dataMux);
-        } else if (lastRainRateCalculated > 0.0f) {
-            float decayRate = mmPerPulse * (3600.0f / idleSec);
-            if (decayRate < lastRainRateCalculated) {
-                lastRainRateCalculated = decayRate;
-                portENTER_CRITICAL(&dataMux);
-                currentData.rain_rate = lastRainRateCalculated;
-                portEXIT_CRITICAL(&dataMux);
-            }
-        }
+        recordRainTipsInWindow(now, rainPulses);
     }
+
+    uint8_t tipsInWindow = pruneAndCountRainTips(now);
+    float rateMmPerHour = (static_cast<float>(tipsInWindow) * mmPerPulse) *
+                          (3600.0f / static_cast<float>(RAIN_TIMEOUT_SEC));
+    portENTER_CRITICAL(&dataMux);
+    currentData.rain_rate = rateMmPerHour;
+    portEXIT_CRITICAL(&dataMux);
 
     // 4. Close 60-second minute-log window for v2 pipeline
     if (static_cast<uint32_t>(now - activeMinute.uptime_start_ms) >= (RAIN_SAMPLE_PERIOD_SEC * 1000UL)) {
@@ -320,12 +301,38 @@ void SensorManager::resetRainTotal() {
     rainTipCounter = 0;
     resetActiveMinuteWindow(now);
 
-    lastRainTipTime = 0;
-    lastRainRateCalculated = 0.0f;
+    memset(rainTipTimestamps, 0, sizeof(rainTipTimestamps));
+    rainTipHead = 0;
+    rainTipWindowCount = 0;
 
     portENTER_CRITICAL(&dataMux);
     currentData.rain_rate = 0.0f;
     currentData.rain_total = 0.0f;
     portEXIT_CRITICAL(&dataMux);
+}
+
+void SensorManager::recordRainTipsInWindow(uint32_t nowMs, uint32_t count) {
+    uint32_t toAdd = (count > RAIN_RATE_WINDOW_MAX_TIPS) ? RAIN_RATE_WINDOW_MAX_TIPS : count;
+    for (uint32_t i = 0; i < toAdd; ++i) {
+        rainTipTimestamps[rainTipHead] = nowMs;
+        rainTipHead = static_cast<uint8_t>((rainTipHead + 1) % RAIN_RATE_WINDOW_MAX_TIPS);
+        if (rainTipWindowCount < RAIN_RATE_WINDOW_MAX_TIPS) {
+            rainTipWindowCount++;
+        }
+    }
+}
+
+uint8_t SensorManager::pruneAndCountRainTips(uint32_t nowMs) {
+    const uint32_t windowMs = static_cast<uint32_t>(RAIN_TIMEOUT_SEC) * 1000UL;
+    while (rainTipWindowCount > 0) {
+        uint8_t oldestIdx = static_cast<uint8_t>(
+            (rainTipHead + RAIN_RATE_WINDOW_MAX_TIPS - rainTipWindowCount) % RAIN_RATE_WINDOW_MAX_TIPS);
+        if (static_cast<uint32_t>(nowMs - rainTipTimestamps[oldestIdx]) >= windowMs) {
+            rainTipWindowCount--;
+        } else {
+            break;
+        }
+    }
+    return rainTipWindowCount;
 }
 

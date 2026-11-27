@@ -93,7 +93,7 @@
 // 5. TIMING INTERVALS & PROTECTION
 // ==========================================
 #define WIND_DEBOUNCE_MS         3        // 3ms debounce (> 65 m/s)
-#define RAIN_DEBOUNCE_MS         150      // 150ms debounce for tipping bucket
+#define RAIN_DEBOUNCE_MS         400      // 400ms debounce to filter reed-switch bounce & magnet-pass chatter
 #define SENSOR_READ_INTERVAL_MS  2500     // 2.5s đọc DHT11 (tránh trượt MIN_INTERVAL 2000ms của DHT.cpp)
 #define DHT_ERROR_TIMEOUT_MS     15000    // 15s không đọc được DHT11 -> báo lỗi OLED
 #define MQTT_PUBLISH_INTERVAL_MS 5000     // 5 giây publish MQTT 1 lần (giữ nguyên hợp đồng Backend)
@@ -102,8 +102,9 @@
 #define WIFI_FORCE_RECONNECT_MS  45000    // 45s mất WiFi liên tục mới ép reconnect lại
 
 // Rain & Wind calculation parameters
-#define RAIN_TIMEOUT_SEC         180      // 3 phút không có xung -> rain_rate tự về 0.0 mm/h
-#define WIND_GUST_WINDOW_SAMPLES 120      // Cửa sổ trượt 10 phút: 120 mẫu x 5s = 600s
+#define RAIN_TIMEOUT_SEC          180     // 3 phút cửa sổ trượt & timeout -> rain_rate tự về 0.0 mm/h
+#define RAIN_RATE_WINDOW_MAX_TIPS 64      // Số xung tối đa lưu trong cửa sổ 3 phút
+#define WIND_GUST_WINDOW_SAMPLES  120     // Cửa sổ trượt 10 phút: 120 mẫu x 5s = 600s
 
 // Button & Screen parameters
 #define ENABLE_EXTERNAL_BUTTONS_UP_DOWN 1 // 1 = Bật (GPIO 34/35 active-low với pull-up ngoài, dùng INPUT)

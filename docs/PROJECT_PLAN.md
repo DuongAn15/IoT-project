@@ -141,7 +141,7 @@ flowchart TD
 | Thiết bị / Module | Loại tín hiệu | Chân GPIO | Chức năng kỹ thuật |
 |---|---|---|---|
 | **Cảm biến DHT11** | Digital (1-Wire) | `GPIO 26` | Thu thập nhiệt độ (°C) và độ ẩm (%), lọc mịn bằng Kalman Filter |
-| **Cảm biến Mưa** | Digital (Interrupt) | `GPIO 15` | Ngắt cạnh xuống (`FALLING`), chống rung xung 150ms |
+| **Cảm biến Mưa** | Digital (Interrupt) | `GPIO 15` | Ngắt cạnh xuống (`FALLING`), lọc mức `LOW` + chống rung xung 400ms |
 | **Cảm biến Gió** | Digital (Interrupt) | `GPIO 13` | Ngắt cạnh xuống (`FALLING`), chống rung xung 50ms |
 | **OLED SH1106 (SDA)** | I2C Data | `GPIO 21` | Giao tiếp dữ liệu màn hình hiển thị |
 | **OLED SH1106 (SCL)** | I2C Clock | `GPIO 22` | Xung nhịp đồng bộ I2C 400kHz |

@@ -45,9 +45,12 @@ private:
     uint16_t windGustIndex;
     uint16_t windGustCount;
 
-    // Fast rain rate calculation with instant delta-t & decay
-    uint32_t lastRainTipTime;
-    float lastRainRateCalculated;
+    // Sliding window of tip timestamps (ms) over RAIN_TIMEOUT_SEC (180s)
+    uint32_t rainTipTimestamps[RAIN_RATE_WINDOW_MAX_TIPS];
+    uint8_t rainTipHead;
+    uint8_t rainTipWindowCount;
+    void recordRainTipsInWindow(uint32_t nowMs, uint32_t count);
+    uint8_t pruneAndCountRainTips(uint32_t nowMs);
 
     WeatherData currentData;
     portMUX_TYPE dataMux;
