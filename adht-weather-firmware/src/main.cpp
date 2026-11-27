@@ -52,9 +52,59 @@ static void configureWatchdog() {
 #endif
 }
 
+static constexpr size_t CMD_DEDUP_CAPACITY = 16;
+static char recentCmdRequestIds[CMD_DEDUP_CAPACITY][65] = {{0}};
+static size_t recentCmdHead = 0;
+
+static bool isDuplicateCommandRequest(const String &requestId) {
+    if (requestId.length() == 0) return false;
+    for (size_t i = 0; i < CMD_DEDUP_CAPACITY; ++i) {
+        if (recentCmdRequestIds[i][0] != '\0' && requestId.equals(recentCmdRequestIds[i])) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void recordCommandRequest(const String &requestId) {
+    if (requestId.length() == 0) return;
+    snprintf(recentCmdRequestIds[recentCmdHead], sizeof(recentCmdRequestIds[0]), "%s", requestId.c_str());
+    recentCmdHead = (recentCmdHead + 1) % CMD_DEDUP_CAPACITY;
+}
+
+static bool isIsoExpired(const char *expiresAt) {
+    if (!expiresAt || expiresAt[0] == '\0') return false;
+    time_t nowEpoch = time(nullptr);
+    if (nowEpoch < 1700000000L) return false; // SNTP unsynchronized -> do not drop valid commands
+    struct tm tmExp = {};
+    if (sscanf(expiresAt, "%d-%d-%dT%d:%d:%d",
+               &tmExp.tm_year, &tmExp.tm_mon, &tmExp.tm_mday,
+               &tmExp.tm_hour, &tmExp.tm_min, &tmExp.tm_sec) != 6) {
+        return false;
+    }
+    tmExp.tm_year -= 1900;
+    tmExp.tm_mon -= 1;
+    // mktime uses local TZ; compute UTC epoch viasetenv/timegm fallback or TZ=UTC
+    setenv("TZ", "UTC0", 1);
+    tzset();
+    time_t expEpoch = mktime(&tmExp);
+    return expEpoch > 0 && nowEpoch > expEpoch;
+}
+
 // Callback: Handle MQTT Commands from Mobile App (Non-blocking, Core 0)
-void handleMqttCommand(const String &cmd, const String &arg) {
-    Serial.printf("[MAIN] Received Command: '%s' (arg: '%s')\n", cmd.c_str(), arg.c_str());
+void handleMqttCommand(const String &cmd, const String &arg, const String &requestId, const String &expiresAt) {
+    Serial.printf("[MAIN] Received Command: '%s' (arg: '%s', req: '%s')\n",
+                  cmd.c_str(), arg.c_str(), requestId.c_str());
+
+    if (isIsoExpired(expiresAt.c_str())) {
+        mqttMgr.publishOperationAck(requestId.c_str(), "command", "failed", 0, "expired", "Command expired before execution");
+        return;
+    }
+    if (isDuplicateCommandRequest(requestId)) {
+        Serial.printf("[COMMAND] Duplicate request_id '%s' ignored (idempotent)\n", requestId.c_str());
+        mqttMgr.publishOperationAck(requestId.c_str(), "command", "applied");
+        return;
+    }
 
     if (cmd == "buzzer") {
         long parsed = arg.length() > 0 ? arg.toInt() : 300;
@@ -104,15 +154,34 @@ void handleMqttCommand(const String &cmd, const String &arg) {
         Serial.println("[COMMAND] Reset rain_total and rain_rate to 0.0 mm");
     } else {
         Serial.printf("[COMMAND] Unknown command: '%s'\n", cmd.c_str());
+        mqttMgr.publishOperationAck(requestId.c_str(), "command", "rejected", 0, "unknown_command", "Unsupported command");
+        return;
     }
+    recordCommandRequest(requestId);
+    mqttMgr.publishOperationAck(requestId.c_str(), "command", "applied");
 }
 
 // Callback: Handle MQTT Partial Config Updates from Mobile App (Core 0)
 void handleMqttConfig(const ConfigUpdatePatch &patch) {
-    SystemConfig merged;
+    if (isIsoExpired(patch.expires_at)) {
+        mqttMgr.publishOperationAck(patch.request_id, "config", "failed", patch.version, "expired", "Config update expired");
+        return;
+    }
 
+    SystemConfig merged;
     portENTER_CRITICAL(&stateMux);
     merged = sysConfig;
+    portEXIT_CRITICAL(&stateMux);
+
+    if (patch.has_version && patch.version < merged.version) {
+        mqttMgr.publishOperationAck(patch.request_id, "config", "rejected", merged.version, "stale_version", "Version is older than active config");
+        return;
+    }
+    if (patch.has_version && patch.version == merged.version) {
+        mqttMgr.publishOperationAck(patch.request_id, "config", "applied", merged.version);
+        return;
+    }
+
     if (patch.has_temp_max) merged.temp_max_alert = patch.temp_max;
     if (patch.has_temp_min) merged.temp_min_alert = patch.temp_min;
     if (patch.has_humi_max) merged.humi_max_alert = patch.humi_max;
@@ -120,19 +189,32 @@ void handleMqttConfig(const ConfigUpdatePatch &patch) {
     if (patch.has_rain_max) merged.rain_max_alert = patch.rain_max;
     if (patch.has_auto_warning) merged.auto_warning_enabled = patch.auto_warning;
     if (patch.has_buzzer) merged.buzzer_enabled = patch.buzzer;
+    if (patch.has_version) merged.version = patch.version;
+
+    // Validate domain after partial merge before persisting or applying
+    if (merged.temp_min_alert >= merged.temp_max_alert ||
+        merged.temp_min_alert < -40.0f || merged.temp_max_alert > 80.0f ||
+        merged.humi_max_alert < 0.0f || merged.humi_max_alert > 100.0f ||
+        merged.wind_max_alert < 0.0f || merged.wind_max_alert > 100.0f ||
+        merged.rain_max_alert < 0.0f || merged.rain_max_alert > 500.0f) {
+        mqttMgr.publishOperationAck(patch.request_id, "config", "rejected", merged.version, "invalid_domain", "Config failed post-merge validation");
+        return;
+    }
+
+    // Persist with read-back verification BEFORE applying in RAM or ACKing
+    if (!storageMgr.saveConfig(merged)) {
+        Serial.println("[MAIN] ERROR: NVS saveConfig failed; keeping previous config!");
+        mqttMgr.publishOperationAck(patch.request_id, "config", "failed", merged.version, "nvs_write_failed", "NVS persistence verification failed");
+        return;
+    }
+
+    portENTER_CRITICAL(&stateMux);
     sysConfig = merged;
     portEXIT_CRITICAL(&stateMux);
 
-    Serial.println("[MAIN] Received Config update via MQTT! Active thresholds:");
-    Serial.printf("  • Temp Max: %.1f °C, Temp Min: %.1f °C\n", merged.temp_max_alert, merged.temp_min_alert);
-    Serial.printf("  • Humi Max: %.1f %%\n", merged.humi_max_alert);
-    Serial.printf("  • Wind Max: %.1f m/s, Rain Max: %.1f mm/h\n", merged.wind_max_alert, merged.rain_max_alert);
-    Serial.printf("  • Auto Warning: %s, Buzzer Enabled: %s\n",
-                  merged.auto_warning_enabled ? "TRUE" : "FALSE",
-                  merged.buzzer_enabled ? "TRUE" : "FALSE");
-
-    storageMgr.saveConfig(merged);
-    Serial.println("[MAIN] Successfully saved merged config to NVS Flash!");
+    Serial.printf("[MAIN] Applied & persisted Config v%lu via MQTT!\n",
+                  static_cast<unsigned long>(merged.version));
+    mqttMgr.publishOperationAck(patch.request_id, "config", "applied", merged.version);
 }
 
 // ----------------------------------------------------------------

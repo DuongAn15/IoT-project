@@ -9,7 +9,7 @@ public:
     StorageManager();
     void begin();
     void loadConfig(SystemConfig &cfg);
-    void saveConfig(const SystemConfig &cfg);
+    bool saveConfig(const SystemConfig &cfg);
 
     bool loadWifiCredentials(String &ssid, String &password);
     bool saveWifiCredentials(const String &ssid, const String &password);
@@ -18,6 +18,7 @@ public:
 private:
     Preferences prefs;
     Preferences wifiPrefs;
+    static uint32_t computeConfigCrc(const SystemConfigNvsRecord &rec);
     static uint32_t computeWifiCrc(const WifiCredentialsRecord &rec);
 };
 

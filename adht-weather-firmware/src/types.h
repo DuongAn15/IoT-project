@@ -18,6 +18,7 @@ struct WeatherData {
 
 // Alert and Threshold configuration
 struct SystemConfig {
+    uint32_t version = 0;
     float temp_max_alert = 38.0f;  // Alert when temp >= threshold
     float temp_min_alert = 10.0f;  // Alert when temp <= threshold
     float humi_max_alert = 90.0f;  // Alert when humi >= threshold
@@ -27,8 +28,20 @@ struct SystemConfig {
     bool auto_warning_enabled = true;
 };
 
+// Versioned NVS record for SystemConfig with CRC-32 integrity check
+struct SystemConfigNvsRecord {
+    static constexpr uint16_t MAGIC_VERSION = 1;
+    uint16_t magic = MAGIC_VERSION;
+    SystemConfig config;
+    uint32_t crc32 = 0;
+};
+
 // Partial configuration update received via MQTT
 struct ConfigUpdatePatch {
+    char request_id[65] = {0};
+    char expires_at[32] = {0};
+    bool has_version = false;
+    uint32_t version = 0;
     bool has_temp_max = false;
     float temp_max = 0.0f;
     bool has_temp_min = false;

@@ -75,6 +75,7 @@
 #define TOPIC_STATUS            "adht/weather/status"
 #define TOPIC_COMMAND           "adht/weather/" DEVICE_ID "/command"
 #define TOPIC_CONFIG            "adht/weather/" DEVICE_ID "/config"
+#define TOPIC_ACK               "adht/weather/" DEVICE_ID "/ack"
 
 #ifndef DEPLOYMENT_ID
 #define DEPLOYMENT_ID           "dep-001"

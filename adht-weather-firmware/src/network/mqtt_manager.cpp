@@ -272,6 +272,41 @@ void MqttManager::publishMinuteLog(const MinuteLogSample &sample) {
     }
 }
 
+void MqttManager::publishOperationAck(
+    const char *requestId,
+    const char *kind,
+    const char *status,
+    uint32_t version,
+    const char *errorCode,
+    const char *errorMessage) {
+    if (!requestId || requestId[0] == '\0') return;
+
+    JsonDocument doc;
+    doc["request_id"] = requestId;
+    doc["device_id"] = DEVICE_ID;
+    doc["deployment_id"] = DEPLOYMENT_ID;
+    doc["boot_id"] = bootId;
+    doc["kind"] = kind;
+    doc["status"] = status;
+    if (version > 0) {
+        doc["version"] = version;
+    }
+    if (errorCode && errorCode[0] != '\0') {
+        doc["error_code"] = errorCode;
+    }
+    if (errorMessage && errorMessage[0] != '\0') {
+        doc["error_message"] = errorMessage;
+    }
+
+    char buffer[384];
+    serializeJson(doc, buffer, sizeof(buffer));
+    if (mqttClient.connected()) {
+        mqttClient.publish(TOPIC_ACK, buffer);
+    } else {
+        enqueueBacklog(TOPIC_ACK, buffer);
+    }
+}
+
 void MqttManager::onMessageReceived(char *topic, byte *payload, unsigned int length) {
     if (!topic || !payload) {
         return;
@@ -288,6 +323,14 @@ void MqttManager::onMessageReceived(char *topic, byte *payload, unsigned int len
             return;
         }
 
+        String requestId = doc["request_id"] | "";
+        String expiresAt = doc["expires_at"] | "";
+        const char *depId = doc["deployment_id"] | "";
+        if (depId[0] != '\0' && strcmp(depId, DEPLOYMENT_ID) != 0) {
+            publishOperationAck(requestId.c_str(), "command", "rejected", 0, "deployment_mismatch", "Deployment ID mismatch");
+            return;
+        }
+
         String cmd = doc["cmd"] | "";
         String arg = "";
         if (doc["arg"].is<const char *>()) {
@@ -296,7 +339,7 @@ void MqttManager::onMessageReceived(char *topic, byte *payload, unsigned int len
             arg = doc["arg"].as<String>();
         }
         if (onCommand) {
-            onCommand(cmd, arg);
+            onCommand(cmd, arg, requestId, expiresAt);
         }
     }
     // 2. Config update handling (Chỉ nhận từ topic riêng của trạm: TOPIC_CONFIG)
@@ -308,8 +351,22 @@ void MqttManager::onMessageReceived(char *topic, byte *payload, unsigned int len
             return;
         }
 
+        String requestId = doc["request_id"] | "";
+        const char *depId = doc["deployment_id"] | "";
+        if (depId[0] != '\0' && strcmp(depId, DEPLOYMENT_ID) != 0) {
+            publishOperationAck(requestId.c_str(), "config", "rejected", 0, "deployment_mismatch", "Deployment ID mismatch");
+            return;
+        }
+
         if (onConfig) {
             ConfigUpdatePatch patch;
+            snprintf(patch.request_id, sizeof(patch.request_id), "%s", requestId.c_str());
+            String expiresAt = doc["expires_at"] | "";
+            snprintf(patch.expires_at, sizeof(patch.expires_at), "%s", expiresAt.c_str());
+            if (doc["version"].is<uint32_t>()) {
+                patch.has_version = true;
+                patch.version = doc["version"].as<uint32_t>();
+            }
             if (doc["temp_max"].is<float>()) {
                 float v = doc["temp_max"].as<float>();
                 if (isfinite(v)) { patch.has_temp_max = true; patch.temp_max = v; }
