@@ -14,8 +14,22 @@ CREATE TABLE IF NOT EXISTS public.weather_logs_v2 (
   wind_speed DOUBLE PRECISION NOT NULL,
   rain_rate DOUBLE PRECISION NOT NULL,
   rainfall_mm DOUBLE PRECISION NOT NULL,
+  coverage_ms INTEGER,
+  rain_coverage_ms INTEGER,
+  dht_expected_count INTEGER,
+  dht_valid_count INTEGER,
+  wind_expected_count INTEGER,
+  wind_valid_count INTEGER,
   CONSTRAINT weather_logs_v2_identity_unique UNIQUE (device_id, deployment_id, boot_id, window_sequence)
 );
+
+ALTER TABLE public.weather_logs_v2
+  ADD COLUMN IF NOT EXISTS coverage_ms INTEGER,
+  ADD COLUMN IF NOT EXISTS rain_coverage_ms INTEGER,
+  ADD COLUMN IF NOT EXISTS dht_expected_count INTEGER,
+  ADD COLUMN IF NOT EXISTS dht_valid_count INTEGER,
+  ADD COLUMN IF NOT EXISTS wind_expected_count INTEGER,
+  ADD COLUMN IF NOT EXISTS wind_valid_count INTEGER;
 
 CREATE INDEX IF NOT EXISTS idx_weather_logs_v2_device_time
   ON public.weather_logs_v2 (device_id, recorded_at DESC);

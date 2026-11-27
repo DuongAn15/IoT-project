@@ -92,6 +92,50 @@ class AppWeatherRepository implements WeatherRepository {
     );
   }
 
+  static String? computeOverlapSince(String? cursorIso, Duration overlap) {
+    if (cursorIso == null || cursorIso.isEmpty) return null;
+    final parsed = DateTime.tryParse(cursorIso);
+    if (parsed == null) return cursorIso;
+    return parsed.toUtc().subtract(overlap).toIso8601String();
+  }
+
+  static Duration? _fixedTimezoneOffset(String timezone) {
+    switch (timezone) {
+      case 'UTC':
+      case 'Etc/UTC':
+      case 'GMT':
+        return Duration.zero;
+      case 'Asia/Ho_Chi_Minh':
+      case 'Asia/Bangkok':
+      case 'Asia/Jakarta':
+        return const Duration(hours: 7);
+      case 'Asia/Kolkata':
+        return const Duration(hours: 5, minutes: 30);
+      case 'Asia/Tokyo':
+      case 'Asia/Seoul':
+        return const Duration(hours: 9);
+      default:
+        return null;
+    }
+  }
+
+  /// Convert an instant to station wall-clock DateTime (year/month/day/hour/minute in station timezone).
+  static DateTime toStationWallClock(DateTime dt, String stationTimezone) {
+    final offset = _fixedTimezoneOffset(stationTimezone);
+    if (offset == null) return dt.toLocal();
+    final shifted = dt.toUtc().add(offset);
+    return DateTime(
+      shifted.year,
+      shifted.month,
+      shifted.day,
+      shifted.hour,
+      shifted.minute,
+      shifted.second,
+      shifted.millisecond,
+      shifted.microsecond,
+    );
+  }
+
   String? _latestRecordCursorIso(List<WeatherMonitoringRecord> records) {
     if (records.isEmpty) return null;
     DateTime latest = records.first.recordedAt.toUtc();
@@ -107,8 +151,8 @@ class AppWeatherRepository implements WeatherRepository {
 
   @override
   Future<List<WeatherPoint>> getIntraDayData() async {
-    // Mốc thời gian hiện tại theo giờ thiết bị (Local Time)
-    final now = DateTime.now();
+    // Mốc thời gian hiện tại theo múi giờ của trạm
+    final stationNow = toStationWallClock(DateTime.now(), stationTimezone);
 
     try {
       final cursorKey = WeatherMonitoringDao.buildCursorSeriesKey(
@@ -116,10 +160,11 @@ class AppWeatherRepository implements WeatherRepository {
         resolution: '600s',
         timezone: stationTimezone,
       );
-      final since = await dao.getSyncCursor(
+      final cursorIso = await dao.getSyncCursor(
         deviceId: currentDeviceId,
         series: cursorKey,
       );
+      final since = computeOverlapSince(cursorIso, const Duration(hours: 1));
       final response = await apiService.fetchHistory(
         deviceId: currentDeviceId,
         range: '24h',
@@ -146,13 +191,13 @@ class AppWeatherRepository implements WeatherRepository {
       dev.log('Lỗi fetchHistory 24h, đọc từ bảng weather_inday: $e');
     }
 
-    // Đọc từ SQLite bảng weather_inday các điểm đo từ 00:00 sáng hôm nay
+    // Đọc từ SQLite bảng weather_inday các điểm đo từ 00:00 sáng hôm nay theo giờ trạm
     final all = await dao.getIndayRecords(deviceId: currentDeviceId);
     final todayRecords = all.where((r) {
-      final d = r.recordedAt;
-      return d.year == now.year &&
-             d.month == now.month &&
-             d.day == now.day;
+      final d = toStationWallClock(r.recordedAt, stationTimezone);
+      return d.year == stationNow.year &&
+             d.month == stationNow.month &&
+             d.day == stationNow.day;
     }).toList();
     todayRecords.sort((a, b) => a.recordedAt.compareTo(b.recordedAt));
 
@@ -167,10 +212,11 @@ class AppWeatherRepository implements WeatherRepository {
         resolution: '3600s',
         timezone: stationTimezone,
       );
-      final since = await dao.getSyncCursor(
+      final cursorIso = await dao.getSyncCursor(
         deviceId: currentDeviceId,
         series: cursorKey,
       );
+      final since = computeOverlapSince(cursorIso, const Duration(hours: 6));
       final response = await apiService.fetchHistory(
         deviceId: currentDeviceId,
         range: '7d',
@@ -200,8 +246,11 @@ class AppWeatherRepository implements WeatherRepository {
     // Đọc toàn bộ các bản ghi trong 7 ngày gần nhất từ bảng weather_week
     final localRecords = await dao.getWeekHistory7Days(deviceId: currentDeviceId);
 
-    // Xây dựng danh sách chuẩn xác đủ 7 ngày liên tiếp từ (now - 6 ngày) đến hôm nay
-    return buildContinuous7DaysSummary(localRecords);
+    // Xây dựng danh sách chuẩn xác đủ 7 ngày liên tiếp từ (now - 6 ngày) đến hôm nay theo giờ trạm
+    return buildContinuous7DaysSummary(
+      localRecords,
+      stationTimezone: stationTimezone,
+    );
   }
 
   /// Gom nhóm số đo và tạo đủ 7 ngày liên tiếp tính đến ngày hiện tại
@@ -209,14 +258,15 @@ class AppWeatherRepository implements WeatherRepository {
   static List<WeatherDailySummary> buildContinuous7DaysSummary(
     List<WeatherMonitoringRecord> records, {
     DateTime? referenceDate,
+    String stationTimezone = ApiConstants.defaultStationTimezone,
   }) {
-    final now = referenceDate ?? DateTime.now();
+    final now = referenceDate ?? toStationWallClock(DateTime.now(), stationTimezone);
     final today = DateTime(now.year, now.month, now.day);
 
-    // 1. Gom nhóm các bản ghi theo ngày dạng 'YYYY-MM-DD'
+    // 1. Gom nhóm các bản ghi theo ngày dạng 'YYYY-MM-DD' theo múi giờ trạm
     final Map<String, List<WeatherMonitoringRecord>> groupedByDay = {};
     for (final r in records) {
-      final local = r.recordedAt;
+      final local = toStationWallClock(r.recordedAt, stationTimezone);
       final key =
           '${local.year.toString().padLeft(4, '0')}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
       groupedByDay.putIfAbsent(key, () => []).add(r);

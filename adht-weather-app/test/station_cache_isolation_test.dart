@@ -169,6 +169,46 @@ void main() {
     expect(todaySummary.maxTemperature, 29.4);
   });
 
+  test('computeOverlapSince subtracts overlap window and buildContinuous7DaysSummary respects stationTimezone', () {
+    expect(
+      AppWeatherRepository.computeOverlapSince(
+        '2026-11-27T10:00:00.000Z',
+        const Duration(hours: 1),
+      ),
+      '2026-11-27T09:00:00.000Z',
+    );
+    expect(AppWeatherRepository.computeOverlapSince(null, const Duration(hours: 1)), isNull);
+
+    // 2026-11-26T17:30:00Z is 2026-11-27 00:30 in Asia/Ho_Chi_Minh (+07:00), but 2026-11-26 in UTC
+    final utcInstant = DateTime.utc(2026, 11, 26, 17, 30);
+    final ictWall = AppWeatherRepository.toStationWallClock(utcInstant, 'Asia/Ho_Chi_Minh');
+    expect(ictWall.year, 2026);
+    expect(ictWall.month, 11);
+    expect(ictWall.day, 27);
+    expect(ictWall.hour, 0);
+    expect(ictWall.minute, 30);
+
+    final summaries = AppWeatherRepository.buildContinuous7DaysSummary(
+      [
+        WeatherMonitoringRecord(
+          deviceId: 'adht_weather_01',
+          temperature: 26.0,
+          humidity: 70.0,
+          rainfall: 0.0,
+          rainfallMm: 0.4,
+          windSpeed: 1.5,
+          rainQuality: 'observed',
+          recordedAt: utcInstant,
+        ),
+      ],
+      referenceDate: DateTime(2026, 11, 27, 12, 0),
+      stationTimezone: 'Asia/Ho_Chi_Minh',
+    );
+    expect(summaries.last.date, DateTime(2026, 11, 27));
+    expect(summaries.last.hasData, isTrue);
+    expect(summaries.last.totalRainfall, 0.4);
+  });
+
   test('StationCatalogueStorage persists and restores station list offline', () async {
     final tempDir = await Directory.systemTemp.createTemp('adht_cat_test_');
     addTearDown(() async {

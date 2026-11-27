@@ -28,6 +28,7 @@ final weatherRepositoryProvider = Provider<WeatherRepository>((ref) {
     dao: dao,
     fileStorage: fileStorage,
     currentDeviceId: selectedStationId,
+    stationTimezone: ApiConstants.timezoneForStation(selectedStationId),
   );
 });
 
