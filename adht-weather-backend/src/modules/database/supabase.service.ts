@@ -7,10 +7,20 @@ import type { DerivedMinuteLogRecord } from '../telemetry/minute-log-v2';
 export interface WeatherRecord {
   device_id: string | null;
   temp: number;
+  temp_min?: number;
+  temp_max?: number;
   humi: number;
   rain_rate: number;
   rainfall_mm?: number;
   wind_speed: number;
+  sample_count?: number;
+  coverage?: number;
+  /** Latest source record epoch ms in this bucket (increases when open bucket receives updates). */
+  revision?: number;
+  is_partial?: boolean;
+  utc_offset_minutes?: number;
+  source?: 'v2' | 'v2_cutover' | 'v1_legacy';
+  rain_quality?: 'observed' | 'estimated';
   recorded_at: string;
 }
 
@@ -25,16 +35,24 @@ interface WeatherLogRow {
 
 interface WeatherLogV2Row {
   recorded_at: string;
+  clock_quality?: 'synchronized' | 'unsynchronized';
   device_id: string;
   temperature: number;
   humidity: number;
   rain_rate: number;
   rainfall_mm: number;
   wind_speed: number;
+  coverage_ms?: number;
+  rain_coverage_ms?: number;
+  dht_expected_count?: number;
+  dht_valid_count?: number;
+  wind_expected_count?: number;
+  wind_valid_count?: number;
 }
 
 const WEATHER_COLUMNS = 'created_at,device_id,temperature,humidity,rain_rate,wind_speed';
-const WEATHER_V2_COLUMNS = 'recorded_at,device_id,temperature,humidity,rain_rate,rainfall_mm,wind_speed';
+const WEATHER_V2_COLUMNS =
+  'recorded_at,clock_quality,device_id,temperature,humidity,rain_rate,rainfall_mm,wind_speed,coverage_ms,rain_coverage_ms,dht_expected_count,dht_valid_count,wind_expected_count,wind_valid_count';
 const HISTORY_PAGE_SIZE = 500;
 const HISTORY_RANGES = {
   '1h': { duration: 3600, bucket: 60 },
@@ -163,6 +181,12 @@ export class SupabaseService {
         wind_speed: record.wind_speed,
         rain_rate: record.rain_rate,
         rainfall_mm: record.rainfall_mm,
+        coverage_ms: record.coverage_ms,
+        rain_coverage_ms: record.rain_coverage_ms,
+        dht_expected_count: record.dht_expected_count,
+        dht_valid_count: record.dht_valid_count,
+        wind_expected_count: record.wind_expected_count,
+        wind_valid_count: record.wind_valid_count,
       });
 
       if (!error) return 'persisted';
@@ -232,16 +256,165 @@ export class SupabaseService {
     }
   }
 
-  async getHistory(deviceId: string, range: string = '24h'): Promise<WeatherRecord[]> {
+  private resolveTimezoneOffsetMs(timezone: string, atMs: number): number {
+    try {
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        timeZoneName: 'shortOffset',
+      });
+      const part = formatter.formatToParts(new Date(atMs)).find((p) => p.type === 'timeZoneName');
+      const value = part?.value ?? 'GMT';
+      if (value === 'GMT' || value === 'UTC') return 0;
+      const match = /^GMT([+-])(\d{1,2})(?::?(\d{2}))?$/.exec(value);
+      if (!match) return 0;
+      const sign = match[1] === '-' ? -1 : 1;
+      const hours = Number(match[2]);
+      const minutes = Number(match[3] ?? '0');
+      return sign * (hours * 60 + minutes) * 60 * 1000;
+    } catch {
+      throw new BadRequestException('timezone must be a valid IANA timezone');
+    }
+  }
+
+  private computeBucketStartMs(timeMs: number, bucketSec: number, timezone: string): number {
+    const bucketMs = bucketSec * 1000;
+    const offsetMs = this.resolveTimezoneOffsetMs(timezone, timeMs);
+    return Math.floor((timeMs + offsetMs) / bucketMs) * bucketMs - offsetMs;
+  }
+
+  async getHistory(
+    deviceId: string,
+    range: string = '24h',
+    since?: string,
+    timezone: string = 'Asia/Ho_Chi_Minh',
+    from?: string,
+    to?: string,
+    dayStarts?: string[],
+  ): Promise<WeatherRecord[]> {
     if (!deviceId?.trim()) throw new BadRequestException('device_id is required');
     if (!Object.prototype.hasOwnProperty.call(HISTORY_RANGES, range)) {
       throw new BadRequestException('range must be one of 1h, 6h, 24h, 3d, 7d');
     }
+    const resolvedTimezone = timezone?.trim() || 'Asia/Ho_Chi_Minh';
+    // Validate timezone up-front
+    this.resolveTimezoneOffsetMs(resolvedTimezone, Date.now());
+
     const settings = HISTORY_RANGES[range as keyof typeof HISTORY_RANGES];
-    const end = Date.now();
-    const start = end - settings.duration * 1000;
-    const v1Buckets = new Map<number, { point: WeatherRecord; count: number }>();
-    const v2Buckets = new Map<number, { point: WeatherRecord; count: number; rainfallMmSum: number }>();
+    const now = Date.now();
+    const end = to ? Date.parse(to) : now;
+    const start = from ? Date.parse(from) : end - settings.duration * 1000;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end || end > now + 60000 ||
+        end - start > (range === '7d' ? 8 : 7) * 86400000 ||
+        (!dayStarts && from && end - start > settings.duration * 1000)) {
+      throw new BadRequestException('Invalid UTC history range');
+    }
+    const boundaries = dayStarts?.map((value) => Date.parse(value));
+    if (boundaries && (range !== '7d' || boundaries.length !== 8 || boundaries.some((value) => !Number.isFinite(value)) ||
+        boundaries[0] !== start || boundaries[7] < end ||
+        boundaries.some((value, index) => index > 0 && value <= boundaries[index - 1]))) {
+      throw new BadRequestException('day_starts must contain eight increasing UTC day boundaries');
+    }
+    const bucketFor = (time: number): number => {
+      if (!boundaries) return this.computeBucketStartMs(time, settings.bucket, resolvedTimezone);
+      for (let i = 6; i >= 0; i--) if (time >= boundaries[i]) return boundaries[i];
+      return boundaries[0];
+    };
+    let effectiveStart = start;
+    if (since !== undefined && since.trim() !== '') {
+      const parsedSince = Date.parse(since);
+      if (!Number.isFinite(parsedSince)) {
+        throw new BadRequestException('since must be a valid ISO-8601 timestamp');
+      }
+      if (parsedSince > start) {
+        effectiveStart = Math.min(parsedSince, end);
+      }
+    }
+
+    const cutoverRaw = this.config?.get<string>('telemetry.v2CutoverAt') ?? process.env.V2_CUTOVER_AT;
+    const cutoverMs = cutoverRaw ? Date.parse(cutoverRaw) : NaN;
+    const hasCutover = Number.isFinite(cutoverMs);
+
+    interface BucketAccum {
+      deviceId: string | null;
+      weightedTemp: number;
+      weightedHumi: number;
+      dhtWeightSum: number;
+      weightedRainRate: number;
+      rainWeightSum: number;
+      weightedWindSpeed: number;
+      windWeightSum: number;
+      fallbackTempSum: number;
+      fallbackHumiSum: number;
+      fallbackRainRateSum: number;
+      fallbackWindSum: number;
+      count: number;
+      effectiveCoverageMsSum: number;
+      rainfallMmSum: number;
+      tempMin: number;
+      tempMax: number;
+      latestRowMs: number;
+    }
+
+    const v1Buckets = new Map<number, BucketAccum>();
+    const v2Buckets = new Map<number, BucketAccum>();
+
+    const accumulate = (
+      map: Map<number, BucketAccum>,
+      bucketTime: number,
+      rowMs: number,
+      rowDeviceId: string | null,
+      temp: number,
+      humi: number,
+      rainRate: number,
+      windSpeed: number,
+      rainfallMm: number,
+      dhtWeight: number,
+      windWeight: number,
+      rainWeight: number,
+      effectiveCoverageMs: number,
+    ) => {
+      const existing = map.get(bucketTime);
+      if (existing) {
+        existing.weightedTemp += temp * dhtWeight;
+        existing.weightedHumi += humi * dhtWeight;
+        existing.dhtWeightSum += dhtWeight;
+        existing.weightedRainRate += rainRate * rainWeight;
+        existing.rainWeightSum += rainWeight;
+        existing.weightedWindSpeed += windSpeed * windWeight;
+        existing.windWeightSum += windWeight;
+        existing.fallbackTempSum += temp;
+        existing.fallbackHumiSum += humi;
+        existing.fallbackRainRateSum += rainRate;
+        existing.fallbackWindSum += windSpeed;
+        existing.count += 1;
+        existing.effectiveCoverageMsSum += effectiveCoverageMs;
+        existing.rainfallMmSum += rainfallMm;
+        if (temp < existing.tempMin) existing.tempMin = temp;
+        if (temp > existing.tempMax) existing.tempMax = temp;
+        if (rowMs > existing.latestRowMs) existing.latestRowMs = rowMs;
+      } else {
+        map.set(bucketTime, {
+          deviceId: rowDeviceId,
+          weightedTemp: temp * dhtWeight,
+          weightedHumi: humi * dhtWeight,
+          dhtWeightSum: dhtWeight,
+          weightedRainRate: rainRate * rainWeight,
+          rainWeightSum: rainWeight,
+          weightedWindSpeed: windSpeed * windWeight,
+          windWeightSum: windWeight,
+          fallbackTempSum: temp,
+          fallbackHumiSum: humi,
+          fallbackRainRateSum: rainRate,
+          fallbackWindSum: windSpeed,
+          count: 1,
+          effectiveCoverageMsSum: effectiveCoverageMs,
+          rainfallMmSum: rainfallMm,
+          tempMin: temp,
+          tempMax: temp,
+          latestRowMs: rowMs,
+        });
+      }
+    };
 
     try {
       // Read every page from legacy v1 table
@@ -249,7 +422,7 @@ export class SupabaseService {
         const { data, error } = await this.client.from(this.table)
           .select(WEATHER_COLUMNS)
           .eq('device_id', deviceId)
-          .gte('created_at', new Date(start).toISOString())
+          .gte('created_at', new Date(effectiveStart).toISOString())
           .lte('created_at', new Date(end).toISOString())
           .order('created_at', { ascending: true })
           .order('id', { ascending: true })
@@ -260,21 +433,24 @@ export class SupabaseService {
 
         for (const row of data) {
           const time = Date.parse(row.created_at);
-          const bucketMs = settings.bucket * 1000;
-          const bucketTime = Math.floor(time / bucketMs) * bucketMs;
-          const existing = v1Buckets.get(bucketTime);
-          if (existing) {
-            existing.point.temp += row.temperature;
-            existing.point.humi += row.humidity;
-            existing.point.rain_rate += row.rain_rate;
-            existing.point.wind_speed += row.wind_speed;
-            existing.count++;
-          } else {
-            v1Buckets.set(bucketTime, {
-              point: { ...this.toWeatherRecord(row), recorded_at: new Date(bucketTime).toISOString() },
-              count: 1,
-            });
-          }
+          if (time < start || time >= end) continue;
+          if (hasCutover && time >= cutoverMs) continue;
+          const bucketTime = bucketFor(time);
+          accumulate(
+            v1Buckets,
+            bucketTime,
+            time,
+            row.device_id,
+            row.temperature,
+            row.humidity,
+            row.rain_rate,
+            row.wind_speed,
+            0,
+            1,
+            1,
+            1,
+            5000,
+          );
         }
         // Stop only on an empty page, even if the server caps pages below 500 rows.
         offset += data.length;
@@ -282,14 +458,28 @@ export class SupabaseService {
 
       // Union with v2 minute-log table when configured
       if (this.v2Table) {
+        const sinceIso = new Date(effectiveStart).toISOString();
+        const endIso = new Date(end).toISOString();
         for (let offset = 0; ; ) {
-          const { data, error } = await this.client.from(this.v2Table)
+          let v2Query = this.client.from(this.v2Table)
             .select(WEATHER_V2_COLUMNS)
             .eq('device_id', deviceId)
-            .gte('recorded_at', new Date(start).toISOString())
-            .lte('recorded_at', new Date(end).toISOString())
-            .order('recorded_at', { ascending: true })
-            .order('id', { ascending: true })
+            .lte('recorded_at', endIso) as unknown as {
+              gte: (col: string, val: string) => unknown;
+              or?: (expr: string) => unknown;
+              order: (col: string, opts: { ascending: boolean }) => unknown;
+              range: (from: number, to: number) => {
+                returns: <T>() => Promise<{ data: T | null; error: unknown }>;
+              };
+            };
+          if (effectiveStart > start && typeof v2Query.or === 'function') {
+            v2Query = v2Query.or(`recorded_at.gte.${sinceIso},received_at.gte.${sinceIso}`) as typeof v2Query;
+          } else {
+            v2Query = v2Query.gte('recorded_at', sinceIso) as typeof v2Query;
+          }
+          v2Query = (v2Query.order('recorded_at', { ascending: true }) as typeof v2Query)
+            .order('id', { ascending: true }) as typeof v2Query;
+          const { data, error } = await v2Query
             .range(offset, offset + HISTORY_PAGE_SIZE - 1)
             .returns<WeatherLogV2Row[]>();
           if (error) throw error;
@@ -297,30 +487,38 @@ export class SupabaseService {
 
           for (const row of data) {
             const time = Date.parse(row.recorded_at);
-            const bucketMs = settings.bucket * 1000;
-            const bucketTime = Math.floor(time / bucketMs) * bucketMs;
-            const existing = v2Buckets.get(bucketTime);
-            if (existing) {
-              existing.point.temp += row.temperature;
-              existing.point.humi += row.humidity;
-              existing.point.rain_rate += row.rain_rate;
-              existing.point.wind_speed += row.wind_speed;
-              existing.rainfallMmSum += row.rainfall_mm;
-              existing.count++;
-            } else {
-              v2Buckets.set(bucketTime, {
-                point: {
-                  device_id: row.device_id,
-                  temp: row.temperature,
-                  humi: row.humidity,
-                  rain_rate: row.rain_rate,
-                  wind_speed: row.wind_speed,
-                  recorded_at: new Date(bucketTime).toISOString(),
-                },
-                count: 1,
-                rainfallMmSum: row.rainfall_mm,
-              });
-            }
+            // Synchronized minute logs represent [interval_start, interval_end).
+            // Assign a log ending exactly on a bucket boundary to the preceding bucket.
+            // Unsynchronized logs use received_at, which is an instant, not an interval end.
+            const sampleTime = row.clock_quality === 'unsynchronized' ? time : time - 1;
+            if (sampleTime < start || sampleTime >= end) continue;
+            if (hasCutover && time < cutoverMs) continue;
+            const bucketTime = bucketFor(sampleTime);
+            const covMs = row.coverage_ms ?? 60000;
+            const rainCovMs = row.rain_coverage_ms ?? covMs;
+            const dhtWeight = row.dht_valid_count ?? covMs;
+            const windWeight = row.wind_valid_count ?? covMs;
+            const dhtRatio =
+              row.dht_expected_count && row.dht_expected_count > 0 && row.dht_valid_count !== undefined
+                ? Math.min(1, row.dht_valid_count / row.dht_expected_count)
+                : 1;
+            const effectiveCovMs = covMs * dhtRatio;
+
+            accumulate(
+              v2Buckets,
+              bucketTime,
+              time,
+              row.device_id,
+              row.temperature,
+              row.humidity,
+              row.rain_rate,
+              row.wind_speed,
+              row.rainfall_mm,
+              dhtWeight,
+              windWeight,
+              rainCovMs,
+              effectiveCovMs,
+            );
           }
           offset += data.length;
         }
@@ -330,28 +528,58 @@ export class SupabaseService {
       throw new ServiceUnavailableException('Unable to load weather history');
     }
 
+    const bucketMs = settings.bucket * 1000;
     const allTimes = new Set<number>([...v1Buckets.keys(), ...v2Buckets.keys()]);
     return [...allTimes].sort((left, right) => left - right).map((bucketTime) => {
+      const utcOffsetMinutes = Math.round(this.resolveTimezoneOffsetMs(resolvedTimezone, bucketTime) / 60000);
+      const bucketDurationMs = boundaries
+        ? Math.min(end, boundaries[boundaries.indexOf(bucketTime) + 1]) - bucketTime
+        : bucketMs;
       const v2 = v2Buckets.get(bucketTime);
       if (v2) {
+        const cutoverDay = Boolean(boundaries && hasCutover && v1Buckets.has(bucketTime) &&
+          bucketTime < cutoverMs && cutoverMs < boundaries[boundaries.indexOf(bucketTime) + 1]);
+        const coverage = Math.min(1, Number((v2.effectiveCoverageMsSum / bucketDurationMs).toFixed(3)));
         return {
-          ...v2.point,
-          temp: v2.point.temp / v2.count,
-          humi: v2.point.humi / v2.count,
-          rain_rate: v2.point.rain_rate / v2.count,
+          device_id: v2.deviceId,
+          temp: v2.dhtWeightSum > 0 ? v2.weightedTemp / v2.dhtWeightSum : v2.fallbackTempSum / v2.count,
+          temp_min: v2.tempMin,
+          temp_max: v2.tempMax,
+          humi: v2.dhtWeightSum > 0 ? v2.weightedHumi / v2.dhtWeightSum : v2.fallbackHumiSum / v2.count,
+          rain_rate: v2.rainWeightSum > 0 ? v2.weightedRainRate / v2.rainWeightSum : v2.fallbackRainRateSum / v2.count,
           rainfall_mm: Number(v2.rainfallMmSum.toFixed(3)),
-          wind_speed: v2.point.wind_speed / v2.count,
+          wind_speed: v2.windWeightSum > 0 ? v2.weightedWindSpeed / v2.windWeightSum : v2.fallbackWindSum / v2.count,
+          sample_count: v2.count,
+          coverage,
+          revision: v2.latestRowMs,
+          is_partial: cutoverDay || (boundaries ? end < boundaries[boundaries.indexOf(bucketTime) + 1] : end < bucketTime + bucketMs) || coverage < 1,
+          utc_offset_minutes: utcOffsetMinutes,
+          source: cutoverDay ? 'v2_cutover' : 'v2',
+          rain_quality: 'observed',
+          recorded_at: new Date(bucketTime).toISOString(),
         };
       }
-      const { point, count } = v1Buckets.get(bucketTime)!;
-      const avgRainRate = point.rain_rate / count;
+      const v1 = v1Buckets.get(bucketTime)!;
+      const avgRainRate =
+        v1.rainWeightSum > 0 ? v1.weightedRainRate / v1.rainWeightSum : v1.fallbackRainRateSum / v1.count;
+      const coverage = Math.min(1, Number((v1.effectiveCoverageMsSum / bucketDurationMs).toFixed(3)));
       return {
-        ...point,
-        temp: point.temp / count,
-        humi: point.humi / count,
+        device_id: v1.deviceId,
+        temp: v1.dhtWeightSum > 0 ? v1.weightedTemp / v1.dhtWeightSum : v1.fallbackTempSum / v1.count,
+        temp_min: v1.tempMin,
+        temp_max: v1.tempMax,
+        humi: v1.dhtWeightSum > 0 ? v1.weightedHumi / v1.dhtWeightSum : v1.fallbackHumiSum / v1.count,
         rain_rate: avgRainRate,
-        rainfall_mm: Number(((avgRainRate * settings.bucket) / 3600).toFixed(3)),
-        wind_speed: point.wind_speed / count,
+        rainfall_mm: Number(((avgRainRate * bucketDurationMs) / 3600000).toFixed(3)),
+        wind_speed: v1.windWeightSum > 0 ? v1.weightedWindSpeed / v1.windWeightSum : v1.fallbackWindSum / v1.count,
+        sample_count: v1.count,
+        coverage,
+        revision: v1.latestRowMs,
+        is_partial: (boundaries ? end < boundaries[boundaries.indexOf(bucketTime) + 1] : end < bucketTime + bucketMs) || coverage < 1,
+        utc_offset_minutes: utcOffsetMinutes,
+        source: 'v1_legacy',
+        rain_quality: 'estimated',
+        recorded_at: new Date(bucketTime).toISOString(),
       };
     });
   }

@@ -1,5 +1,6 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_dimensions.dart';
 import '../../../core/utils/date_time_formatter.dart';
@@ -21,7 +22,8 @@ abstract class InteractiveTouchTooltipHelper {
       enabled: true,
       handleBuiltInTouches: true,
       touchTooltipData: LineTouchTooltipData(
-        getTooltipColor: (_) => isDark ? AppColors.surfaceVariantDark : Colors.white,
+        getTooltipColor: (_) =>
+            isDark ? AppColors.surfaceVariantDark : Colors.white,
         tooltipRoundedRadius: AppDimensions.radiusSm,
         tooltipPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         tooltipBorder: BorderSide(
@@ -32,19 +34,25 @@ abstract class InteractiveTouchTooltipHelper {
           return touchedSpots.map((spot) {
             final minutes = spot.x.toInt();
             final timeStr = DateTimeFormatter.minutesToTime(minutes);
-            final valueStr = spot.y.toStringAsFixed(metricType == WeatherMetricType.humidity ? 0 : 1);
+            final valueStr = spot.y.toStringAsFixed(
+              metricType == WeatherMetricType.humidity ? 0 : 1,
+            );
 
             return LineTooltipItem(
               '$timeStr\n',
               theme.textTheme.labelSmall!.copyWith(
-                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondaryLight,
                 fontWeight: FontWeight.w500,
               ),
               children: [
                 TextSpan(
                   text: '$valueStr ${metricType.unit}',
                   style: theme.textTheme.labelLarge!.copyWith(
-                    color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                    color: isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimaryLight,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -53,28 +61,33 @@ abstract class InteractiveTouchTooltipHelper {
           }).toList();
         },
       ),
-      getTouchedSpotIndicator: (LineChartBarData barData, List<int> spotIndexes) {
-        return spotIndexes.map((spotIndex) {
-          return TouchedSpotIndicatorData(
-            FlLine(
-              color: isDark ? AppColors.primaryDark : AppColors.primaryLight,
-              strokeWidth: 1.5,
-              dashArray: [4, 4],
-            ),
-            FlDotData(
-              show: true,
-              getDotPainter: (spot, percent, barData, index) {
-                return FlDotCirclePainter(
-                  radius: 5,
-                  color: isDark ? AppColors.primaryDark : AppColors.primaryLight,
-                  strokeWidth: 2,
-                  strokeColor: Colors.white,
-                );
-              },
-            ),
-          );
-        }).toList();
-      },
+      getTouchedSpotIndicator:
+          (LineChartBarData barData, List<int> spotIndexes) {
+            return spotIndexes.map((spotIndex) {
+              return TouchedSpotIndicatorData(
+                FlLine(
+                  color: isDark
+                      ? AppColors.primaryDark
+                      : AppColors.primaryLight,
+                  strokeWidth: 1.5,
+                  dashArray: [4, 4],
+                ),
+                FlDotData(
+                  show: true,
+                  getDotPainter: (spot, percent, barData, index) {
+                    return FlDotCirclePainter(
+                      radius: 5,
+                      color: isDark
+                          ? AppColors.primaryDark
+                          : AppColors.primaryLight,
+                      strokeWidth: 2,
+                      strokeColor: Colors.white,
+                    );
+                  },
+                ),
+              );
+            }).toList();
+          },
     );
   }
 
@@ -91,7 +104,8 @@ abstract class InteractiveTouchTooltipHelper {
     return BarTouchData(
       enabled: true,
       touchTooltipData: BarTouchTooltipData(
-        getTooltipColor: (_) => isDark ? AppColors.surfaceVariantDark : Colors.white,
+        getTooltipColor: (_) =>
+            isDark ? AppColors.surfaceVariantDark : Colors.white,
         tooltipRoundedRadius: AppDimensions.radiusSm,
         tooltipPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         tooltipBorder: BorderSide(
@@ -103,7 +117,10 @@ abstract class InteractiveTouchTooltipHelper {
               ? dayLabels[groupIndex]
               : '';
 
-          final hasData = (summaries != null && groupIndex >= 0 && groupIndex < summaries.length)
+          final hasData =
+              (summaries != null &&
+                  groupIndex >= 0 &&
+                  groupIndex < summaries.length)
               ? summaries[groupIndex].hasData
               : true;
 
@@ -111,14 +128,18 @@ abstract class InteractiveTouchTooltipHelper {
             return BarTooltipItem(
               '$dayLabel\n',
               theme.textTheme.labelSmall!.copyWith(
-                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondaryLight,
                 fontWeight: FontWeight.w500,
               ),
               children: [
                 TextSpan(
                   text: 'None',
                   style: theme.textTheme.labelLarge!.copyWith(
-                    color: isDark ? AppColors.textMutedDark : AppColors.textMutedLight,
+                    color: isDark
+                        ? AppColors.textMutedDark
+                        : AppColors.textMutedLight,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -126,22 +147,38 @@ abstract class InteractiveTouchTooltipHelper {
             );
           }
 
-          final valueStr = rod.toY.toStringAsFixed(metricType == WeatherMetricType.humidity ? 0 : 1);
+          final valueStr = rod.toY.toStringAsFixed(
+            metricType == WeatherMetricType.humidity ? 0 : 1,
+          );
 
           return BarTooltipItem(
             '$dayLabel\n',
             theme.textTheme.labelSmall!.copyWith(
-              color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+              color: isDark
+                  ? AppColors.textSecondaryDark
+                  : AppColors.textSecondaryLight,
               fontWeight: FontWeight.w500,
             ),
             children: [
               TextSpan(
                 text: '$valueStr ${metricType.unit}',
                 style: theme.textTheme.labelLarge!.copyWith(
-                  color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                  color: isDark
+                      ? AppColors.textPrimaryDark
+                      : AppColors.textPrimaryLight,
                   fontWeight: FontWeight.w700,
                 ),
               ),
+              if (summaries != null &&
+                  groupIndex >= 0 &&
+                  groupIndex < summaries.length &&
+                  summaries[groupIndex].isPartial)
+                TextSpan(
+                  text: summaries[groupIndex].isCutoverDay
+                      ? '\nNgày chuyển đổi · dữ liệu một phần'
+                      : '\nDữ liệu một phần',
+                  style: theme.textTheme.labelSmall,
+                ),
             ],
           );
         },

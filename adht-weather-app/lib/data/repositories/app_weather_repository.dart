@@ -1,4 +1,5 @@
 import 'dart:developer' as dev;
+
 import '../../core/constants/api_constants.dart';
 import '../../core/utils/date_time_formatter.dart';
 import '../database/weather_monitoring_dao.dart';
@@ -47,7 +48,8 @@ class AppWeatherRepository implements WeatherRepository {
 
         final current = WeatherCurrentModel(
           stationId: record.deviceId,
-          stationName: ApiConstants.deviceStationMap[record.deviceId] ??
+          stationName:
+              ApiConstants.deviceStationMap[record.deviceId] ??
               ApiConstants.defaultStationName,
           timestamp: record.recordedAt,
           temperature: record.temperature,
@@ -67,10 +69,13 @@ class AppWeatherRepository implements WeatherRepository {
     }
 
     // Fallback: Đọc bản ghi mới nhất từ file cache theo đúng currentDeviceId khi mất mạng
-    final cachedLatest = await fileStorage.readLatest(deviceId: currentDeviceId);
+    final cachedLatest = await fileStorage.readLatest(
+      deviceId: currentDeviceId,
+    );
     if (cachedLatest != null && cachedLatest.stationId == currentDeviceId) {
       return cachedLatest.copyWith(
-        stationName: ApiConstants.deviceStationMap[cachedLatest.stationId] ??
+        stationName:
+            ApiConstants.deviceStationMap[cachedLatest.stationId] ??
             cachedLatest.stationName,
         isOnline: false,
       );
@@ -79,7 +84,8 @@ class AppWeatherRepository implements WeatherRepository {
     // Trường hợp chưa từng có dữ liệu
     return WeatherCurrentModel(
       stationId: currentDeviceId,
-      stationName: ApiConstants.deviceStationMap[currentDeviceId] ??
+      stationName:
+          ApiConstants.deviceStationMap[currentDeviceId] ??
           ApiConstants.defaultStationName,
       timestamp: DateTime.now(),
       temperature: 0.0,
@@ -90,51 +96,76 @@ class AppWeatherRepository implements WeatherRepository {
     );
   }
 
+  static String? computeOverlapSince(String? cursorIso, Duration overlap) {
+    if (cursorIso == null || cursorIso.isEmpty) return null;
+    final parsed = DateTime.tryParse(cursorIso);
+    if (parsed == null) return cursorIso;
+    return parsed.toUtc().subtract(overlap).toIso8601String();
+  }
+
+  String? _latestRecordCursorIso(List<WeatherMonitoringRecord> records) {
+    if (records.isEmpty) return null;
+    DateTime latest = records.first.recordedAt.toUtc();
+    for (final record in records.skip(1)) {
+      final candidate = record.recordedAt.toUtc();
+      if (candidate.isAfter(latest)) {
+        latest = candidate;
+      }
+    }
+    // Keep cursor at exact bucket boundary so open/updated current bucket is re-fetched and upserted idempotently.
+    return latest.toIso8601String();
+  }
+
   @override
   Future<List<WeatherPoint>> getIntraDayData() async {
-    // Mốc thời gian hiện tại theo giờ thiết bị (Local Time)
     final now = DateTime.now();
+    final localMidnight = DateTime(now.year, now.month, now.day);
+    final fromUtc = localMidnight.toUtc().toIso8601String();
 
     try {
+      final cursorKey = WeatherMonitoringDao.buildCursorSeriesKey(
+        range: '24h',
+        resolution: '600s',
+      );
+      final cursorIso = await dao.getSyncCursor(
+        deviceId: currentDeviceId,
+        series: cursorKey,
+      );
+      final since = computeOverlapSince(cursorIso, const Duration(hours: 1));
       final response = await apiService.fetchHistory(
         deviceId: currentDeviceId,
         range: '24h',
+        fromUtc: fromUtc,
+        toUtc: now.toUtc().toIso8601String(),
+        since: since,
       );
 
       final rawList = response.data['data'] as List<dynamic>? ?? [];
       final records = rawList
-          .map((item) => WeatherMonitoringRecord.fromJson(
-                item as Map<String, dynamic>,
-                defaultDeviceId: currentDeviceId,
-              ))
+          .map(
+            (item) => WeatherMonitoringRecord.fromJson(
+              item as Map<String, dynamic>,
+              defaultDeviceId: currentDeviceId,
+            ),
+          )
           .toList();
 
-      if (records.isNotEmpty) {
-        // Lưu vào bảng weather_inday và dọn dẹp các bản ghi quá 24h
-        await dao.saveIndayHistoryAndCleanup(records);
-
-        // Chỉ lọc các điểm từ 00:00 sáng hôm nay đến hiện tại cho biểu đồ trong ngày
-        final todayRecords = records.where((r) {
-          final d = r.recordedAt;
-          return d.year == now.year &&
-                 d.month == now.month &&
-                 d.day == now.day;
-        }).toList();
-        todayRecords.sort((a, b) => a.recordedAt.compareTo(b.recordedAt));
-
-        return todayRecords.map((r) => r.toWeatherPoint()).toList();
-      }
+      // Lưu vào bảng weather_inday, cập nhật sync_cursors và dọn dẹp bản ghi quá 24h atomically
+      await dao.saveIndayHistoryAndCleanup(
+        records,
+        deviceId: currentDeviceId,
+        syncCursorIso: _latestRecordCursorIso(records),
+        cursorSeriesKey: cursorKey,
+      );
     } catch (e) {
       dev.log('Lỗi fetchHistory 24h, đọc từ bảng weather_inday: $e');
     }
 
-    // Đọc từ SQLite bảng weather_inday các điểm đo từ 00:00 sáng hôm nay
+    // Đọc từ SQLite bảng weather_inday các điểm đo từ 00:00 sáng hôm nay theo giờ thiết bị
     final all = await dao.getIndayRecords(deviceId: currentDeviceId);
     final todayRecords = all.where((r) {
-      final d = r.recordedAt;
-      return d.year == now.year &&
-             d.month == now.month &&
-             d.day == now.day;
+      final d = r.recordedAt.toLocal();
+      return d.year == now.year && d.month == now.month && d.day == now.day;
     }).toList();
     todayRecords.sort((a, b) => a.recordedAt.compareTo(b.recordedAt));
 
@@ -143,31 +174,57 @@ class AppWeatherRepository implements WeatherRepository {
 
   @override
   Future<List<WeatherDailySummary>> get7DaysSummary() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final dayStarts = List<DateTime>.generate(
+      8,
+      (i) => DateTime(today.year, today.month, today.day - 6 + i).toUtc(),
+    );
     try {
       final response = await apiService.fetchHistory(
         deviceId: currentDeviceId,
         range: '7d',
+        fromUtc: dayStarts.first.toIso8601String(),
+        toUtc: now.toUtc().toIso8601String(),
+        dayStartsUtc: dayStarts,
       );
-
       final rawList = response.data['data'] as List<dynamic>? ?? [];
       final records = rawList
-          .map((item) => WeatherMonitoringRecord.fromJson(
-                item as Map<String, dynamic>,
-                defaultDeviceId: currentDeviceId,
-              ))
+          .map(
+            (item) => WeatherMonitoringRecord.fromJson(
+              item as Map<String, dynamic>,
+              defaultDeviceId: currentDeviceId,
+            ),
+          )
           .toList();
-
-      // Lưu vào bảng weather_week & tự động dọn dẹp các bản ghi quá 7 ngày
-      await dao.saveWeekHistoryAndCleanup(records);
+      await dao.saveWeekHistoryAndCleanup(
+        records,
+        deviceId: currentDeviceId,
+        replaceForDevice: true,
+        syncCursorIso: dayStarts.first.toIso8601String(),
+        cursorSeriesKey: 'local-daily-v5',
+      );
     } catch (e) {
-      dev.log('Lỗi fetchHistory 7d từ mạng, sử dụng dữ liệu bảng weather_week: $e');
+      dev.log('Lỗi fetchHistory 7d, đọc từ SQLite: $e');
     }
 
-    // Đọc toàn bộ các bản ghi trong 7 ngày gần nhất từ bảng weather_week
-    final localRecords = await dao.getWeekHistory7Days(deviceId: currentDeviceId);
-
-    // Xây dựng danh sách chuẩn xác đủ 7 ngày liên tiếp từ (now - 6 ngày) đến hôm nay
-    return buildContinuous7DaysSummary(localRecords);
+    final localRecords = await dao.getWeekHistory7Days(
+      deviceId: currentDeviceId,
+    );
+    // Full-day cache is valid only for the device's current day boundaries.
+    final expectedStarts = dayStarts
+        .map((d) => d.millisecondsSinceEpoch)
+        .toSet();
+    final dailyCacheStart = await dao.getSyncCursor(
+      deviceId: currentDeviceId,
+      series: 'local-daily-v5',
+    );
+    final usable = dailyCacheStart == null
+        ? localRecords // Legacy hourly cache can still be grouped locally offline.
+        : localRecords
+              .where((r) => expectedStarts.contains(r.timestamp))
+              .toList();
+    return buildContinuous7DaysSummary(usable);
   }
 
   /// Gom nhóm số đo và tạo đủ 7 ngày liên tiếp tính đến ngày hiện tại
@@ -179,10 +236,10 @@ class AppWeatherRepository implements WeatherRepository {
     final now = referenceDate ?? DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
-    // 1. Gom nhóm các bản ghi theo ngày dạng 'YYYY-MM-DD'
+    // 1. Gom nhóm các bản ghi theo ngày dạng 'YYYY-MM-DD' theo múi giờ thiết bị
     final Map<String, List<WeatherMonitoringRecord>> groupedByDay = {};
     for (final r in records) {
-      final local = r.recordedAt;
+      final local = r.recordedAt.toLocal();
       final key =
           '${local.year.toString().padLeft(4, '0')}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
       groupedByDay.putIfAbsent(key, () => []).add(r);
@@ -199,15 +256,27 @@ class AppWeatherRepository implements WeatherRepository {
       final dayRecords = groupedByDay[dateKey];
 
       if (dayRecords != null && dayRecords.isNotEmpty) {
-        double sumTemp = 0, minTemp = double.infinity, maxTemp = -double.infinity;
+        double sumTemp = 0,
+            minTemp = double.infinity,
+            maxTemp = -double.infinity;
         double sumHumi = 0, sumRain = 0, sumWind = 0;
+        bool hasAnyRainfallMm = false;
+        bool allObserved = true;
 
         for (final r in dayRecords) {
           sumTemp += r.temperature;
-          if (r.temperature < minTemp) minTemp = r.temperature;
-          if (r.temperature > maxTemp) maxTemp = r.temperature;
+          final lowTemp = r.tempMin ?? r.temperature;
+          final highTemp = r.tempMax ?? r.temperature;
+          if (lowTemp < minTemp) minTemp = lowTemp;
+          if (highTemp > maxTemp) maxTemp = highTemp;
           sumHumi += r.humidity;
-          sumRain += r.rainfallMm ?? r.rainfall;
+          if (r.rainfallMm != null) {
+            sumRain += r.rainfallMm!;
+            hasAnyRainfallMm = true;
+            if (r.rainQuality != 'observed') {
+              allObserved = false;
+            }
+          }
           sumWind += r.windSpeed;
         }
 
@@ -217,23 +286,30 @@ class AppWeatherRepository implements WeatherRepository {
             date: targetDate,
             dayOfWeek: shortLabel,
             avgTemperature: double.parse((sumTemp / count).toStringAsFixed(1)),
-            minTemperature:
-                double.parse((minTemp.isFinite ? minTemp : 0.0).toStringAsFixed(1)),
-            maxTemperature:
-                double.parse((maxTemp.isFinite ? maxTemp : 0.0).toStringAsFixed(1)),
+            minTemperature: double.parse(
+              (minTemp.isFinite ? minTemp : 0.0).toStringAsFixed(1),
+            ),
+            maxTemperature: double.parse(
+              (maxTemp.isFinite ? maxTemp : 0.0).toStringAsFixed(1),
+            ),
             avgHumidity: double.parse((sumHumi / count).toStringAsFixed(1)),
-            totalRainfall: double.parse(sumRain.toStringAsFixed(1)),
+            totalRainfall: hasAnyRainfallMm
+                ? double.parse(sumRain.toStringAsFixed(1))
+                : 0.0,
+            hasRainfallAmount: hasAnyRainfallMm,
+            rainQuality: !hasAnyRainfallMm
+                ? 'unknown'
+                : (allObserved ? 'observed' : 'estimated'),
             avgWindSpeed: double.parse((sumWind / count).toStringAsFixed(1)),
+            isCutoverDay: dayRecords.any((r) => r.source == 'v2_cutover'),
+            isPartial: dayRecords.any((r) => r.isPartial == true),
             hasData: true,
           ),
         );
       } else {
         // Ngày không có dữ liệu đo -> None
         result.add(
-          WeatherDailySummary.empty(
-            date: targetDate,
-            dayLabel: shortLabel,
-          ),
+          WeatherDailySummary.empty(date: targetDate, dayLabel: shortLabel),
         );
       }
     }

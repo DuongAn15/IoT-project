@@ -13,7 +13,7 @@
 
 ### P03b — Catalogue và model station/device
 - Backend station/device/deployment registry, quyền, alias legacy và pagination.
-- App tải/cache catalogue được phép; tên/location/timezone lấy từ metadata, có fallback offline.
+- App tải/cache catalogue được phép; tên và nhãn vị trí lấy từ metadata, có fallback offline. Theo quyết định P05, giờ hiển thị lấy từ điện thoại; catalogue không sở hữu múi giờ trạm.
 - MAC là thuộc tính, không phải identity/credential.
 
 ## Ngoài phạm vi

@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+
 import '../../core/constants/api_constants.dart';
 import 'api_exceptions.dart';
 import 'api_response.dart';
@@ -31,18 +32,32 @@ class WeatherApiService {
     }
   }
 
-  /// Gọi GET /weather/history?device_id=...&range=...
+  /// Gọi GET /weather/history với khoảng đo UTC do thiết bị xác định
   Future<ApiResponse<Map<String, dynamic>>> fetchHistory({
     required String deviceId,
     required String range,
+    String? since,
+    String? fromUtc,
+    String? toUtc,
+    List<DateTime>? dayStartsUtc,
   }) async {
     try {
+      final params = <String, dynamic>{
+        'device_id': deviceId,
+        'range': range,
+        'timezone': 'UTC',
+      };
+      if (fromUtc != null) params['from'] = fromUtc;
+      if (toUtc != null) params['to'] = toUtc;
+      if (dayStartsUtc != null) {
+        params['day_starts'] = dayStartsUtc
+            .map((d) => d.toUtc().toIso8601String())
+            .join(',');
+      }
+      if (since != null && since.isNotEmpty) params['since'] = since;
       final response = await _dio.get(
         ApiConstants.endpointWeatherHistory,
-        queryParameters: {
-          'device_id': deviceId,
-          'range': range,
-        },
+        queryParameters: params,
       );
 
       return ApiResponse.fromJson(

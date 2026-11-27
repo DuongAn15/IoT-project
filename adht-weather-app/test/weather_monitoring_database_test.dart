@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:weather_monitoring/core/constants/api_constants.dart';
@@ -45,32 +46,34 @@ void main() {
       expect(fromMapRecord.recordedAt.minute, record.recordedAt.minute);
     });
 
-    test('Multiple toMap and fromMap roundtrips should not drift or add hours', () {
-      final initial = WeatherMonitoringRecord.fromJson({
-        'device_id': 'adht_weather_01',
-        'temp': 24.5,
-        'humi': 55.0,
-        'rain_rate': 0.0,
-        'wind_speed': 1.2,
-        'recorded_at': '2026-11-11T10:00:00.000Z', // 17:00 GMT+7
-      });
+    test(
+      'Multiple toMap and fromMap roundtrips should not drift or add hours',
+      () {
+        final expected = DateTime.utc(2026, 11, 11, 10, 0).toLocal();
+        final initial = WeatherMonitoringRecord.fromJson({
+          'device_id': 'adht_weather_01',
+          'temp': 24.5,
+          'humi': 55.0,
+          'rain_rate': 0.0,
+          'wind_speed': 1.2,
+          'recorded_at': '2026-11-11T10:00:00.000Z',
+        });
 
-      expect(initial.recordedAt.hour, equals(17));
+        expect(initial.recordedAt, equals(expected));
 
-      // Roundtrip 1
-      final map1 = initial.toMap();
-      final round1 = WeatherMonitoringRecord.fromMap(map1);
-      expect(round1.recordedAt.hour, equals(17));
-      expect(round1.recordedAt.day, equals(11));
+        // Roundtrip 1
+        final map1 = initial.toMap();
+        final round1 = WeatherMonitoringRecord.fromMap(map1);
+        expect(round1.recordedAt, equals(expected));
 
-      // Roundtrip 2
-      final map2 = round1.toMap();
-      final round2 = WeatherMonitoringRecord.fromMap(map2);
-      expect(round2.recordedAt.hour, equals(17));
-      expect(round2.recordedAt.day, equals(11));
-    });
+        // Roundtrip 2
+        final map2 = round1.toMap();
+        final round2 = WeatherMonitoringRecord.fromMap(map2);
+        expect(round2.recordedAt, equals(expected));
+      },
+    );
 
-    test('fromJson should parse backend API item correctly and convert UTC to GMT+7', () {
+    test('fromJson should parse backend API item correctly and convert UTC to device local time', () {
       final json = {
         'device_id': 'adht_weather_01',
         'temp': 26.3,
@@ -80,19 +83,17 @@ void main() {
         'recorded_at': '2026-11-10T12:00:00.000Z',
       };
 
+      final expected = DateTime.utc(2026, 11, 10, 12, 0).toLocal();
       final record = WeatherMonitoringRecord.fromJson(json);
       expect(record.deviceId, 'adht_weather_01');
       expect(record.temperature, 26.3);
       expect(record.humidity, 80.5);
       expect(record.rainfall, 2.5);
       expect(record.windSpeed, 5.4);
-      // 12:00 UTC + 7 tiếng = 19:00 GMT+7 (giờ Việt Nam)
-      expect(record.recordedAt.hour, equals(19));
-      expect(record.recordedAt.minute, equals(0));
+      expect(record.recordedAt, equals(expected));
     });
 
-    test('parseUtcToLocal handles day rollover correctly (e.g. 19:00 UTC to next day local time)', () {
-      // 19:00 UTC ngày 10/11 -> cộng 7 tiếng = 02:00 ngày 11/11 GMT+7
+    test('parseUtcToLocal converts UTC instant to device local time consistently', () {
       final json = {
         'device_id': 'adht_weather_01',
         'temp': 24.0,
@@ -102,10 +103,13 @@ void main() {
         'recorded_at': '2026-11-10T19:00:00.000Z',
       };
 
+      final expected = DateTime.utc(2026, 11, 10, 19, 0).toLocal();
       final record = WeatherMonitoringRecord.fromJson(json);
-      expect(record.recordedAt.day, equals(11));
-      expect(record.recordedAt.hour, equals(2));
-      expect(record.toWeatherPoint().minutesFromMidnight, equals(2 * 60));
+      expect(record.recordedAt, equals(expected));
+      expect(
+        record.toWeatherPoint().minutesFromMidnight,
+        equals(expected.hour * 60 + expected.minute),
+      );
     });
 
     test('toWeatherPoint converts record for chart consumption', () {
@@ -231,37 +235,40 @@ void main() {
       expect(count, equals(5));
     });
 
-    test('UNIQUE constraint on (device_id, recorded_at) replaces existing record', () async {
-      final time = DateTime(2026, 11, 11, 10, 0, 0);
-      final record1 = WeatherMonitoringRecord(
-        deviceId: 'adht_weather_01',
-        temperature: 25.0,
-        humidity: 60.0,
-        rainfall: 0.0,
-        windSpeed: 10.0,
-        recordedAt: time,
-      );
+    test(
+      'UNIQUE constraint on (device_id, recorded_at) replaces existing record',
+      () async {
+        final time = DateTime(2026, 11, 11, 10, 0, 0);
+        final record1 = WeatherMonitoringRecord(
+          deviceId: 'adht_weather_01',
+          temperature: 25.0,
+          humidity: 60.0,
+          rainfall: 0.0,
+          windSpeed: 10.0,
+          recordedAt: time,
+        );
 
-      await dao.insertRecord(record1);
+        await dao.insertRecord(record1);
 
-      // Cập nhật với cùng deviceId và recordedAt nhưng giá trị nhiệt độ mới
-      final record2 = WeatherMonitoringRecord(
-        deviceId: 'adht_weather_01',
-        temperature: 30.5,
-        humidity: 65.0,
-        rainfall: 5.0,
-        windSpeed: 12.0,
-        recordedAt: time,
-      );
+        // Cập nhật với cùng deviceId và recordedAt nhưng giá trị nhiệt độ mới
+        final record2 = WeatherMonitoringRecord(
+          deviceId: 'adht_weather_01',
+          temperature: 30.5,
+          humidity: 65.0,
+          rainfall: 5.0,
+          windSpeed: 12.0,
+          recordedAt: time,
+        );
 
-      await dao.insertRecord(record2);
+        await dao.insertRecord(record2);
 
-      final count = await dao.count(deviceId: 'adht_weather_01');
-      expect(count, equals(1)); // Không bị nhân đôi
+        final count = await dao.count(deviceId: 'adht_weather_01');
+        expect(count, equals(1)); // Không bị nhân đôi
 
-      final latest = await dao.getLatestRecord(deviceId: 'adht_weather_01');
-      expect(latest!.temperature, equals(30.5));
-    });
+        final latest = await dao.getLatestRecord(deviceId: 'adht_weather_01');
+        expect(latest!.temperature, equals(30.5));
+      },
+    );
 
     test('autoDeleteOlderThan7Days deletes records older than 7 days and retains recent ones', () async {
       final now = DateTime.now();
@@ -301,7 +308,9 @@ void main() {
         humidity: 80.0,
         rainfall: 5.0,
         windSpeed: 8.0,
-        recordedAt: now.subtract(const Duration(days: 8)), // 8 ngày trước (quá 7 ngày)
+        recordedAt: now.subtract(
+          const Duration(days: 8),
+        ), // 8 ngày trước (quá 7 ngày)
       );
 
       final oldRecord2 = WeatherMonitoringRecord(
@@ -332,7 +341,9 @@ void main() {
       expect(await dao.count(), equals(3));
 
       // Lấy danh sách 7 ngày
-      final history7Days = await dao.getHistory7Days(deviceId: 'adht_weather_01');
+      final history7Days = await dao.getHistory7Days(
+        deviceId: 'adht_weather_01',
+      );
       expect(history7Days.length, equals(3));
       // Các bản ghi còn lại đều phải có mốc thời gian trong vòng 7 ngày
       for (final r in history7Days) {
@@ -406,7 +417,9 @@ void main() {
         humidity: 70.0,
         rainfall: 0.0,
         windSpeed: 1.0,
-        recordedAt: now.subtract(const Duration(hours: 28)), // 28h trước (> 24h)
+        recordedAt: now.subtract(
+          const Duration(hours: 28),
+        ), // 28h trước (> 24h)
       );
 
       await dao.insertIndayBatch([indayRecent, indayOld]);
@@ -477,14 +490,70 @@ void main() {
     test('buildContinuous7DaysSummary returns exactly 7 items with dd/MM format and None for missing days', () {
       // Dữ liệu thực tế 8 bản ghi từ server
       final rawData = [
-        {"device_id":"adht_weather_01","temp":31.18076923076923,"humi":65.36923076923077,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-05T10:46:05.976Z"},
-        {"device_id":"adht_weather_01","temp":30.933898305084785,"humi":68.13898305084746,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-05T12:46:05.976Z"},
-        {"device_id":"adht_weather_01","temp":31.887927565392182,"humi":68.93058350100632,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-05T13:46:05.976Z"},
-        {"device_id":"adht_weather_01","temp":32.09576271186446,"humi":68.80127118644059,"rain_rate":0,"wind_speed":0.0007062146892655367,"recorded_at":"2026-11-05T14:46:05.976Z"},
-        {"device_id":"adht_weather_01","temp":32.40000000000005,"humi":69,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-05T15:46:05.976Z"},
-        {"device_id":"adht_weather_01","temp":23.83125000000005,"humi":60.847058823529494,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-10T14:46:05.976Z"},
-        {"device_id":"adht_weather_01","temp":23.83612903225807,"humi":61.59612903225808,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-10T15:46:05.976Z"},
-        {"device_id":"adht_weather_01","temp":23.22727272727274,"humi":51.07474747474743,"rain_rate":0,"wind_speed":0.00202020202020202,"recorded_at":"2026-11-11T05:46:05.976Z"}
+        {
+          "device_id": "adht_weather_01",
+          "temp": 31.18076923076923,
+          "humi": 65.36923076923077,
+          "rain_rate": 0,
+          "wind_speed": 0,
+          "recorded_at": "2026-11-05T10:46:05.976Z",
+        },
+        {
+          "device_id": "adht_weather_01",
+          "temp": 30.933898305084785,
+          "humi": 68.13898305084746,
+          "rain_rate": 0,
+          "wind_speed": 0,
+          "recorded_at": "2026-11-05T12:46:05.976Z",
+        },
+        {
+          "device_id": "adht_weather_01",
+          "temp": 31.887927565392182,
+          "humi": 68.93058350100632,
+          "rain_rate": 0,
+          "wind_speed": 0,
+          "recorded_at": "2026-11-05T13:46:05.976Z",
+        },
+        {
+          "device_id": "adht_weather_01",
+          "temp": 32.09576271186446,
+          "humi": 68.80127118644059,
+          "rain_rate": 0,
+          "wind_speed": 0.0007062146892655367,
+          "recorded_at": "2026-11-05T14:46:05.976Z",
+        },
+        {
+          "device_id": "adht_weather_01",
+          "temp": 32.40000000000005,
+          "humi": 69,
+          "rain_rate": 0,
+          "wind_speed": 0,
+          "recorded_at": "2026-11-05T15:46:05.976Z",
+        },
+        {
+          "device_id": "adht_weather_01",
+          "temp": 23.83125000000005,
+          "humi": 60.847058823529494,
+          "rain_rate": 0,
+          "wind_speed": 0,
+          "recorded_at": "2026-11-10T14:46:05.976Z",
+        },
+        {
+          "device_id": "adht_weather_01",
+          "temp": 23.83612903225807,
+          "humi": 61.59612903225808,
+          "rain_rate": 0,
+          "wind_speed": 0,
+          "recorded_at": "2026-11-10T15:46:05.976Z",
+        },
+        {
+          "device_id": "adht_weather_01",
+          "temp": 23.22727272727274,
+          "humi": 51.07474747474743,
+          "rain_rate": 0,
+          "wind_speed": 0.00202020202020202,
+          "recorded_at": "2026-11-11T05:46:05.976Z",
+        },
       ];
 
       final records = rawData
@@ -538,7 +607,9 @@ void main() {
         humidity: 70.0,
         rainfall: 0.0,
         windSpeed: 2.0,
-        recordedAt: todayStart.subtract(const Duration(hours: 4)), // 20h hôm qua
+        recordedAt: todayStart.subtract(
+          const Duration(hours: 4),
+        ), // 20h hôm qua
       );
 
       final yesterdayRecord2 = WeatherMonitoringRecord(
@@ -547,7 +618,9 @@ void main() {
         humidity: 72.0,
         rainfall: 0.0,
         windSpeed: 1.5,
-        recordedAt: todayStart.subtract(const Duration(minutes: 30)), // 23h30 hôm qua
+        recordedAt: todayStart.subtract(
+          const Duration(minutes: 30),
+        ), // 23h30 hôm qua
       );
 
       final todayRecord1 = WeatherMonitoringRecord(
@@ -579,8 +652,8 @@ void main() {
       final todayOnly = allRecords.where((r) {
         final d = r.recordedAt;
         return d.year == todayStart.year &&
-               d.month == todayStart.month &&
-               d.day == todayStart.day;
+            d.month == todayStart.month &&
+            d.day == todayStart.day;
       }).toList();
 
       expect(todayOnly.length, equals(2));
@@ -590,41 +663,524 @@ void main() {
 
     test('Real backend 14 records filters only today 9 records and ignores yesterday 5 records', () {
       final rawBackendData = [
-        {"device_id":"adht_weather_01","temp":18.14,"humi":47.12,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-10T15:13:32.048Z"},
-        {"device_id":"adht_weather_01","temp":23.86,"humi":61.29,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-10T15:23:32.048Z"},
-        {"device_id":"adht_weather_01","temp":24.01,"humi":61.01,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-10T15:33:32.048Z"},
-        {"device_id":"adht_weather_01","temp":24.38,"humi":61.71,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-10T15:43:32.048Z"},
-        {"device_id":"adht_weather_01","temp":23.07,"humi":61.40,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-10T16:13:32.048Z"},
-        {"device_id":"adht_weather_01","temp":23.04,"humi":50.96,"rain_rate":0,"wind_speed":0.003,"recorded_at":"2026-11-11T05:43:32.048Z"},
-        {"device_id":"adht_weather_01","temp":23.46,"humi":51.21,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-11T05:53:32.048Z"},
-        {"device_id":"adht_weather_01","temp":21.74,"humi":47.01,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-11T09:53:32.048Z"},
-        {"device_id":"adht_weather_01","temp":24.09,"humi":49.35,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-11T10:03:32.048Z"},
-        {"device_id":"adht_weather_01","temp":24.41,"humi":49.21,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-11T10:13:32.048Z"},
-        {"device_id":"adht_weather_01","temp":24.43,"humi":49.07,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-11T10:23:32.048Z"},
-        {"device_id":"adht_weather_01","temp":24.42,"humi":48.81,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-11T10:33:32.048Z"},
-        {"device_id":"adht_weather_01","temp":24.41,"humi":48.21,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-11T10:43:32.048Z"},
-        {"device_id":"adht_weather_01","temp":24.41,"humi":48.46,"rain_rate":0,"wind_speed":0,"recorded_at":"2026-11-11T10:53:32.048Z"}
+        {
+          "device_id": "adht_weather_01",
+          "temp": 18.14,
+          "humi": 47.12,
+          "rain_rate": 0,
+          "wind_speed": 0,
+          "recorded_at": "2026-11-10T15:13:32.048Z",
+        },
+        {
+          "device_id": "adht_weather_01",
+          "temp": 23.86,
+          "humi": 61.29,
+          "rain_rate": 0,
+          "wind_speed": 0,
+          "recorded_at": "2026-11-10T15:23:32.048Z",
+        },
+        {
+          "device_id": "adht_weather_01",
+          "temp": 24.01,
+          "humi": 61.01,
+          "rain_rate": 0,
+          "wind_speed": 0,
+          "recorded_at": "2026-11-10T15:33:32.048Z",
+        },
+        {
+          "device_id": "adht_weather_01",
+          "temp": 24.38,
+          "humi": 61.71,
+          "rain_rate": 0,
+          "wind_speed": 0,
+          "recorded_at": "2026-11-10T15:43:32.048Z",
+        },
+        {
+          "device_id": "adht_weather_01",
+          "temp": 23.07,
+          "humi": 61.40,
+          "rain_rate": 0,
+          "wind_speed": 0,
+          "recorded_at": "2026-11-10T16:13:32.048Z",
+        },
+        {
+          "device_id": "adht_weather_01",
+          "temp": 23.04,
+          "humi": 50.96,
+          "rain_rate": 0,
+          "wind_speed": 0.003,
+          "recorded_at": "2026-11-11T05:43:32.048Z",
+        },
+        {
+          "device_id": "adht_weather_01",
+          "temp": 23.46,
+          "humi": 51.21,
+          "rain_rate": 0,
+          "wind_speed": 0,
+          "recorded_at": "2026-11-11T05:53:32.048Z",
+        },
+        {
+          "device_id": "adht_weather_01",
+          "temp": 21.74,
+          "humi": 47.01,
+          "rain_rate": 0,
+          "wind_speed": 0,
+          "recorded_at": "2026-11-11T09:53:32.048Z",
+        },
+        {
+          "device_id": "adht_weather_01",
+          "temp": 24.09,
+          "humi": 49.35,
+          "rain_rate": 0,
+          "wind_speed": 0,
+          "recorded_at": "2026-11-11T10:03:32.048Z",
+        },
+        {
+          "device_id": "adht_weather_01",
+          "temp": 24.41,
+          "humi": 49.21,
+          "rain_rate": 0,
+          "wind_speed": 0,
+          "recorded_at": "2026-11-11T10:13:32.048Z",
+        },
+        {
+          "device_id": "adht_weather_01",
+          "temp": 24.43,
+          "humi": 49.07,
+          "rain_rate": 0,
+          "wind_speed": 0,
+          "recorded_at": "2026-11-11T10:23:32.048Z",
+        },
+        {
+          "device_id": "adht_weather_01",
+          "temp": 24.42,
+          "humi": 48.81,
+          "rain_rate": 0,
+          "wind_speed": 0,
+          "recorded_at": "2026-11-11T10:33:32.048Z",
+        },
+        {
+          "device_id": "adht_weather_01",
+          "temp": 24.41,
+          "humi": 48.21,
+          "rain_rate": 0,
+          "wind_speed": 0,
+          "recorded_at": "2026-11-11T10:43:32.048Z",
+        },
+        {
+          "device_id": "adht_weather_01",
+          "temp": 24.41,
+          "humi": 48.46,
+          "rain_rate": 0,
+          "wind_speed": 0,
+          "recorded_at": "2026-11-11T10:53:32.048Z",
+        },
       ];
 
-      final records = rawBackendData.map((e) => WeatherMonitoringRecord.fromJson(e)).toList();
+      final records = rawBackendData
+          .map((e) => WeatherMonitoringRecord.fromJson(e))
+          .toList();
       final today = DateTime(2026, 11, 11);
 
       final todayRecords = records.where((r) {
         final d = r.recordedAt;
-        return d.year == today.year && d.month == today.month && d.day == today.day;
+        return d.year == today.year &&
+            d.month == today.month &&
+            d.day == today.day;
       }).toList();
 
+      final firstExpected = DateTime.parse('2026-11-11T05:43:32.048Z').toLocal();
+      final lastExpected = DateTime.parse('2026-11-11T10:53:32.048Z').toLocal();
       expect(todayRecords.length, equals(9));
-      expect(todayRecords.first.recordedAt.hour, equals(12));
-      expect(todayRecords.first.recordedAt.minute, equals(43));
-      expect(todayRecords.last.recordedAt.hour, equals(17));
-      expect(todayRecords.last.recordedAt.minute, equals(53));
+      expect(todayRecords.first.recordedAt, equals(firstExpected));
+      expect(todayRecords.last.recordedAt, equals(lastExpected));
 
       // Kiểm tra toàn bộ điểm đo trong ngày được chuyển sang WeatherPoint
       final points = todayRecords.map((r) => r.toWeatherPoint()).toList();
       expect(points.length, equals(9));
-      expect(points.first.minutesFromMidnight, equals(12 * 60 + 43));
-      expect(points.last.minutesFromMidnight, equals(17 * 60 + 53));
+      expect(
+        points.first.minutesFromMidnight,
+        equals(firstExpected.hour * 60 + firstExpected.minute),
+      );
+      expect(
+        points.last.minutesFromMidnight,
+        equals(lastExpected.hour * 60 + lastExpected.minute),
+      );
+    });
+  });
+
+  group('SQLite v3 rainfall_mm & sync_cursors', () {
+    test(
+      'persists rainfall_mm and commits sync_cursors atomically with history',
+      () async {
+        final db = AppDatabase.withFactory(databaseFactoryFfi);
+        final dao = WeatherMonitoringDao(db);
+        await dao.clearAll();
+
+        final now = DateTime.now().toUtc();
+        final cursorIso = now.toIso8601String();
+        final rec = WeatherMonitoringRecord(
+          deviceId: 'adht_weather_01',
+          temperature: 26.5,
+          humidity: 80.0,
+          rainfall: 1.2,
+          rainfallMm: 0.6,
+          windSpeed: 3.1,
+          recordedAt: now.toLocal(),
+        );
+
+        await dao.saveIndayHistoryAndCleanup(
+          [rec],
+          deviceId: 'adht_weather_01',
+          syncCursorIso: cursorIso,
+        );
+
+        final inday = await dao.getIndayRecords(deviceId: 'adht_weather_01');
+        expect(inday.length, 1);
+        expect(inday.first.rainfallMm, 0.6);
+        expect(
+          await dao.getSyncCursor(deviceId: 'adht_weather_01', series: '24h'),
+          cursorIso,
+        );
+
+        await dao.saveWeekHistoryAndCleanup(
+          [rec],
+          deviceId: 'adht_weather_01',
+          syncCursorIso: cursorIso,
+        );
+        final week = await dao.getWeekHistory7Days(deviceId: 'adht_weather_01');
+        expect(week.length, 1);
+        expect(week.first.rainfallMm, 0.6);
+        expect(
+          await dao.getSyncCursor(deviceId: 'adht_weather_01', series: '7d'),
+          cursorIso,
+        );
+
+        await (await db.database).close();
+      },
+    );
+
+    test('migrates existing v1 database directly to v3 with provenance columns and sync_cursors', () async {
+      final dbPath = await databaseFactoryFfi.getDatabasesPath();
+      final fullPath = '$dbPath/${ApiConstants.databaseName}';
+      if (await File(fullPath).exists()) {
+        await File(fullPath).delete();
+      }
+
+      // Create a legacy v1 database without rainfall_mm, provenance columns, or sync_cursors
+      final v1Db = await databaseFactoryFfi.openDatabase(
+        fullPath,
+        options: OpenDatabaseOptions(
+          version: 1,
+          onCreate: (db, version) async {
+            await db.execute('''
+              CREATE TABLE ${ApiConstants.tableWeatherInday} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                temperature REAL NOT NULL,
+                humidity REAL NOT NULL,
+                rainfall REAL NOT NULL,
+                wind_speed REAL NOT NULL,
+                recorded_at TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                UNIQUE(device_id, recorded_at) ON CONFLICT REPLACE
+              );
+            ''');
+            await db.execute('''
+              CREATE TABLE ${ApiConstants.tableWeatherWeek} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                temperature REAL NOT NULL,
+                humidity REAL NOT NULL,
+                rainfall REAL NOT NULL,
+                wind_speed REAL NOT NULL,
+                recorded_at TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                UNIQUE(device_id, recorded_at) ON CONFLICT REPLACE
+              );
+            ''');
+          },
+        ),
+      );
+      await v1Db.close();
+
+      // Re-open with AppDatabase (v3) -> triggers v1 -> v3 migration
+      final upgraded = AppDatabase.withFactory(databaseFactoryFfi);
+      final dao = WeatherMonitoringDao(upgraded);
+      final now = DateTime.now().toUtc();
+      final rec = WeatherMonitoringRecord(
+        deviceId: 'adht_weather_01',
+        temperature: 25.0,
+        humidity: 75.0,
+        rainfall: 2.0,
+        rainfallMm: 0.4,
+        windSpeed: 1.5,
+        source: 'v2',
+        rainQuality: 'observed',
+        sampleCount: 12,
+        tempMin: 24.5,
+        tempMax: 25.5,
+        recordedAt: now.toLocal(),
+      );
+
+      await dao.saveWeekHistoryAndCleanup(
+        [rec],
+        deviceId: 'adht_weather_01',
+        syncCursorIso: now.toIso8601String(),
+      );
+
+      final rows = await dao.getWeekHistory7Days(deviceId: 'adht_weather_01');
+      expect(rows.length, 1);
+      expect(rows.first.rainfallMm, 0.4);
+      expect(rows.first.source, 'v2');
+      expect(rows.first.rainQuality, 'observed');
+      expect(rows.first.sampleCount, 12);
+      expect(rows.first.tempMin, 24.5);
+      expect(rows.first.tempMax, 25.5);
+      expect(
+        await dao.getSyncCursor(deviceId: 'adht_weather_01', series: '7d'),
+        now.toIso8601String(),
+      );
+
+      final scopedKey = WeatherMonitoringDao.buildCursorSeriesKey(
+        range: '24h',
+        resolution: '600s',
+      );
+      expect(scopedKey, '24h:600s:utc:v${ApiConstants.databaseVersion}');
+
+      final withCoverage = WeatherMonitoringRecord.fromJson({
+        'device_id': 'adht_weather_01',
+        'temp': 26.0,
+        'humi': 70.0,
+        'rain_rate': 0.0,
+        'rainfall_mm': 0.5,
+        'wind_speed': 1.2,
+        'coverage': 0.75,
+        'revision': 1764216000000,
+        'is_partial': true,
+        'source': 'v2',
+        'rain_quality': 'observed',
+        'recorded_at': now.toIso8601String(),
+      });
+      await dao.saveIndayHistoryAndCleanup(
+        [withCoverage],
+        deviceId: 'adht_weather_01',
+        syncCursorIso: now.toIso8601String(),
+        cursorSeriesKey: scopedKey,
+      );
+      final indayRows = await dao.getIndayRecords(deviceId: 'adht_weather_01');
+      expect(indayRows.last.coverage, 0.75);
+      expect(indayRows.last.revision, 1764216000000);
+      expect(indayRows.last.isPartial, isTrue);
+      expect(
+        await dao.getSyncCursor(deviceId: 'adht_weather_01', series: scopedKey),
+        now.toIso8601String(),
+      );
+
+      await (await upgraded.database).close();
+    });
+
+    test('boundary bucket correction upserts without duplication when re-synced at exact cursor', () async {
+      final db = AppDatabase.withFactory(databaseFactoryFfi);
+      final dao = WeatherMonitoringDao(db);
+      await dao.clearAll();
+
+      final bucketTimeUtc = DateTime.now().toUtc();
+      final bucketCursor = bucketTimeUtc.toIso8601String();
+
+      // First sync of current open bucket
+      await dao.saveIndayHistoryAndCleanup(
+        [
+          WeatherMonitoringRecord(
+            deviceId: 'adht_weather_01',
+            temperature: 26.0,
+            humidity: 70.0,
+            rainfall: 0.0,
+            rainfallMm: 0.2,
+            windSpeed: 1.0,
+            source: 'v2',
+            rainQuality: 'observed',
+            sampleCount: 3,
+            recordedAt: bucketTimeUtc.toLocal(),
+          ),
+        ],
+        deviceId: 'adht_weather_01',
+        syncCursorIso: bucketCursor,
+      );
+
+      // Second sync with updated values for the same boundary bucket
+      await dao.saveIndayHistoryAndCleanup(
+        [
+          WeatherMonitoringRecord(
+            deviceId: 'adht_weather_01',
+            temperature: 27.5,
+            humidity: 72.0,
+            rainfall: 1.2,
+            rainfallMm: 0.8,
+            windSpeed: 1.8,
+            source: 'v2',
+            rainQuality: 'observed',
+            sampleCount: 10,
+            recordedAt: bucketTimeUtc.toLocal(),
+          ),
+        ],
+        deviceId: 'adht_weather_01',
+        syncCursorIso: bucketCursor,
+      );
+
+      final rows = await dao.getIndayRecords(deviceId: 'adht_weather_01');
+      expect(rows.length, 1);
+      expect(rows.first.temperature, 27.5);
+      expect(rows.first.rainfallMm, 0.8);
+      expect(rows.first.sampleCount, 10);
+
+      // UTC cache remains available regardless of the mobile clock zone.
+      final cached = await dao.getIndayRecords(deviceId: 'adht_weather_01');
+      expect(cached.length, 1);
+      expect(cached.first.recordedAt.toUtc(), bucketTimeUtc);
+
+      await (await db.database).close();
+    });
+
+    test(
+      'daily cache replacement commits rows and UTC day marker together',
+      () async {
+        final db = AppDatabase.withFactory(databaseFactoryFfi);
+        final dao = WeatherMonitoringDao(db);
+        await dao.clearAll();
+        final now = DateTime.now();
+        WeatherMonitoringRecord record(double temp, DateTime at) =>
+            WeatherMonitoringRecord(
+              deviceId: 'adht_weather_01',
+              temperature: temp,
+              humidity: 70,
+              rainfall: 0,
+              windSpeed: 1,
+              recordedAt: at,
+            );
+        await dao.saveWeekHistoryAndCleanup([
+          record(20, now.subtract(const Duration(hours: 2))),
+        ], deviceId: 'adht_weather_01');
+        final start = DateTime(now.year, now.month, now.day).toUtc();
+        await dao.saveWeekHistoryAndCleanup(
+          [record(25, start)],
+          deviceId: 'adht_weather_01',
+          replaceForDevice: true,
+          syncCursorIso: start.toIso8601String(),
+          cursorSeriesKey: 'local-daily-v5',
+        );
+        final rows = await dao.getWeekHistory7Days(deviceId: 'adht_weather_01');
+        expect(rows.length, 1);
+        expect(rows.single.temperature, 25);
+        expect(
+          await dao.getSyncCursor(
+            deviceId: 'adht_weather_01',
+            series: 'local-daily-v5',
+          ),
+          start.toIso8601String(),
+        );
+        await db.close();
+      },
+    );
+
+    test('migrates existing v3 database to UTC cache v5 without losing offline rows', () async {
+      final dbPath = await databaseFactoryFfi.getDatabasesPath();
+      final fullPath = '$dbPath/${ApiConstants.databaseName}';
+      if (await File(fullPath).exists()) {
+        await File(fullPath).delete();
+      }
+
+      // Open a v3 DB lacking the v4 timezone column
+      final v3Db = await databaseFactoryFfi.openDatabase(
+        fullPath,
+        options: OpenDatabaseOptions(
+          version: 3,
+          onCreate: (db, version) async {
+            for (final table in [
+              ApiConstants.tableWeatherInday,
+              ApiConstants.tableWeatherWeek,
+            ]) {
+              await db.execute('''
+                CREATE TABLE $table (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  device_id TEXT NOT NULL,
+                  temperature REAL NOT NULL,
+                  humidity REAL NOT NULL,
+                  rainfall REAL NOT NULL,
+                  rainfall_mm REAL,
+                  wind_speed REAL NOT NULL,
+                  source TEXT,
+                  rain_quality TEXT,
+                  sample_count INTEGER,
+                  temp_min REAL,
+                  temp_max REAL,
+                  coverage REAL,
+                  revision INTEGER,
+                  is_partial INTEGER,
+                  recorded_at TEXT NOT NULL,
+                  timestamp INTEGER NOT NULL,
+                  UNIQUE(device_id, recorded_at) ON CONFLICT REPLACE
+                );
+              ''');
+            }
+            await db.execute('''
+              CREATE TABLE ${ApiConstants.tableSyncCursors} (
+                device_id TEXT NOT NULL,
+                series TEXT NOT NULL,
+                last_synced_at TEXT NOT NULL,
+                PRIMARY KEY (device_id, series)
+              );
+            ''');
+
+            // Seed pre-existing v3 cached row (no timezone column yet) to verify offline read after v3->v4 upgrade
+            final seedTime = DateTime.now().toUtc();
+            await db.insert(ApiConstants.tableWeatherInday, {
+              'device_id': 'adht_weather_01',
+              'temperature': 24.0,
+              'humidity': 78.0,
+              'rainfall': 0.0,
+              'rainfall_mm': 0.1,
+              'wind_speed': 1.0,
+              'recorded_at': seedTime.toIso8601String(),
+              'timestamp': seedTime.millisecondsSinceEpoch,
+            });
+          },
+        ),
+      );
+      await v3Db.close();
+
+      // Upgrade to v5 and read offline before any network sync
+      final upgraded = AppDatabase.withFactory(databaseFactoryFfi);
+      final dao = WeatherMonitoringDao(upgraded);
+      final offlineRows = await dao.getIndayRecords(
+        deviceId: 'adht_weather_01',
+      );
+      expect(offlineRows.length, 1);
+      expect(offlineRows.first.temperature, 24.0);
+
+      final now = DateTime.now().toUtc();
+      await dao.saveIndayHistoryAndCleanup(
+        [
+          WeatherMonitoringRecord(
+            deviceId: 'adht_weather_01',
+            temperature: 26.0,
+            humidity: 72.0,
+            rainfall: 0.0,
+            rainfallMm: 0.2,
+            windSpeed: 1.5,
+            recordedAt: now.toLocal(),
+          ),
+        ],
+        deviceId: 'adht_weather_01',
+        syncCursorIso: now.toIso8601String(),
+        cursorSeriesKey: WeatherMonitoringDao.buildCursorSeriesKey(
+          range: '24h',
+          resolution: '600s',
+        ),
+      );
+      final rows = await dao.getIndayRecords(deviceId: 'adht_weather_01');
+      expect(rows.isNotEmpty, isTrue);
+      await (await upgraded.database).close();
     });
   });
 }

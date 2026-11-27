@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../core/constants/api_constants.dart';
 import '../data/models/weather_current_model.dart';
 import '../data/models/weather_daily_summary.dart';
@@ -75,9 +76,10 @@ class WeatherDashboardNotifier extends AsyncNotifier<WeatherDashboardState> {
     final repo = ref.read(weatherRepositoryProvider);
     final requestId = ++_activeRequestId;
 
-    state = const AsyncValue.loading();
+    if (!state.hasValue) {
+      state = const AsyncValue.loading();
+    }
     final next = await AsyncValue.guard(() async {
-      await repo.refreshAllData();
       return _fetchDataForStation(repo, targetDeviceId, requestId);
     });
 
@@ -89,7 +91,9 @@ class WeatherDashboardNotifier extends AsyncNotifier<WeatherDashboardState> {
 
   /// Chuyển đổi sang trạm quan trắc khác theo station ID thật (tương thích fallback tên hiển thị)
   Future<void> changeStation(String stationIdOrName) async {
-    final newDeviceId = ApiConstants.resolveDeviceIdFromStationName(stationIdOrName);
+    final newDeviceId = ApiConstants.resolveDeviceIdFromStationName(
+      stationIdOrName,
+    );
     if (ref.read(selectedDeviceIdProvider) == newDeviceId && state.hasValue) {
       return;
     }
@@ -99,5 +103,5 @@ class WeatherDashboardNotifier extends AsyncNotifier<WeatherDashboardState> {
 
 final weatherDashboardProvider =
     AsyncNotifierProvider<WeatherDashboardNotifier, WeatherDashboardState>(() {
-  return WeatherDashboardNotifier();
-});
+      return WeatherDashboardNotifier();
+    });

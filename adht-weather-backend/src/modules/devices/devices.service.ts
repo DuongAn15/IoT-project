@@ -75,18 +75,44 @@ export class DevicesService {
     return this.supabaseService.createDevice(dto);
   }
 
+  private resolveStationLocation(deviceId: string): string | undefined {
+    const raw = this.configService?.get<string>('STATION_LOCATIONS') ?? process.env.STATION_LOCATIONS;
+    if (raw) {
+      try {
+        const map = JSON.parse(raw) as Record<string, unknown>;
+        const value = map[deviceId];
+        if (typeof value === 'string' && value.trim()) return value.trim();
+      } catch {
+        // Location labels may contain commas; only JSON mappings are accepted.
+      }
+    }
+    const fallback: Record<string, string> = {
+      adht_weather_01: 'Trung tâm, Đà Nẵng, Việt Nam',
+      adht_weather_02: 'Bán đảo Sơn Trà, Đà Nẵng, Việt Nam',
+      adht_weather_03: 'Hòa Vang, Đà Nẵng, Việt Nam',
+    };
+    return fallback[deviceId];
+  }
+
   async getDevices() {
     const devices = await this.supabaseService.getDevices();
     const allowedDevices = this.configService?.get<string[]>('auth.allowedDevices') || [];
-    if (allowedDevices.length === 0) {
-      return devices;
-    }
-    return devices.filter((device) => allowedDevices.includes(device.device_id));
+    const filtered = allowedDevices.length === 0
+      ? devices
+      : devices.filter((device) => allowedDevices.includes(device.device_id));
+    return filtered.map((device) => ({
+      ...device,
+      location: this.resolveStationLocation(device.device_id),
+    }));
   }
 
-  getDevice(deviceId: string) {
+  async getDevice(deviceId: string) {
     const id = this.assertValidDeviceAccess(deviceId);
-    return this.supabaseService.getDevice(id);
+    const device = await this.supabaseService.getDevice(id);
+    return {
+      ...device,
+      location: this.resolveStationLocation(device.device_id),
+    };
   }
 
   async sendCommand(deviceId: string, dto: SendCommandDto) {

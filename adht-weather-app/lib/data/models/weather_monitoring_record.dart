@@ -8,8 +8,16 @@ class WeatherMonitoringRecord {
   final double temperature; // °C
   final double humidity; // %
   final double rainfall; // rain_rate (mm/h)
-  final double? rainfallMm; // Estimated bucket rainfall amount (mm)
+  final double? rainfallMm; // Bucket rainfall amount (mm)
   final double windSpeed; // km/h
+  final String? source; // 'v2' | 'v1_legacy'
+  final String? rainQuality; // 'observed' | 'estimated'
+  final int? sampleCount;
+  final double? tempMin;
+  final double? tempMax;
+  final double? coverage;
+  final int? revision;
+  final bool? isPartial;
   final DateTime recordedAt;
   final int timestamp; // millisecondsSinceEpoch
 
@@ -21,6 +29,14 @@ class WeatherMonitoringRecord {
     required this.rainfall,
     this.rainfallMm,
     required this.windSpeed,
+    this.source,
+    this.rainQuality,
+    this.sampleCount,
+    this.tempMin,
+    this.tempMax,
+    this.coverage,
+    this.revision,
+    this.isPartial,
     required this.recordedAt,
     int? timestamp,
   }) : timestamp = timestamp ?? recordedAt.millisecondsSinceEpoch;
@@ -33,7 +49,16 @@ class WeatherMonitoringRecord {
       'temperature': temperature,
       'humidity': humidity,
       'rainfall': rainfall,
+      if (rainfallMm != null) 'rainfall_mm': rainfallMm,
       'wind_speed': windSpeed,
+      if (source != null) 'source': source,
+      if (rainQuality != null) 'rain_quality': rainQuality,
+      if (sampleCount != null) 'sample_count': sampleCount,
+      if (tempMin != null) 'temp_min': tempMin,
+      if (tempMax != null) 'temp_max': tempMax,
+      if (coverage != null) 'coverage': coverage,
+      if (revision != null) 'revision': revision,
+      if (isPartial != null) 'is_partial': isPartial! ? 1 : 0,
       // Lưu ISO8601 chuẩn UTC nguyên bản vào SQLite
       'recorded_at': recordedAt.toUtc().toIso8601String(),
       'timestamp': timestamp,
@@ -60,7 +85,16 @@ class WeatherMonitoringRecord {
       temperature: (map['temperature'] as num).toDouble(),
       humidity: (map['humidity'] as num).toDouble(),
       rainfall: (map['rainfall'] as num).toDouble(),
+      rainfallMm: (map['rainfall_mm'] as num?)?.toDouble(),
       windSpeed: (map['wind_speed'] as num).toDouble(),
+      source: map['source'] as String?,
+      rainQuality: map['rain_quality'] as String?,
+      sampleCount: (map['sample_count'] as num?)?.toInt(),
+      tempMin: (map['temp_min'] as num?)?.toDouble(),
+      tempMax: (map['temp_max'] as num?)?.toDouble(),
+      coverage: (map['coverage'] as num?)?.toDouble(),
+      revision: (map['revision'] as num?)?.toInt(),
+      isPartial: map['is_partial'] == null ? null : (map['is_partial'] as num) != 0,
       recordedAt: parsedDate,
       timestamp: tsRaw ?? parsedDate.millisecondsSinceEpoch,
     );
@@ -81,6 +115,14 @@ class WeatherMonitoringRecord {
       rainfall: (json['rain_rate'] as num?)?.toDouble() ?? 0.0,
       rainfallMm: (json['rainfall_mm'] as num?)?.toDouble(),
       windSpeed: (json['wind_speed'] as num?)?.toDouble() ?? 0.0,
+      source: json['source'] as String?,
+      rainQuality: json['rain_quality'] as String?,
+      sampleCount: (json['sample_count'] as num?)?.toInt(),
+      tempMin: (json['temp_min'] as num?)?.toDouble(),
+      tempMax: (json['temp_max'] as num?)?.toDouble(),
+      coverage: (json['coverage'] as num?)?.toDouble(),
+      revision: (json['revision'] as num?)?.toInt(),
+      isPartial: json['is_partial'] as bool?,
       recordedAt: date,
       timestamp: date.millisecondsSinceEpoch,
     );
