@@ -18,6 +18,7 @@ export interface WeatherRecord {
   /** Latest source record epoch ms in this bucket (increases when open bucket receives updates). */
   revision?: number;
   is_partial?: boolean;
+  utc_offset_minutes?: number;
   source?: 'v2' | 'v1_legacy';
   rain_quality?: 'observed' | 'estimated';
   recorded_at: string;
@@ -285,6 +286,9 @@ export class SupabaseService {
     range: string = '24h',
     since?: string,
     timezone: string = 'Asia/Ho_Chi_Minh',
+    from?: string,
+    to?: string,
+    dayStarts?: string[],
   ): Promise<WeatherRecord[]> {
     if (!deviceId?.trim()) throw new BadRequestException('device_id is required');
     if (!Object.prototype.hasOwnProperty.call(HISTORY_RANGES, range)) {
@@ -295,8 +299,25 @@ export class SupabaseService {
     this.resolveTimezoneOffsetMs(resolvedTimezone, Date.now());
 
     const settings = HISTORY_RANGES[range as keyof typeof HISTORY_RANGES];
-    const end = Date.now();
-    const start = end - settings.duration * 1000;
+    const now = Date.now();
+    const end = to ? Date.parse(to) : now;
+    const start = from ? Date.parse(from) : end - settings.duration * 1000;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start >= end || end > now + 60000 ||
+        end - start > (range === '7d' ? 8 : 7) * 86400000 ||
+        (!dayStarts && from && end - start > settings.duration * 1000)) {
+      throw new BadRequestException('Invalid UTC history range');
+    }
+    const boundaries = dayStarts?.map((value) => Date.parse(value));
+    if (boundaries && (range !== '7d' || boundaries.length !== 8 || boundaries.some((value) => !Number.isFinite(value)) ||
+        boundaries[0] !== start || boundaries[7] < end ||
+        boundaries.some((value, index) => index > 0 && value <= boundaries[index - 1]))) {
+      throw new BadRequestException('day_starts must contain eight increasing UTC day boundaries');
+    }
+    const bucketFor = (time: number): number => {
+      if (!boundaries) return this.computeBucketStartMs(time, settings.bucket, resolvedTimezone);
+      for (let i = 6; i >= 0; i--) if (time >= boundaries[i]) return boundaries[i];
+      return boundaries[0];
+    };
     let effectiveStart = start;
     if (since !== undefined && since.trim() !== '') {
       const parsedSince = Date.parse(since);
@@ -411,8 +432,9 @@ export class SupabaseService {
 
         for (const row of data) {
           const time = Date.parse(row.created_at);
+          if (time < start || time >= end) continue;
           if (hasCutover && time >= cutoverMs) continue;
-          const bucketTime = this.computeBucketStartMs(time, settings.bucket, resolvedTimezone);
+          const bucketTime = bucketFor(time);
           accumulate(
             v1Buckets,
             bucketTime,
@@ -435,14 +457,28 @@ export class SupabaseService {
 
       // Union with v2 minute-log table when configured
       if (this.v2Table) {
+        const sinceIso = new Date(effectiveStart).toISOString();
+        const endIso = new Date(end).toISOString();
         for (let offset = 0; ; ) {
-          const { data, error } = await this.client.from(this.v2Table)
+          let v2Query = this.client.from(this.v2Table)
             .select(WEATHER_V2_COLUMNS)
             .eq('device_id', deviceId)
-            .gte('recorded_at', new Date(effectiveStart).toISOString())
-            .lte('recorded_at', new Date(end).toISOString())
-            .order('recorded_at', { ascending: true })
-            .order('id', { ascending: true })
+            .lte('recorded_at', endIso) as unknown as {
+              gte: (col: string, val: string) => unknown;
+              or?: (expr: string) => unknown;
+              order: (col: string, opts: { ascending: boolean }) => unknown;
+              range: (from: number, to: number) => {
+                returns: <T>() => Promise<{ data: T | null; error: unknown }>;
+              };
+            };
+          if (effectiveStart > start && typeof v2Query.or === 'function') {
+            v2Query = v2Query.or(`recorded_at.gte.${sinceIso},received_at.gte.${sinceIso}`) as typeof v2Query;
+          } else {
+            v2Query = v2Query.gte('recorded_at', sinceIso) as typeof v2Query;
+          }
+          v2Query = (v2Query.order('recorded_at', { ascending: true }) as typeof v2Query)
+            .order('id', { ascending: true }) as typeof v2Query;
+          const { data, error } = await v2Query
             .range(offset, offset + HISTORY_PAGE_SIZE - 1)
             .returns<WeatherLogV2Row[]>();
           if (error) throw error;
@@ -450,8 +486,9 @@ export class SupabaseService {
 
           for (const row of data) {
             const time = Date.parse(row.recorded_at);
+            if (time < start || time >= end) continue;
             if (hasCutover && time < cutoverMs) continue;
-            const bucketTime = this.computeBucketStartMs(time, settings.bucket, resolvedTimezone);
+            const bucketTime = bucketFor(time);
             const covMs = row.coverage_ms ?? 60000;
             const rainCovMs = row.rain_coverage_ms ?? covMs;
             const dhtWeight = row.dht_valid_count ?? covMs;
@@ -489,9 +526,13 @@ export class SupabaseService {
     const bucketMs = settings.bucket * 1000;
     const allTimes = new Set<number>([...v1Buckets.keys(), ...v2Buckets.keys()]);
     return [...allTimes].sort((left, right) => left - right).map((bucketTime) => {
+      const utcOffsetMinutes = Math.round(this.resolveTimezoneOffsetMs(resolvedTimezone, bucketTime) / 60000);
+      const bucketDurationMs = boundaries
+        ? Math.min(end, boundaries[boundaries.indexOf(bucketTime) + 1]) - bucketTime
+        : bucketMs;
       const v2 = v2Buckets.get(bucketTime);
       if (v2) {
-        const coverage = Math.min(1, Number((v2.effectiveCoverageMsSum / bucketMs).toFixed(3)));
+        const coverage = Math.min(1, Number((v2.effectiveCoverageMsSum / bucketDurationMs).toFixed(3)));
         return {
           device_id: v2.deviceId,
           temp: v2.dhtWeightSum > 0 ? v2.weightedTemp / v2.dhtWeightSum : v2.fallbackTempSum / v2.count,
@@ -504,7 +545,8 @@ export class SupabaseService {
           sample_count: v2.count,
           coverage,
           revision: v2.latestRowMs,
-          is_partial: end < bucketTime + bucketMs || coverage < 1,
+          is_partial: (boundaries ? end < boundaries[boundaries.indexOf(bucketTime) + 1] : end < bucketTime + bucketMs) || coverage < 1,
+          utc_offset_minutes: utcOffsetMinutes,
           source: 'v2',
           rain_quality: 'observed',
           recorded_at: new Date(bucketTime).toISOString(),
@@ -513,7 +555,7 @@ export class SupabaseService {
       const v1 = v1Buckets.get(bucketTime)!;
       const avgRainRate =
         v1.rainWeightSum > 0 ? v1.weightedRainRate / v1.rainWeightSum : v1.fallbackRainRateSum / v1.count;
-      const coverage = Math.min(1, Number((v1.effectiveCoverageMsSum / bucketMs).toFixed(3)));
+      const coverage = Math.min(1, Number((v1.effectiveCoverageMsSum / bucketDurationMs).toFixed(3)));
       return {
         device_id: v1.deviceId,
         temp: v1.dhtWeightSum > 0 ? v1.weightedTemp / v1.dhtWeightSum : v1.fallbackTempSum / v1.count,
@@ -521,12 +563,13 @@ export class SupabaseService {
         temp_max: v1.tempMax,
         humi: v1.dhtWeightSum > 0 ? v1.weightedHumi / v1.dhtWeightSum : v1.fallbackHumiSum / v1.count,
         rain_rate: avgRainRate,
-        rainfall_mm: Number(((avgRainRate * settings.bucket) / 3600).toFixed(3)),
+        rainfall_mm: Number(((avgRainRate * bucketDurationMs) / 3600000).toFixed(3)),
         wind_speed: v1.windWeightSum > 0 ? v1.weightedWindSpeed / v1.windWeightSum : v1.fallbackWindSum / v1.count,
         sample_count: v1.count,
         coverage,
         revision: v1.latestRowMs,
-        is_partial: end < bucketTime + bucketMs || coverage < 1,
+        is_partial: (boundaries ? end < boundaries[boundaries.indexOf(bucketTime) + 1] : end < bucketTime + bucketMs) || coverage < 1,
+        utc_offset_minutes: utcOffsetMinutes,
         source: 'v1_legacy',
         rain_quality: 'estimated',
         recorded_at: new Date(bucketTime).toISOString(),

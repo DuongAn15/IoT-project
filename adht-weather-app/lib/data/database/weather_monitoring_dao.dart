@@ -1,4 +1,5 @@
 import 'package:sqflite/sqflite.dart';
+
 import '../../core/constants/api_constants.dart';
 import '../models/weather_monitoring_record.dart';
 import 'app_database.dart';
@@ -11,7 +12,7 @@ class WeatherMonitoringDao {
   final AppDatabase _appDatabase;
 
   WeatherMonitoringDao([AppDatabase? database])
-      : _appDatabase = database ?? AppDatabase.instance;
+    : _appDatabase = database ?? AppDatabase.instance;
 
   String get tableInday => ApiConstants.tableWeatherInday;
   String get tableWeek => ApiConstants.tableWeatherWeek;
@@ -20,10 +21,9 @@ class WeatherMonitoringDao {
   static String buildCursorSeriesKey({
     required String range,
     required String resolution,
-    String timezone = ApiConstants.defaultStationTimezone,
     int version = ApiConstants.databaseVersion,
   }) {
-    return '$range:$resolution:$timezone:v$version';
+    return '$range:$resolution:utc:v$version';
   }
 
   Future<String?> getSyncCursor({
@@ -48,15 +48,11 @@ class WeatherMonitoringDao {
     required String lastSyncedAt,
   }) async {
     final db = await _appDatabase.database;
-    await db.insert(
-      tableSyncCursors,
-      {
-        'device_id': deviceId,
-        'series': series,
-        'last_synced_at': lastSyncedAt,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert(tableSyncCursors, {
+      'device_id': deviceId,
+      'series': series,
+      'last_synced_at': lastSyncedAt,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   // =========================================================================
@@ -160,22 +156,14 @@ class WeatherMonitoringDao {
       if (deviceId != null &&
           syncCursorIso != null &&
           syncCursorIso.isNotEmpty) {
-        await txn.insert(
-          tableSyncCursors,
-          {
-            'device_id': deviceId,
-            'series': cursorSeriesKey,
-            'last_synced_at': syncCursorIso,
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+        await txn.insert(tableSyncCursors, {
+          'device_id': deviceId,
+          'series': cursorSeriesKey,
+          'last_synced_at': syncCursorIso,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
-      await txn.delete(
-        tableInday,
-        where: 'timestamp < ?',
-        whereArgs: [cutoff],
-      );
+      await txn.delete(tableInday, where: 'timestamp < ?', whereArgs: [cutoff]);
       await txn.delete(
         tableInday,
         where: 'timestamp > ?',
@@ -279,6 +267,7 @@ class WeatherMonitoringDao {
     String? deviceId,
     String? syncCursorIso,
     String cursorSeriesKey = '7d',
+    bool replaceForDevice = false,
   }) async {
     final db = await _appDatabase.database;
     final cutoffTimestamp = DateTime.now()
@@ -287,6 +276,14 @@ class WeatherMonitoringDao {
     final maxFuture = DateTime.now().millisecondsSinceEpoch + 600000;
 
     await db.transaction((txn) async {
+      if (replaceForDevice && deviceId != null) {
+        await txn.delete(
+          tableWeek,
+          where: 'device_id = ?',
+          whereArgs: [deviceId],
+        );
+      }
+
       if (records.isNotEmpty) {
         final batch = txn.batch();
         for (final record in records) {
@@ -302,15 +299,11 @@ class WeatherMonitoringDao {
       if (deviceId != null &&
           syncCursorIso != null &&
           syncCursorIso.isNotEmpty) {
-        await txn.insert(
-          tableSyncCursors,
-          {
-            'device_id': deviceId,
-            'series': cursorSeriesKey,
-            'last_synced_at': syncCursorIso,
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+        await txn.insert(tableSyncCursors, {
+          'device_id': deviceId,
+          'series': cursorSeriesKey,
+          'last_synced_at': syncCursorIso,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
       await txn.delete(
@@ -367,8 +360,7 @@ class WeatherMonitoringDao {
 
   Future<List<WeatherMonitoringRecord>> getHistory7Days({
     String deviceId = ApiConstants.defaultStationId,
-  }) =>
-      getWeekHistory7Days(deviceId: deviceId);
+  }) => getWeekHistory7Days(deviceId: deviceId);
 
   Future<int> autoDeleteOlderThan7Days() => autoDeleteWeekOlderThan7Days();
 

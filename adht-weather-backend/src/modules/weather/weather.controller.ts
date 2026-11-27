@@ -29,7 +29,7 @@ export class WeatherController {
   @Get('history')
   @ApiOperation({
     summary: 'Truy vấn dữ liệu lịch sử đã được làm mịn (Downsampled)',
-    description: 'Hỗ trợ incremental sync với `since` (inclusive >= since để client upsert bucket đang mở) và căn bucket theo `timezone` của trạm.',
+    description: 'Hỗ trợ from/to UTC, day_starts UTC từ điện thoại và incremental sync với since. timezone chỉ để tương thích client cũ.',
   })
   @ApiResponse({ status: 200, description: 'Danh sách điểm dữ liệu vẽ biểu đồ fl_chart' })
   getHistory(@Query() query: QueryHistoryDto) {
@@ -38,6 +38,9 @@ export class WeatherController {
       query.range,
       query.since,
       query.timezone,
+      query.from,
+      query.to,
+      query.day_starts,
     );
   }
 

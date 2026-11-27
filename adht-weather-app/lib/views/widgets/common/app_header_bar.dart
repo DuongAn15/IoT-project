@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../../core/constants/api_constants.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_dimensions.dart';
@@ -31,90 +32,112 @@ class AppHeaderBar extends StatelessWidget {
     final catalogue = (stations != null && stations!.isNotEmpty)
         ? stations!
         : StationInfo.fallbackCatalogue();
-    final activeId = selectedStationId ??
+    final activeId =
+        selectedStationId ??
         ApiConstants.resolveDeviceIdFromStationName(stationName);
 
     final effectiveStations = catalogue.any((s) => s.deviceId == activeId)
         ? catalogue
         : [StationInfo(deviceId: activeId, name: stationName), ...catalogue];
 
+    final activeStation = effectiveStations.firstWhere(
+      (s) => s.deviceId == activeId,
+    );
+    final location = activeStation.location ?? 'Chưa có vị trí trạm';
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppDimensions.spaceMd,
         vertical: AppDimensions.spaceSm,
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Station Dropdown Selector (dùng deviceId thật làm value)
-          Flexible(
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: activeId,
-                isExpanded: false,
-                icon: Padding(
-                  padding: const EdgeInsets.only(left: 4),
-                  child: Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
-                    size: 22,
-                  ),
-                ),
-                borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-                dropdownColor: theme.cardTheme.color,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
-                ),
-                items: effectiveStations.map((StationInfo station) {
-                  return DropdownMenuItem<String>(
-                    value: station.deviceId,
-                    child: Text(
-                      station.name,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Station Dropdown Selector (dùng deviceId thật làm value)
+              Flexible(
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: activeId,
+                    isExpanded: false,
+                    icon: Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimaryLight,
+                        size: 22,
                       ),
                     ),
-                  );
-                }).toList(),
-                onChanged: (newId) {
-                  if (newId != null && newId != activeId) {
-                    onStationChanged?.call(newId);
-                  }
-                },
+                    borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+                    dropdownColor: theme.cardTheme.color,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: isDark
+                          ? AppColors.textPrimaryDark
+                          : AppColors.textPrimaryLight,
+                    ),
+                    items: effectiveStations.map((StationInfo station) {
+                      return DropdownMenuItem<String>(
+                        value: station.deviceId,
+                        child: Text(
+                          station.name,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (newId) {
+                      if (newId != null && newId != activeId) {
+                        onStationChanged?.call(newId);
+                      }
+                    },
+                  ),
+                ),
               ),
-            ),
-          ),
 
-          const SizedBox(width: AppDimensions.spaceSm),
+              const SizedBox(width: AppDimensions.spaceSm),
 
-          // Action Buttons: Theme Toggle & Settings Button
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (onThemeToggle != null)
-                IconButton(
-                  onPressed: onThemeToggle,
-                  icon: Icon(
-                    isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
-                    size: AppDimensions.iconMd,
-                    color: isDark ? AppColors.accentSunDark : AppColors.primaryLight,
-                  ),
-                  tooltip: isDark ? 'Chế độ Sáng' : 'Chế độ Tối',
-                  visualDensity: VisualDensity.compact,
-                ),
-              if (onSettingsTap != null)
-                IconButton(
-                  onPressed: onSettingsTap,
-                  icon: const Icon(
-                    Icons.settings_outlined,
-                    size: AppDimensions.iconMd,
-                  ),
-                  tooltip: 'Cài đặt',
-                  visualDensity: VisualDensity.compact,
-                ),
+              // Action Buttons: Theme Toggle & Settings Button
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (onThemeToggle != null)
+                    IconButton(
+                      onPressed: onThemeToggle,
+                      icon: Icon(
+                        isDark
+                            ? Icons.light_mode_rounded
+                            : Icons.dark_mode_rounded,
+                        size: AppDimensions.iconMd,
+                        color: isDark
+                            ? AppColors.accentSunDark
+                            : AppColors.primaryLight,
+                      ),
+                      tooltip: isDark ? 'Chế độ Sáng' : 'Chế độ Tối',
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  if (onSettingsTap != null)
+                    IconButton(
+                      onPressed: onSettingsTap,
+                      icon: const Icon(
+                        Icons.settings_outlined,
+                        size: AppDimensions.iconMd,
+                      ),
+                      tooltip: 'Cài đặt',
+                      visualDensity: VisualDensity.compact,
+                    ),
+                ],
+              ),
             ],
+          ),
+          Text(
+            'Vị trí: $location · Thời gian: giờ trên thiết bị',
+            style: theme.textTheme.bodySmall,
           ),
         ],
       ),

@@ -20,9 +20,24 @@ export class QueryHistoryDto {
   @IsOptional()
   since?: string;
 
+  @ApiPropertyOptional({ example: '2026-11-21T17:00:00.000Z', description: 'Bắt đầu khoảng đo UTC (inclusive)' })
+  @IsISO8601()
+  @IsOptional()
+  from?: string;
+
+  @ApiPropertyOptional({ example: '2026-11-27T10:00:00.000Z', description: 'Kết thúc khoảng đo UTC (exclusive)' })
+  @IsISO8601()
+  @IsOptional()
+  to?: string;
+
+  @ApiPropertyOptional({ description: 'Tám mốc UTC đầu ngày trên điện thoại, phân cách bằng dấu phẩy' })
+  @IsString()
+  @IsOptional()
+  day_starts?: string;
+
   @ApiPropertyOptional({
-    example: 'Asia/Ho_Chi_Minh',
-    description: 'IANA timezone của trạm để căn bucket theo giờ địa phương (mặc định Asia/Ho_Chi_Minh)',
+    example: 'UTC',
+    description: 'Tùy chọn tương thích cũ; app mới dùng UTC và ranh giới ngày do điện thoại cung cấp',
   })
   @IsString()
   @IsOptional()

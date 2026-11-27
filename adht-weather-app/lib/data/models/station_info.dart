@@ -4,41 +4,47 @@ class StationInfo {
   final String deviceId;
   final String name;
   final String? mac;
-  final String timezone;
+  final String? location;
 
   const StationInfo({
     required this.deviceId,
     required this.name,
     this.mac,
-    this.timezone = ApiConstants.defaultStationTimezone,
+    this.location,
   });
 
   factory StationInfo.fromJson(Map<String, dynamic> json) {
     final id = (json['device_id'] as String? ?? '').trim();
     final rawName = (json['name'] as String? ?? '').trim();
-    final rawTz = (json['timezone'] as String? ?? '').trim();
+    final rawLocation = (json['location'] as String? ?? '').trim();
     return StationInfo(
       deviceId: id,
-      name: rawName.isNotEmpty ? rawName : (ApiConstants.deviceStationMap[id] ?? id),
+      name: rawName.isNotEmpty
+          ? rawName
+          : (ApiConstants.deviceStationMap[id] ?? id),
       mac: json['mac'] as String?,
-      timezone: rawTz.isNotEmpty ? rawTz : ApiConstants.timezoneForStation(id),
+      location: rawLocation.isNotEmpty
+          ? rawLocation
+          : ApiConstants.stationLocationMap[id],
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'device_id': deviceId,
-        'name': name,
-        if (mac != null) 'mac': mac,
-        'timezone': timezone,
-      };
+    'device_id': deviceId,
+    'name': name,
+    if (mac != null) 'mac': mac,
+    if (location != null) 'location': location,
+  };
 
   static List<StationInfo> fallbackCatalogue() {
     return ApiConstants.deviceStationMap.entries
-        .map((e) => StationInfo(
-              deviceId: e.key,
-              name: e.value,
-              timezone: ApiConstants.timezoneForStation(e.key),
-            ))
+        .map(
+          (e) => StationInfo(
+            deviceId: e.key,
+            name: e.value,
+            location: ApiConstants.stationLocationMap[e.key],
+          ),
+        )
         .toList();
   }
 }

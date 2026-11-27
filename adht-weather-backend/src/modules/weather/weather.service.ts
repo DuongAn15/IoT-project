@@ -41,9 +41,13 @@ export class WeatherService {
         range: string = '24h',
         since?: string,
         timezone: string = 'Asia/Ho_Chi_Minh',
+        from?: string,
+        to?: string,
+        dayStarts?: string,
     ) {
         const resolvedId = this.assertAllowedDevice(deviceId) || '';
-        const data = await this.supabaseService.getHistory(resolvedId, range, since, timezone);
+        const boundaries = dayStarts?.split(',').map((value) => value.trim());
+        const data = await this.supabaseService.getHistory(resolvedId, range, since, timezone, from, to, boundaries);
         return {
             device_id: resolvedId,
             range,

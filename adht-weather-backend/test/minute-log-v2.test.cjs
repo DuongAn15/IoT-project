@@ -413,6 +413,7 @@ test('SupabaseService.getHistory aligns buckets to station timezone, updates rev
     const kolkataHistory = await svc.getHistory('adht_weather_01', '7d', undefined, 'Asia/Kolkata');
     assert.equal(kolkataHistory.length, 2);
     assert.equal(kolkataHistory[0].recorded_at, '2026-11-27T00:30:00.000Z');
+    assert.equal(kolkataHistory[0].utc_offset_minutes, 330);
     assert.equal(kolkataHistory[0].source, 'v1_legacy');
     assert.equal(kolkataHistory[1].recorded_at, '2026-11-27T01:30:00.000Z');
     assert.equal(kolkataHistory[1].source, 'v2');
@@ -531,6 +532,88 @@ test('SupabaseService.getHistory weights averages by valid sample counts and com
     // Effective coverage: (30000*(1/10) + 60000*(9/10)) / 600000 = 57000 / 600000 = 0.095
     assert.equal(history[0].coverage, 0.095);
     assert.equal(history[0].is_partial, true);
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test('SupabaseService.getHistory includes late-arriving v2 records via received_at >= since', async () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse('2026-11-27T12:00:00.000Z');
+  try {
+    const svc = Object.create(SupabaseService.prototype);
+    svc.table = 'weather_logs';
+    svc.v2Table = 'weather_logs_v2';
+    svc.logger = { error() {}, warn() {}, log() {} };
+
+    const orExpressions = [];
+    const responses = [
+      { data: [], error: null },
+      {
+        data: [
+          {
+            device_id: 'adht_weather_01',
+            temperature: 23.5,
+            humidity: 75.0,
+            rain_rate: 0.0,
+            rainfall_mm: 0.3,
+            wind_speed: 1.5,
+            recorded_at: '2026-11-27T01:05:00.000Z', // 10h before since, within 24h
+          },
+        ],
+        error: null,
+      },
+      { data: [], error: null },
+    ];
+    const query = {};
+    for (const m of ['select', 'eq', 'gte', 'lte', 'order', 'range']) {
+      query[m] = () => query;
+    }
+    query.or = (expr) => { orExpressions.push(expr); return query; };
+    query.returns = async () => responses.shift();
+    svc.client = { from: () => query };
+
+    const sinceIso = '2026-11-27T11:00:00.000Z';
+    const history = await svc.getHistory('adht_weather_01', '24h', sinceIso);
+    assert.equal(history.length, 1);
+    assert.equal(history[0].recorded_at, '2026-11-27T01:00:00.000Z');
+    assert.equal(history[0].rainfall_mm, 0.3);
+    assert.ok(orExpressions.some((e) => e.includes(`received_at.gte.${sinceIso}`)));
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test('SupabaseService.getHistory groups records by UTC day boundaries supplied by the mobile client', async () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse('2026-11-27T12:00:00.000Z');
+  try {
+    const svc = Object.create(SupabaseService.prototype);
+    svc.table = 'weather_logs';
+    svc.v2Table = 'weather_logs_v2';
+    svc.logger = { error() {}, warn() {}, log() {} };
+    const responses = [
+      { data: [], error: null },
+      { data: [
+        { device_id: 'adht_weather_01', temperature: 20, humidity: 60, rain_rate: 1,
+          rainfall_mm: 0.2, wind_speed: 2, recorded_at: '2026-11-26T16:59:00.000Z' },
+        { device_id: 'adht_weather_01', temperature: 30, humidity: 70, rain_rate: 2,
+          rainfall_mm: 0.3, wind_speed: 3, recorded_at: '2026-11-26T17:01:00.000Z' },
+      ], error: null },
+      { data: [], error: null },
+    ];
+    const query = {};
+    for (const m of ['select', 'eq', 'gte', 'lte', 'order', 'range']) query[m] = () => query;
+    query.returns = async () => responses.shift();
+    svc.client = { from: () => query };
+    const starts = Array.from({ length: 8 }, (_, i) =>
+      new Date(Date.parse('2026-11-20T17:00:00.000Z') + i * 86400000).toISOString());
+    const history = await svc.getHistory('adht_weather_01', '7d', undefined, 'UTC',
+      starts[0], '2026-11-27T12:00:00.000Z', starts);
+    assert.deepEqual(history.map(point => point.recorded_at), [
+      '2026-11-25T17:00:00.000Z', '2026-11-26T17:00:00.000Z',
+    ]);
+    assert.deepEqual(history.map(point => point.rainfall_mm), [0.2, 0.3]);
   } finally {
     Date.now = originalNow;
   }

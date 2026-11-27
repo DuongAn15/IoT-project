@@ -11,6 +11,12 @@ abstract class ApiConstants {
     'adht_weather_03': 'Trạm IoT 03 - Hòa Vang',
   };
 
+  static const Map<String, String> stationLocationMap = {
+    'adht_weather_01': 'Trung tâm, Đà Nẵng, Việt Nam',
+    'adht_weather_02': 'Bán đảo Sơn Trà, Đà Nẵng, Việt Nam',
+    'adht_weather_03': 'Hòa Vang, Đà Nẵng, Việt Nam',
+  };
+
   static const List<String> availableStations = [
     'Trạm IoT 01 - Trung Tâm',
     'Trạm IoT 02 - Bán Đảo Sơn Trà',
@@ -29,8 +35,10 @@ abstract class ApiConstants {
     return defaultStationId;
   }
 
-  static const String apiAuthToken =
-      String.fromEnvironment('API_AUTH_TOKEN', defaultValue: '');
+  static const String apiAuthToken = String.fromEnvironment(
+    'API_AUTH_TOKEN',
+    defaultValue: '',
+  );
 
   /// Base URL kết nối Backend Gateway (Cloud Render Online 24/7)
   static const String defaultBaseUrl =
@@ -51,21 +59,10 @@ abstract class ApiConstants {
 
   // Cấu hình lưu trữ SQLite (Tách riêng bảng trong ngày và bảng 7 ngày)
   static const String databaseName = 'weather_monitoring.db';
-  static const int databaseVersion = 3;
+  static const int databaseVersion = 5;
   static const String tableWeatherInday = 'weather_inday';
   static const String tableWeatherWeek = 'weather_week';
   static const String tableSyncCursors = 'sync_cursors';
-  static const String defaultStationTimezone = 'Asia/Ho_Chi_Minh';
-  static const Map<String, String> stationTimezoneMap = {
-    'adht_weather_01': defaultStationTimezone,
-    'adht_weather_02': defaultStationTimezone,
-    'adht_weather_03': defaultStationTimezone,
-  };
-
-  static String timezoneForStation(String deviceId) {
-    return stationTimezoneMap[deviceId] ?? defaultStationTimezone;
-  }
-
   static const String latestWeatherFileName = 'latest_weather.json';
   static const int cacheRetentionDays = 7;
   static const int cacheRetentionHoursInday = 24;

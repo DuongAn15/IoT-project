@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:weather_monitoring/core/constants/api_constants.dart';
@@ -81,7 +82,9 @@ void main() {
 
   test('resolveDeviceIdFromStationName maps display names to device IDs', () {
     expect(
-      ApiConstants.resolveDeviceIdFromStationName('Trạm IoT 02 - Bán Đảo Sơn Trà'),
+      ApiConstants.resolveDeviceIdFromStationName(
+        'Trạm IoT 02 - Bán Đảo Sơn Trà',
+      ),
       'adht_weather_02',
     );
     expect(
@@ -90,70 +93,70 @@ void main() {
     );
   });
 
-  test('buildContinuous7DaysSummary uses rainfallMm instead of summing rain_rate', () {
-    final now = DateTime(2026, 11, 26, 12, 0);
-    final records = [
-      WeatherMonitoringRecord.fromJson({
-        'device_id': 'adht_weather_01',
-        'temp': 28.0,
-        'humi': 75.0,
-        'rain_rate': 12.0,
-        'rainfall_mm': 2.0,
-        'wind_speed': 3.0,
-        'recorded_at': '2026-11-26T04:00:00.000Z',
-      }),
-      WeatherMonitoringRecord.fromJson({
-        'device_id': 'adht_weather_01',
-        'temp': 29.0,
-        'humi': 73.0,
-        'rain_rate': 6.0,
-        'rainfall_mm': 1.0,
-        'wind_speed': 2.0,
-        'recorded_at': '2026-11-26T05:00:00.000Z',
-      }),
-    ];
+  test(
+    'buildContinuous7DaysSummary uses rainfallMm instead of summing rain_rate',
+    () {
+      final now = DateTime(2026, 11, 26, 12, 0);
+      final records = [
+        WeatherMonitoringRecord.fromJson({
+          'device_id': 'adht_weather_01',
+          'temp': 28.0,
+          'humi': 75.0,
+          'rain_rate': 12.0,
+          'rainfall_mm': 2.0,
+          'wind_speed': 3.0,
+          'recorded_at': '2026-11-26T04:00:00.000Z',
+        }),
+        WeatherMonitoringRecord.fromJson({
+          'device_id': 'adht_weather_01',
+          'temp': 29.0,
+          'humi': 73.0,
+          'rain_rate': 6.0,
+          'rainfall_mm': 1.0,
+          'wind_speed': 2.0,
+          'recorded_at': '2026-11-26T05:00:00.000Z',
+        }),
+      ];
 
-    final summaries = AppWeatherRepository.buildContinuous7DaysSummary(
-      records,
-      referenceDate: now,
-    );
-    expect(summaries.last.totalRainfall, 3.0);
-  });
+      final summaries = AppWeatherRepository.buildContinuous7DaysSummary(
+        records,
+        referenceDate: now,
+      );
+      expect(summaries.last.totalRainfall, 3.0);
+    },
+  );
 
   test('buildContinuous7DaysSummary never sums rain_rate when rainfallMm is null and tracks provenance', () {
     final now = DateTime(2026, 11, 26, 14, 0);
     final yesterday = DateTime(2026, 11, 25, 10, 0);
 
-    final summaries = AppWeatherRepository.buildContinuous7DaysSummary(
-      [
-        // Legacy record: rain_rate = 15.0 mm/h, rainfallMm = null
-        WeatherMonitoringRecord(
-          deviceId: 'adht_weather_01',
-          temperature: 28.0,
-          humidity: 70.0,
-          rainfall: 15.0,
-          windSpeed: 2.0,
-          source: 'v1_legacy',
-          rainQuality: 'estimated',
-          recordedAt: yesterday,
-        ),
-        // V2 observed record with tempMin/tempMax
-        WeatherMonitoringRecord(
-          deviceId: 'adht_weather_01',
-          temperature: 27.0,
-          humidity: 75.0,
-          rainfall: 3.0,
-          rainfallMm: 0.8,
-          windSpeed: 2.5,
-          source: 'v2',
-          rainQuality: 'observed',
-          tempMin: 25.2,
-          tempMax: 29.4,
-          recordedAt: now,
-        ),
-      ],
-      referenceDate: now,
-    );
+    final summaries = AppWeatherRepository.buildContinuous7DaysSummary([
+      // Legacy record: rain_rate = 15.0 mm/h, rainfallMm = null
+      WeatherMonitoringRecord(
+        deviceId: 'adht_weather_01',
+        temperature: 28.0,
+        humidity: 70.0,
+        rainfall: 15.0,
+        windSpeed: 2.0,
+        source: 'v1_legacy',
+        rainQuality: 'estimated',
+        recordedAt: yesterday,
+      ),
+      // V2 observed record with tempMin/tempMax
+      WeatherMonitoringRecord(
+        deviceId: 'adht_weather_01',
+        temperature: 27.0,
+        humidity: 75.0,
+        rainfall: 3.0,
+        rainfallMm: 0.8,
+        windSpeed: 2.5,
+        source: 'v2',
+        rainQuality: 'observed',
+        tempMin: 25.2,
+        tempMax: 29.4,
+        recordedAt: now,
+      ),
+    ], referenceDate: now);
 
     final yesterdaySummary = summaries[summaries.length - 2];
     expect(yesterdaySummary.hasData, isTrue);
@@ -169,118 +172,132 @@ void main() {
     expect(todaySummary.maxTemperature, 29.4);
   });
 
-  test('computeOverlapSince subtracts overlap window and buildContinuous7DaysSummary respects stationTimezone', () {
-    expect(
-      AppWeatherRepository.computeOverlapSince(
-        '2026-11-27T10:00:00.000Z',
-        const Duration(hours: 1),
-      ),
-      '2026-11-27T09:00:00.000Z',
-    );
-    expect(AppWeatherRepository.computeOverlapSince(null, const Duration(hours: 1)), isNull);
-
-    // 2026-11-26T17:30:00Z is 2026-11-27 00:30 in Asia/Ho_Chi_Minh (+07:00), but 2026-11-26 in UTC
-    final utcInstant = DateTime.utc(2026, 11, 26, 17, 30);
-    final ictWall = AppWeatherRepository.toStationWallClock(utcInstant, 'Asia/Ho_Chi_Minh');
-    expect(ictWall.year, 2026);
-    expect(ictWall.month, 11);
-    expect(ictWall.day, 27);
-    expect(ictWall.hour, 0);
-    expect(ictWall.minute, 30);
-
-    final summaries = AppWeatherRepository.buildContinuous7DaysSummary(
-      [
+  test(
+    'local-day grouping uses the mobile clock and preserves UTC instants',
+    () {
+      expect(
+        AppWeatherRepository.computeOverlapSince(
+          '2026-11-27T10:00:00.000Z',
+          const Duration(hours: 1),
+        ),
+        '2026-11-27T09:00:00.000Z',
+      );
+      final local = DateTime(2026, 11, 27, 0, 30);
+      final instant = local.toUtc();
+      final summaries = AppWeatherRepository.buildContinuous7DaysSummary([
         WeatherMonitoringRecord(
           deviceId: 'adht_weather_01',
-          temperature: 26.0,
-          humidity: 70.0,
-          rainfall: 0.0,
+          temperature: 26,
+          humidity: 70,
+          rainfall: 0,
           rainfallMm: 0.4,
           windSpeed: 1.5,
           rainQuality: 'observed',
-          recordedAt: utcInstant,
+          recordedAt: instant,
         ),
-      ],
-      referenceDate: DateTime(2026, 11, 27, 12, 0),
-      stationTimezone: 'Asia/Ho_Chi_Minh',
-    );
-    expect(summaries.last.date, DateTime(2026, 11, 27));
-    expect(summaries.last.hasData, isTrue);
-    expect(summaries.last.totalRainfall, 0.4);
-  });
+      ], referenceDate: DateTime(2026, 11, 27, 12));
+      expect(summaries.last.hasData, isTrue);
+      expect(summaries.last.totalRainfall, 0.4);
+      expect(instant.toLocal().day, 27);
+    },
+  );
 
-  test('StationCatalogueStorage persists and restores station list offline', () async {
-    final tempDir = await Directory.systemTemp.createTemp('adht_cat_test_');
-    addTearDown(() async {
-      if (await tempDir.exists()) {
-        await tempDir.delete(recursive: true);
-      }
-    });
+  test(
+    'StationCatalogueStorage persists and restores station list offline',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp('adht_cat_test_');
+      addTearDown(() async {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
 
-    final storage = StationCatalogueStorage(customDirectoryPath: tempDir.path);
-    await storage.saveCatalogue(const [
-      StationInfo(deviceId: 'adht_weather_01', name: 'Station 01', mac: 'AA:BB:CC:DD:EE:01'),
-      StationInfo(deviceId: 'adht_weather_02', name: 'Station 02', mac: 'AA:BB:CC:DD:EE:02'),
-    ]);
+      final storage = StationCatalogueStorage(
+        customDirectoryPath: tempDir.path,
+      );
+      await storage.saveCatalogue(const [
+        StationInfo(
+          deviceId: 'adht_weather_01',
+          name: 'Station 01',
+          mac: 'AA:BB:CC:DD:EE:01',
+          location: 'Đà Nẵng, Việt Nam',
+        ),
+        StationInfo(
+          deviceId: 'adht_weather_02',
+          name: 'Station 02',
+          mac: 'AA:BB:CC:DD:EE:02',
+        ),
+      ]);
 
-    final restored = await storage.readCatalogue();
-    expect(restored.length, 2);
-    expect(restored[1].deviceId, 'adht_weather_02');
-    expect(restored[1].name, 'Station 02');
-  });
+      final restored = await storage.readCatalogue();
+      expect(restored.length, 2);
+      expect(restored[1].deviceId, 'adht_weather_02');
+      expect(restored[1].name, 'Station 02');
+      expect(restored[0].location, 'Đà Nẵng, Việt Nam');
+      expect(restored[1].location, 'Bán đảo Sơn Trà, Đà Nẵng, Việt Nam');
+    },
+  );
 
-  test('WeatherDashboardNotifier discards stale response when switching A -> B', () async {
-    final stationACompleter = Completer<WeatherCurrentModel>();
-    final container = ProviderContainer(
-      overrides: [
-        weatherRepositoryProvider.overrideWith((ref) {
-          final id = ref.watch(selectedDeviceIdProvider);
-          if (id == 'adht_weather_01') {
-            return _DelayedFakeRepo(id, () => stationACompleter.future);
-          }
-          return _DelayedFakeRepo(
-            id,
-            () async => WeatherCurrentModel(
-              stationId: 'adht_weather_02',
-              stationName: 'Station 02',
-              timestamp: DateTime(2026, 11, 26, 12, 0),
-              temperature: 22.0,
-              humidity: 80.0,
-              rainfall: 1.0,
-              windSpeed: 3.0,
-              isOnline: false,
-            ),
-          );
-        }),
-      ],
-    );
-    addTearDown(container.dispose);
+  test(
+    'WeatherDashboardNotifier discards stale response when switching A -> B',
+    () async {
+      final stationACompleter = Completer<WeatherCurrentModel>();
+      final container = ProviderContainer(
+        overrides: [
+          weatherRepositoryProvider.overrideWith((ref) {
+            final id = ref.watch(selectedDeviceIdProvider);
+            if (id == 'adht_weather_01') {
+              return _DelayedFakeRepo(id, () => stationACompleter.future);
+            }
+            return _DelayedFakeRepo(
+              id,
+              () async => WeatherCurrentModel(
+                stationId: 'adht_weather_02',
+                stationName: 'Station 02',
+                timestamp: DateTime(2026, 11, 26, 12, 0),
+                temperature: 22.0,
+                humidity: 80.0,
+                rainfall: 1.0,
+                windSpeed: 3.0,
+                isOnline: false,
+              ),
+            );
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
 
-    // Start loading A
-    final sub = container.listen(weatherDashboardProvider, (_, _) {});
-    addTearDown(sub.close);
+      // Start loading A
+      final sub = container.listen(weatherDashboardProvider, (_, _) {});
+      addTearDown(sub.close);
 
-    // Switch to B while A is still pending
-    await container.read(weatherDashboardProvider.notifier).changeStation('adht_weather_02');
-    final stateB = await container.read(weatherDashboardProvider.future);
-    expect(stateB.current.stationId, 'adht_weather_02');
+      // Switch to B while A is still pending
+      await container
+          .read(weatherDashboardProvider.notifier)
+          .changeStation('adht_weather_02');
+      final stateB = await container.read(weatherDashboardProvider.future);
+      expect(stateB.current.stationId, 'adht_weather_02');
 
-    // Complete A late -> must NOT overwrite B
-    stationACompleter.complete(
-      WeatherCurrentModel(
-        stationId: 'adht_weather_01',
-        stationName: 'Station 01',
-        timestamp: DateTime(2026, 11, 26, 12, 0),
-        temperature: 35.0,
-        humidity: 50.0,
-        rainfall: 0.0,
-        windSpeed: 1.0,
-        isOnline: true,
-      ),
-    );
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-    expect(container.read(weatherDashboardProvider).valueOrNull?.current.stationId, 'adht_weather_02');
-  });
+      // Complete A late -> must NOT overwrite B
+      stationACompleter.complete(
+        WeatherCurrentModel(
+          stationId: 'adht_weather_01',
+          stationName: 'Station 01',
+          timestamp: DateTime(2026, 11, 26, 12, 0),
+          temperature: 35.0,
+          humidity: 50.0,
+          rainfall: 0.0,
+          windSpeed: 1.0,
+          isOnline: true,
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(
+        container.read(weatherDashboardProvider).valueOrNull?.current.stationId,
+        'adht_weather_02',
+      );
+    },
+  );
 
   test('WeatherDashboardNotifier.refresh() fetches once and keeps existing UI state visible', () async {
     int currentCalls = 0;
@@ -320,9 +337,7 @@ void main() {
     );
 
     final container = ProviderContainer(
-      overrides: [
-        weatherRepositoryProvider.overrideWithValue(repo),
-      ],
+      overrides: [weatherRepositoryProvider.overrideWithValue(repo)],
     );
     addTearDown(container.dispose);
 
@@ -337,7 +352,9 @@ void main() {
     expect(refreshAllCalls, 0);
 
     refreshCompleter = Completer<WeatherCurrentModel>();
-    final refreshFuture = container.read(weatherDashboardProvider.notifier).refresh();
+    final refreshFuture = container
+        .read(weatherDashboardProvider.notifier)
+        .refresh();
 
     // Existing data stays visible (not reset to AsyncLoading without value)
     final duringRefresh = container.read(weatherDashboardProvider);
@@ -358,7 +375,10 @@ void main() {
     );
     await refreshFuture;
 
-    expect(container.read(weatherDashboardProvider).value?.current.temperature, 30.5);
+    expect(
+      container.read(weatherDashboardProvider).value?.current.temperature,
+      30.5,
+    );
     expect(currentCalls, 2);
     expect(intradayCalls, 2);
     expect(weeklyCalls, 2);

@@ -59,7 +59,10 @@ test('gets a device by ID and returns 404 for a missing device', async () => {
   const { controller, calls } = setup([
     { data: device, error: null }, { data: null, error: null },
   ]);
-  assert.deepEqual(await controller.getDevice(device.device_id), device);
+  assert.deepEqual(await controller.getDevice(device.device_id), {
+    ...device,
+    location: 'Bán đảo Sơn Trà, Đà Nẵng, Việt Nam',
+  });
   assert.ok(calls.some(call => call[0] === 'eq' && call[2] === device.device_id));
   await assert.rejects(controller.getDevice('missing'), error => error.getStatus() === 404);
 });
@@ -84,5 +87,21 @@ test('validates required fields and MAC format, trims input and normalizes MAC',
     { ...device, mac: 'invalid' }, { ...device, mac: 123 },
   ]) {
     await assert.rejects(pipe.transform(body, metadata), error => error.getStatus() === 400);
+  }
+});
+
+test('station catalogue exposes configured human-readable location', async () => {
+  const previous = process.env.STATION_LOCATIONS;
+  process.env.STATION_LOCATIONS = JSON.stringify({ adht_weather_02: 'Sơn Trà, Đà Nẵng, Việt Nam' });
+  try {
+    const { controller } = setup([
+      { data: [device], error: null },
+      { data: [], error: null },
+    ]);
+    const stations = await controller.getDevices();
+    assert.equal(stations[0].location, 'Sơn Trà, Đà Nẵng, Việt Nam');
+  } finally {
+    if (previous === undefined) delete process.env.STATION_LOCATIONS;
+    else process.env.STATION_LOCATIONS = previous;
   }
 });

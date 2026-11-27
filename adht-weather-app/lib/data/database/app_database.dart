@@ -1,5 +1,6 @@
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
+
 import '../../core/constants/api_constants.dart';
 
 /// Quản lý vòng đời và cấu trúc cơ sở dữ liệu SQLite cục bộ của ứng dụng
@@ -16,8 +17,8 @@ class AppDatabase {
 
   /// Constructor sử dụng database đã mở sẵn (dùng cho unit test in-memory)
   AppDatabase.withDatabase(Database db)
-      : _database = db,
-        _databaseFactory = null;
+    : _database = db,
+      _databaseFactory = null;
 
   Future<Database> get database async {
     if (_database != null && _database!.isOpen) {
@@ -151,6 +152,8 @@ class AppDatabase {
       }
       await _createSyncCursorsTable(db);
     }
+    // v4 retained station timezone columns; v5 keeps them physically on existing
+    // databases for an additive migration, but new UTC cache rows never use them.
   }
 
   /// Đóng cơ sở dữ liệu
