@@ -47,6 +47,7 @@ import random
 import signal
 import argparse
 import threading
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
@@ -195,6 +196,7 @@ class SimulatedEsp32Node:
         self.window_seq = 0
         self.rain_reset_epoch = 0
         self.rain_tip_counter = 0
+        self._rain_mm_accumulator = 0.0
 
         self.temp = profile["base_temp"]
         self.humi = profile["base_humi"]
@@ -214,6 +216,9 @@ class SimulatedEsp32Node:
             "auto_warning": True,
             "buzzer": True
         }
+        self.config_version = 0
+        self.applied_command_requests: OrderedDict[str, bool] = OrderedDict()
+        self.pending_acks: list[Dict[str, Any]] = []
 
         self.led_state = False
         self.led_override = False
@@ -274,6 +279,7 @@ class SimulatedEsp32Node:
             # Chỉ subscribe topic command & config định danh riêng của trạm (khớp mqtt_manager.cpp)
             self.client.subscribe(f"adht/weather/{self.device_id}/command", qos=1)
             self.client.subscribe(f"adht/weather/{self.device_id}/config", qos=1)
+            self._flush_pending_acks()
         else:
             self._log(f"❌ Kết nối thất bại, mã lỗi = {rc_code}", C_RED)
 
@@ -291,6 +297,80 @@ class SimulatedEsp32Node:
         self.is_connected = False
         self._log(f"⚠️ Mất kết nối MQTT (code={rc})", C_YELLOW)
 
+    @staticmethod
+    def _is_iso_expired(expires_at: Any) -> bool:
+        if not isinstance(expires_at, str) or not expires_at.strip():
+            return False
+        raw = expires_at.strip()
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        try:
+            exp_dt = datetime.fromisoformat(raw)
+        except ValueError:
+            return False
+        if exp_dt.tzinfo is None:
+            exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) > exp_dt
+
+    def _publish_ack(
+        self,
+        request_id: str,
+        kind: str,
+        status: str,
+        version: Optional[int] = None,
+        error_code: Optional[str] = None,
+        error_message: Optional[str] = None,
+    ) -> None:
+        if not request_id:
+            return
+        payload: Dict[str, Any] = {
+            "request_id": request_id,
+            "device_id": self.device_id,
+            "deployment_id": self.deployment_id,
+            "boot_id": self.boot_id,
+            "kind": kind,
+            "status": status,
+        }
+        if isinstance(version, int) and version > 0:
+            payload["version"] = version
+        if error_code:
+            payload["error_code"] = error_code
+        if error_message:
+            payload["error_message"] = error_message
+
+        if not self.is_connected:
+            self.pending_acks.append(payload)
+            return
+
+        info = self.client.publish(
+            f"adht/weather/{self.device_id}/ack",
+            json.dumps(payload),
+            qos=1,
+        )
+        rc = getattr(info, "rc", mqtt.MQTT_ERR_SUCCESS)
+        if rc != mqtt.MQTT_ERR_SUCCESS:
+            self.pending_acks.append(payload)
+
+    def _flush_pending_acks(self) -> None:
+        if not self.pending_acks or not self.is_connected:
+            return
+        remaining: list[Dict[str, Any]] = []
+        topic = f"adht/weather/{self.device_id}/ack"
+        for payload in self.pending_acks:
+            info = self.client.publish(topic, json.dumps(payload), qos=1)
+            rc = getattr(info, "rc", mqtt.MQTT_ERR_SUCCESS)
+            if rc != mqtt.MQTT_ERR_SUCCESS:
+                remaining.append(payload)
+        self.pending_acks = remaining
+
+    def _remember_command_request(self, request_id: str) -> None:
+        if not request_id:
+            return
+        self.applied_command_requests[request_id] = True
+        self.applied_command_requests.move_to_end(request_id)
+        while len(self.applied_command_requests) > 64:
+            self.applied_command_requests.popitem(last=False)
+
     def _on_message(self, client, userdata, msg):
         topic = msg.topic
         payload_str = msg.payload.decode("utf-8", errors="ignore")
@@ -303,9 +383,41 @@ class SimulatedEsp32Node:
                 if target and target != self.device_id:
                     return  # Không phải lệnh cho node này
 
-                cmd = data.get("cmd", "")
-                arg = data.get("arg", "")
+                request_id = str(data.get("request_id") or "")
+                dep_id = str(data.get("deployment_id") or "")
+                if dep_id and dep_id != self.deployment_id:
+                    self._publish_ack(
+                        request_id, "command", "rejected",
+                        error_code="deployment_mismatch",
+                        error_message="Deployment ID mismatch",
+                    )
+                    return
+
+                if request_id and request_id in self.applied_command_requests:
+                    self._publish_ack(request_id, "command", "applied")
+                    return
+
+                if self._is_iso_expired(data.get("expires_at")):
+                    self._publish_ack(
+                        request_id, "command", "failed",
+                        error_code="expired",
+                        error_message="Command expired before execution",
+                    )
+                    return
+
+                cmd = str(data.get("cmd") or "")
+                arg = str(data.get("arg") or "")
+                if cmd not in ("buzzer", "led", "reset", "reboot", "reset_rain"):
+                    self._publish_ack(
+                        request_id, "command", "rejected",
+                        error_code="unknown_command",
+                        error_message="Unsupported command",
+                    )
+                    return
+
+                self._remember_command_request(request_id)
                 self._handle_command(cmd, arg)
+                self._publish_ack(request_id, "command", "applied")
             except Exception as e:
                 self._log(f"Lỗi parse command JSON: {e}", C_RED)
 
@@ -316,10 +428,91 @@ class SimulatedEsp32Node:
                 if target and target != self.device_id:
                     return
 
+                request_id = str(data.get("request_id") or "")
+                dep_id = str(data.get("deployment_id") or "")
+                raw_version = data.get("version")
+                patch_version = int(raw_version) if isinstance(raw_version, int) and not isinstance(raw_version, bool) else None
+
+                if dep_id and dep_id != self.deployment_id:
+                    self._publish_ack(
+                        request_id, "config", "rejected",
+                        error_code="deployment_mismatch",
+                        error_message="Deployment ID mismatch",
+                    )
+                    return
+
+                if self._is_iso_expired(data.get("expires_at")):
+                    self._publish_ack(
+                        request_id, "config", "failed",
+                        version=patch_version,
+                        error_code="expired",
+                        error_message="Config update expired",
+                    )
+                    return
+
+                if patch_version is not None:
+                    if patch_version < self.config_version:
+                        self._publish_ack(
+                            request_id, "config", "rejected",
+                            version=self.config_version,
+                            error_code="stale_version",
+                            error_message="Version is older than active config",
+                        )
+                        return
+                    if patch_version == self.config_version:
+                        same_content = True
+                        for k, cur_val in self.sys_config.items():
+                            if k not in data:
+                                continue
+                            incoming = data[k]
+                            if isinstance(cur_val, bool):
+                                if bool(incoming) != cur_val:
+                                    same_content = False
+                                    break
+                            elif isinstance(cur_val, (int, float)):
+                                if abs(float(incoming) - float(cur_val)) >= 0.01:
+                                    same_content = False
+                                    break
+                        if same_content:
+                            self._publish_ack(request_id, "config", "applied", version=self.config_version)
+                        else:
+                            self._publish_ack(
+                                request_id, "config", "rejected",
+                                version=self.config_version,
+                                error_code="version_conflict",
+                                error_message="Same version with different config payload",
+                            )
+                        return
+
+                merged = dict(self.sys_config)
                 for k in self.sys_config.keys():
                     if k in data:
-                        self.sys_config[k] = data[k]
-                self._log(f"⚙️ ĐÃ LƯU CẤU HÌNH VÀO NVS FLASH: {json.dumps(self.sys_config)}", C_MAGENTA)
+                        merged[k] = data[k]
+
+                if (
+                    merged["temp_min"] >= merged["temp_max"]
+                    or merged["temp_min"] < -40.0
+                    or merged["temp_max"] > 80.0
+                    or merged["humi_max"] < 0.0
+                    or merged["humi_max"] > 100.0
+                    or merged["wind_max"] < 0.0
+                    or merged["wind_max"] > 100.0
+                    or merged["rain_max"] < 0.0
+                    or merged["rain_max"] > 500.0
+                ):
+                    self._publish_ack(
+                        request_id, "config", "rejected",
+                        version=patch_version,
+                        error_code="invalid_domain",
+                        error_message="Config failed post-merge validation",
+                    )
+                    return
+
+                self.sys_config = merged
+                if patch_version is not None:
+                    self.config_version = patch_version
+                self._log(f"⚙️ ĐÃ LƯU CẤU HÌNH v{self.config_version} VÀO NVS FLASH: {json.dumps(self.sys_config)}", C_MAGENTA)
+                self._publish_ack(request_id, "config", "applied", version=self.config_version)
             except Exception as e:
                 self._log(f"Lỗi parse config JSON: {e}", C_RED)
 
@@ -355,6 +548,7 @@ class SimulatedEsp32Node:
             self.window_seq = 0
             self.rain_reset_epoch = 0
             self.rain_tip_counter = 0
+            self._rain_mm_accumulator = 0.0
             self.rain_total = 0.0
             self.start_time = time.time()
             self._reset_minute_window()
@@ -365,6 +559,7 @@ class SimulatedEsp32Node:
                 self._publish_v2_minute_log()
             self.rain_reset_epoch += 1
             self.rain_tip_counter = 0
+            self._rain_mm_accumulator = 0.0
             self.rain_total = 0.0
             self.rain_rate = 0.0
             self._reset_minute_window()
@@ -388,13 +583,15 @@ class SimulatedEsp32Node:
         if p["base_rain"] > 0:
             self.rain_rate += random.uniform(-2.0, 2.0)
             self.rain_rate = max(5.0, min(80.0, self.rain_rate))
-            mm_delta = (self.rain_rate / 3600.0) * self.interval
-            tips = max(0, int(round(mm_delta / self.MM_PER_TIP)))
+            self._rain_mm_accumulator += (self.rain_rate / 3600.0) * self.interval
+            tips = int(self._rain_mm_accumulator // self.MM_PER_TIP)
             if tips > 0:
+                self._rain_mm_accumulator -= tips * self.MM_PER_TIP
                 self.rain_tip_counter += tips
                 self.rain_total += tips * self.MM_PER_TIP
         else:
             self.rain_rate = 0.0
+            self._rain_mm_accumulator = 0.0
 
         self._win_temp_vals.append(round(self.temp, 1))
         self._win_humi_vals.append(round(self.humi, 1))

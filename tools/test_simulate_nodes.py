@@ -95,6 +95,173 @@ class SimulatorConnectionTests(unittest.TestCase):
             self.assertEqual(node.rain_tip_counter, 0)
             self.assertEqual(node.rain_total, 0.0)
 
+    def _deliver(self, node, topic: str, payload: dict):
+        msg = Mock()
+        msg.topic = topic
+        msg.payload = json.dumps(payload).encode("utf-8")
+        node._on_message(node.client, None, msg)
+
+    def test_p06_command_ack_dedup_and_validation(self):
+        with patch.object(simulator.mqtt, "Client") as factory:
+            client = factory.return_value
+            client.publish.return_value = Mock(rc=simulator.mqtt.MQTT_ERR_SUCCESS)
+            node = self.make_node(deployment_id="dep-test")
+            node._on_connect(client, None, None, 0)
+            client.publish.reset_mock()
+
+            cmd_topic = "adht/weather/adht_weather_02/command"
+            ack_topic = "adht/weather/adht_weather_02/ack"
+
+            # Valid command -> applied ACK
+            self._deliver(node, cmd_topic, {
+                "request_id": "cmd-1",
+                "device_id": "adht_weather_02",
+                "deployment_id": "dep-test",
+                "cmd": "reset_rain",
+                "arg": "",
+            })
+            self.assertEqual(node.rain_reset_epoch, 1)
+            pub_topic, pub_raw = client.publish.call_args.args[0:2]
+            self.assertEqual(pub_topic, ack_topic)
+            ack = json.loads(pub_raw)
+            self.assertEqual(ack["request_id"], "cmd-1")
+            self.assertEqual(ack["kind"], "command")
+            self.assertEqual(ack["status"], "applied")
+
+            # Duplicate request_id -> replay ACK without re-executing
+            client.publish.reset_mock()
+            self._deliver(node, cmd_topic, {
+                "request_id": "cmd-1",
+                "device_id": "adht_weather_02",
+                "deployment_id": "dep-test",
+                "cmd": "reset_rain",
+                "arg": "",
+            })
+            self.assertEqual(node.rain_reset_epoch, 1)
+            ack = json.loads(client.publish.call_args.args[1])
+            self.assertEqual(ack["status"], "applied")
+
+            # Expired command -> failed ACK
+            client.publish.reset_mock()
+            self._deliver(node, cmd_topic, {
+                "request_id": "cmd-exp",
+                "deployment_id": "dep-test",
+                "cmd": "buzzer",
+                "expires_at": "2020-01-01T00:00:00Z",
+            })
+            ack = json.loads(client.publish.call_args.args[1])
+            self.assertEqual(ack["status"], "failed")
+            self.assertEqual(ack["error_code"], "expired")
+
+            # Unknown command -> rejected ACK
+            client.publish.reset_mock()
+            self._deliver(node, cmd_topic, {
+                "request_id": "cmd-bad",
+                "deployment_id": "dep-test",
+                "cmd": "self_destruct",
+            })
+            ack = json.loads(client.publish.call_args.args[1])
+            self.assertEqual(ack["status"], "rejected")
+            self.assertEqual(ack["error_code"], "unknown_command")
+
+    def test_p06_config_version_conflict_and_ack(self):
+        with patch.object(simulator.mqtt, "Client") as factory:
+            client = factory.return_value
+            client.publish.return_value = Mock(rc=simulator.mqtt.MQTT_ERR_SUCCESS)
+            node = self.make_node(deployment_id="dep-test")
+            node._on_connect(client, None, None, 0)
+            client.publish.reset_mock()
+
+            cfg_topic = "adht/weather/adht_weather_02/config"
+
+            # Apply v1
+            self._deliver(node, cfg_topic, {
+                "request_id": "cfg-1",
+                "deployment_id": "dep-test",
+                "version": 1,
+                "temp_max": 40.0,
+            })
+            self.assertEqual(node.config_version, 1)
+            self.assertEqual(node.sys_config["temp_max"], 40.0)
+            ack = json.loads(client.publish.call_args.args[1])
+            self.assertEqual(ack["kind"], "config")
+            self.assertEqual(ack["status"], "applied")
+            self.assertEqual(ack["version"], 1)
+
+            # Same version + same content -> idempotent applied ACK
+            client.publish.reset_mock()
+            self._deliver(node, cfg_topic, {
+                "request_id": "cfg-1-dup",
+                "deployment_id": "dep-test",
+                "version": 1,
+                "temp_max": 40.0,
+            })
+            ack = json.loads(client.publish.call_args.args[1])
+            self.assertEqual(ack["status"], "applied")
+            self.assertEqual(ack["version"], 1)
+
+            # Same version + different content -> version_conflict
+            client.publish.reset_mock()
+            self._deliver(node, cfg_topic, {
+                "request_id": "cfg-conflict",
+                "deployment_id": "dep-test",
+                "version": 1,
+                "temp_max": 42.0,
+            })
+            self.assertEqual(node.sys_config["temp_max"], 40.0)
+            ack = json.loads(client.publish.call_args.args[1])
+            self.assertEqual(ack["status"], "rejected")
+            self.assertEqual(ack["error_code"], "version_conflict")
+
+            # Invalid domain v2 -> rejected
+            client.publish.reset_mock()
+            self._deliver(node, cfg_topic, {
+                "request_id": "cfg-invalid",
+                "deployment_id": "dep-test",
+                "version": 2,
+                "temp_min": 50.0,
+                "temp_max": 40.0,
+            })
+            self.assertEqual(node.config_version, 1)
+            ack = json.loads(client.publish.call_args.args[1])
+            self.assertEqual(ack["status"], "rejected")
+            self.assertEqual(ack["error_code"], "invalid_domain")
+
+    def test_p06_ack_queued_when_disconnected_and_flushed_on_reconnect(self):
+        with patch.object(simulator.mqtt, "Client") as factory:
+            client = factory.return_value
+            client.publish.return_value = Mock(rc=simulator.mqtt.MQTT_ERR_SUCCESS)
+            node = self.make_node(deployment_id="dep-test")
+
+            self._deliver(node, "adht/weather/adht_weather_02/command", {
+                "request_id": "cmd-offline",
+                "deployment_id": "dep-test",
+                "cmd": "led",
+                "arg": "on",
+            })
+            self.assertEqual(len(node.pending_acks), 1)
+            client.publish.assert_not_called()
+
+            node._on_connect(client, None, None, 0)
+            self.assertEqual(len(node.pending_acks), 0)
+            ack_calls = [
+                c for c in client.publish.call_args_list
+                if c.args[0] == "adht/weather/adht_weather_02/ack"
+            ]
+            self.assertEqual(len(ack_calls), 1)
+            self.assertEqual(json.loads(ack_calls[0].args[1])["request_id"], "cmd-offline")
+
+    def test_rain_tip_accumulator_increments_over_ticks(self):
+        with patch.object(simulator.mqtt, "Client"):
+            node = simulator.SimulatedEsp32Node(
+                simulator.VIRTUAL_NODE_PROFILES[1],  # adht_weather_03 (base_rain=32.0)
+                "example.invalid", 8883, "test", "test",
+            )
+            for _ in range(18):  # 90s at ~32 mm/h -> ~0.8 mm -> >= 1 tip (0.6317 mm/tip)
+                node._update_physics()
+            self.assertGreater(node.rain_tip_counter, 0)
+            self.assertGreater(node.rain_total, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()
