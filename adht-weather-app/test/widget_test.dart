@@ -197,5 +197,31 @@ void main() {
       );
       expect(DateTimeFormatter.formatGmtOffset(const Duration(hours: -5)), 'GMT-5');
     });
+
+    test('WeatherUnitHelper.calculateYAxisConfig keeps <= 7 ticks even for large spikes across metrics', () {
+      for (final metric in [
+        WeatherMetricType.temperature,
+        WeatherMetricType.windSpeed,
+        WeatherMetricType.rainfall,
+      ]) {
+        for (final maxVal in [0.0, 4.0, 35.0, 120.0, 1061.27]) {
+          final cfg = WeatherUnitHelper.calculateYAxisConfig(
+            metricType: metric,
+            dataMax: maxVal,
+          );
+          final tickCount = ((cfg.maxY - cfg.minY) / cfg.interval).round() + 1;
+          expect(cfg.maxY, greaterThanOrEqualTo(maxVal));
+          expect(tickCount, inInclusiveRange(3, 7));
+        }
+      }
+
+      final humCfg = WeatherUnitHelper.calculateYAxisConfig(
+        metricType: WeatherMetricType.humidity,
+        dataMax: 95.0,
+      );
+      expect(humCfg.minY, 0.0);
+      expect(humCfg.maxY, 100.0);
+      expect(humCfg.interval, 25.0);
+    });
   });
 }

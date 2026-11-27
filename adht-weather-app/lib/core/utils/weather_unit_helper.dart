@@ -110,79 +110,60 @@ abstract class WeatherUnitHelper {
     return 'Cấp 6+';
   }
 
-  /// Tính toán cấu hình trục Y chuẩn hóa: luôn bắt đầu từ 0 và chia các khoảng đều chẵn
-  static YAxisConfig calculateYAxisConfig({
-    required WeatherMetricType metricType,
-    required double dataMax,
-    bool isCompact = false,
-  }) {
+  /// Tính toán khoảng chia trục Y đẹp (4–6 mốc), tránh chồng chữ khi giá trị lớn
+  static YAxisConfig _buildNiceYAxis(double dataMax, double minInterval) {
     const minY = 0.0;
-    double interval = 10.0;
-    double maxY = 40.0;
+    final safeMax = dataMax.isFinite && dataMax > 0 ? dataMax : 0.0;
+    final rawStep = max(safeMax / 5.0, minInterval);
+    final magnitude = pow(10, (log(rawStep) / ln10).floor()).toDouble();
+    final norm = rawStep / magnitude;
 
-    switch (metricType) {
-      case WeatherMetricType.temperature:
-        if (dataMax <= 20) {
-          interval = 5.0;
-        } else if (dataMax <= 40) {
-          interval = 10.0;
-        } else {
-          interval = 10.0;
-        }
-        maxY = (dataMax / interval).ceil() * interval;
-        if (dataMax >= maxY - (interval * 0.2)) {
-          maxY += interval;
-        }
-        maxY = max(interval * 2, maxY);
-        break;
-
-      case WeatherMetricType.humidity:
-        // Độ ẩm luôn từ 0% đến 100%, chia đều 4 khoảng 25% (0, 25, 50, 75, 100)
-        interval = 25.0;
-        maxY = 100.0;
-        break;
-
-      case WeatherMetricType.windSpeed:
-        if (dataMax <= 15) {
-          interval = 5.0;
-        } else if (dataMax <= 35) {
-          interval = 10.0;
-        } else if (dataMax <= 70) {
-          interval = 20.0;
-        } else {
-          interval = 25.0;
-        }
-        maxY = (dataMax / interval).ceil() * interval;
-        if (dataMax >= maxY - (interval * 0.2)) {
-          maxY += interval;
-        }
-        maxY = max(interval * 2, maxY);
-        break;
-
-      case WeatherMetricType.rainfall:
-        if (dataMax <= 5) {
-          interval = 2.0;
-        } else if (dataMax <= 15) {
-          interval = 5.0;
-        } else if (dataMax <= 40) {
-          interval = 10.0;
-        } else if (dataMax <= 80) {
-          interval = 20.0;
-        } else {
-          interval = 25.0;
-        }
-        maxY = (dataMax / interval).ceil() * interval;
-        if (dataMax >= maxY - (interval * 0.2)) {
-          maxY += interval;
-        }
-        maxY = max(interval * 2, maxY);
-        break;
+    final double niceMultiplier;
+    if (norm <= 1.0) {
+      niceMultiplier = 1.0;
+    } else if (norm <= 2.0) {
+      niceMultiplier = 2.0;
+    } else if (norm <= 2.5) {
+      niceMultiplier = 2.5;
+    } else if (norm <= 5.0) {
+      niceMultiplier = 5.0;
+    } else {
+      niceMultiplier = 10.0;
     }
+
+    final interval = max(minInterval, niceMultiplier * magnitude);
+    double maxY = (safeMax / interval).ceil() * interval;
+    if (safeMax >= maxY - (interval * 0.15)) {
+      maxY += interval;
+    }
+    maxY = max(interval * 2, maxY);
 
     return YAxisConfig(
       minY: minY,
       maxY: maxY,
       interval: interval,
     );
+  }
+
+  /// Tính toán cấu hình trục Y chuẩn hóa: luôn bắt đầu từ 0 và chia các khoảng đều chẵn
+  static YAxisConfig calculateYAxisConfig({
+    required WeatherMetricType metricType,
+    required double dataMax,
+    bool isCompact = false,
+  }) {
+    switch (metricType) {
+      case WeatherMetricType.temperature:
+        return _buildNiceYAxis(dataMax, 5.0);
+
+      case WeatherMetricType.humidity:
+        // Độ ẩm luôn từ 0% đến 100%, chia đều 4 khoảng 25% (0, 25, 50, 75, 100)
+        return const YAxisConfig(minY: 0.0, maxY: 100.0, interval: 25.0);
+
+      case WeatherMetricType.windSpeed:
+        return _buildNiceYAxis(dataMax, 5.0);
+
+      case WeatherMetricType.rainfall:
+        return _buildNiceYAxis(dataMax, 2.0);
+    }
   }
 }

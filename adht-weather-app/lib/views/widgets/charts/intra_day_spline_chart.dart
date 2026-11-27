@@ -94,6 +94,8 @@ class IntraDaySplineChart extends StatelessWidget {
       dataMax: dataMax,
       isCompact: isCompact,
     );
+    final maxLabelDigits = yConfig.maxY.round().toString().length;
+    final leftReservedSize = maxLabelDigits >= 4 ? 44.0 : (maxLabelDigits >= 3 ? 38.0 : 32.0);
 
     // Giới hạn trục X: làm tròn lên mốc 3 giờ (180 phút) kế tiếp bao trọn cả dữ liệu và thời điểm hiện tại
     final now = DateTime.now();
@@ -131,7 +133,7 @@ class IntraDaySplineChart extends StatelessWidget {
               leftTitles: AxisTitles(
                 sideTitles: SideTitles(
                   showTitles: true,
-                  reservedSize: 32,
+                  reservedSize: leftReservedSize,
                   interval: yConfig.interval,
                   getTitlesWidget: (value, meta) {
                     final remainder = (value - yConfig.minY) % yConfig.interval;
@@ -144,6 +146,8 @@ class IntraDaySplineChart extends StatelessWidget {
                       space: 4,
                       child: Text(
                         value.round().toString(),
+                        maxLines: 1,
+                        softWrap: false,
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: isDark ? AppColors.textMutedDark : AppColors.textMutedLight,
                         ),

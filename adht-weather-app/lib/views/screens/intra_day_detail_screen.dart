@@ -266,11 +266,16 @@ class IntraDayDetailScreen extends ConsumerWidget {
         children: [
           Text(title, style: theme.textTheme.labelSmall),
           const SizedBox(height: AppDimensions.spaceXs),
-          Text(
-            value,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: color,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              maxLines: 1,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
             ),
           ),
         ],
@@ -314,7 +319,9 @@ class IntraDayDetailScreen extends ConsumerWidget {
                   style: theme.textTheme.bodySmall,
                 ),
                 trailing: Text(
-                  point.rainfall > 0 ? '${point.rainfall} mm' : 'Khô ráo',
+                  point.rainfall > 0
+                      ? WeatherUnitHelper.formatRain(point.rainfall)
+                      : 'Khô ráo',
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: point.rainfall > 0 ? AppColors.rainfall : null,
                     fontWeight: point.rainfall > 0 ? FontWeight.w600 : FontWeight.normal,

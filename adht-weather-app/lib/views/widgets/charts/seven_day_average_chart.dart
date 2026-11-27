@@ -74,6 +74,8 @@ class SevenDayAverageChart extends StatelessWidget {
       metricType: metricType,
       dataMax: dataMax,
     );
+    final maxLabelDigits = yConfig.maxY.round().toString().length;
+    final leftReservedSize = maxLabelDigits >= 4 ? 44.0 : (maxLabelDigits >= 3 ? 38.0 : 34.0);
 
     final barGroups = <BarChartGroupData>[];
     for (int i = 0; i < dailySummaries.length; i++) {
@@ -147,7 +149,7 @@ class SevenDayAverageChart extends StatelessWidget {
               leftTitles: AxisTitles(
                 sideTitles: SideTitles(
                   showTitles: true,
-                  reservedSize: 34,
+                  reservedSize: leftReservedSize,
                   interval: yConfig.interval,
                   getTitlesWidget: (value, meta) {
                     final remainder = (value - yConfig.minY) % yConfig.interval;
