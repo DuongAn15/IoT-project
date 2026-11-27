@@ -4,3 +4,6 @@ dist/
 
 # Firebase Admin private keys
 /*firebase-adminsdk*.json
+
+# Local runtime operation ledger
+data/

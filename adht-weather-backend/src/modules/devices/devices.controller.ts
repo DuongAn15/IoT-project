@@ -35,6 +35,21 @@ export class DevicesController {
     return this.devicesService.getDevice(deviceId);
   }
 
+  @Get(':id/state')
+  @ApiOperation({ summary: 'Lấy desired/reported config, version và các operation gần nhất của trạm' })
+  getStationState(@Param('id') deviceId: string) {
+    return this.devicesService.getStationState(deviceId);
+  }
+
+  @Get(':id/operations/:operationId')
+  @ApiOperation({ summary: 'Truy vấn trạng thái một operation config/command để reconcile' })
+  getOperation(
+    @Param('id') deviceId: string,
+    @Param('operationId') operationId: string,
+  ) {
+    return this.devicesService.getOperation(deviceId, operationId);
+  }
+
   @Post(':id/command')
   @ApiOperation({ summary: 'Gửi lệnh điều khiển còi/LED xuống ESP32' })
   @ApiResponse({ status: 200, description: 'Lệnh đã được phát qua MQTT' })

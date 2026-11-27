@@ -45,9 +45,10 @@ test('waits for broker ACK before returning accepted', async () => {
   assert.equal(settled, false);
   acknowledge();
   const res = await result;
-  assert.equal(res.status, 'accepted');
+  assert.equal(res.status, 'published');
   assert.equal(res.delivery, 'broker_ack');
   assert.equal(res.executed, false);
+  assert.ok(res.operation_id);
 });
 
 test('reports failed status when broker rejects publication', async () => {

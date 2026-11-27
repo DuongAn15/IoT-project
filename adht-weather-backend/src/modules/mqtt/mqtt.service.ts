@@ -78,6 +78,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         [
           'adht/weather/+/telemetry',
           'adht/weather/+/telemetry/log',
+          'adht/weather/+/ack',
           'adht/weather/status',
         ],
         { qos: 1 },
@@ -311,7 +312,8 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
 
     const v1TelemetryTopic = /^adht\/weather\/([^/]+)\/telemetry$/.exec(topic);
     const v2MinuteLogTopic = /^adht\/weather\/([^/]+)\/telemetry\/log$/.exec(topic);
-    if (!v1TelemetryTopic && !v2MinuteLogTopic && topic !== 'adht/weather/status') return;
+    const ackTopic = /^adht\/weather\/([^/]+)\/ack$/.exec(topic);
+    if (!v1TelemetryTopic && !v2MinuteLogTopic && !ackTopic && topic !== 'adht/weather/status') return;
 
     let data: unknown;
     try {
@@ -332,6 +334,11 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
 
     if (v2MinuteLogTopic) {
       await this.processMinuteLogV2(v2MinuteLogTopic[1], data);
+      return;
+    }
+
+    if (ackTopic) {
+      this.deviceAckHandler?.(ackTopic[1], data as Record<string, unknown>);
       return;
     }
 
@@ -361,18 +368,24 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     await this.notificationsService.checkAndAlert(telemetry);
   }
 
-  publishCommand(deviceId: string, command: SendCommandDto): Promise<boolean> {
+  private deviceAckHandler?: (deviceId: string, payload: Record<string, unknown>) => void;
+
+  setDeviceAckHandler(handler: (deviceId: string, payload: Record<string, unknown>) => void): void {
+    this.deviceAckHandler = handler;
+  }
+
+  publishCommand(deviceId: string, command: SendCommandDto | Record<string, unknown>): Promise<boolean> {
     return this.publishToDevice(deviceId, 'command', command);
   }
 
-  publishConfig(deviceId: string, config: UpdateConfigDto): Promise<boolean> {
+  publishConfig(deviceId: string, config: UpdateConfigDto | Record<string, unknown>): Promise<boolean> {
     return this.publishToDevice(deviceId, 'config', config);
   }
 
   private async publishToDevice(
     deviceId: string,
     action: 'command' | 'config',
-    payload: SendCommandDto | UpdateConfigDto,
+    payload: SendCommandDto | UpdateConfigDto | Record<string, unknown>,
   ): Promise<boolean> {
     if (!deviceId.trim() || /[/+#\u0000]/.test(deviceId)) {
       this.logger.warn('Cannot publish MQTT message: invalid device ID');

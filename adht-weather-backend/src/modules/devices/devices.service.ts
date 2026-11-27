@@ -5,18 +5,29 @@ import { ALLOWED_DEVICE_COMMANDS, SendCommandDto } from './dto/send-command.dto'
 import { UpdateConfigDto } from './dto/update-config.dto';
 import { CreateDeviceDto } from './dto/create-device.dto';
 import { SupabaseService } from '../database/supabase.service';
+import { DeviceOperationsService } from './device-operations.service';
 
 const LED_ALLOWED_ARGS = new Set(['', '0', '1', 'on', 'off', 'true', 'false', 'auto']);
 
 @Injectable()
 export class DevicesService {
   private readonly logger = new Logger(DevicesService.name);
+  private readonly ops: DeviceOperationsService;
 
   constructor(
     private readonly mqttService: MqttService,
     private readonly supabaseService: SupabaseService,
     @Optional() private readonly configService?: ConfigService,
-  ) {}
+    @Optional() operationsService?: DeviceOperationsService,
+  ) {
+    this.ops = operationsService ?? new DeviceOperationsService(configService);
+    const maybeMqtt = this.mqttService as unknown as {
+      setDeviceAckHandler?: (cb: (deviceId: string, payload: Record<string, unknown>) => void) => void;
+    };
+    maybeMqtt?.setDeviceAckHandler?.((deviceId, payload) => {
+      this.ops.handleDeviceAck(deviceId, payload);
+    });
+  }
 
   private assertValidDeviceAccess(deviceId: string): string {
     const trimmed = typeof deviceId === 'string' ? deviceId.trim() : '';
@@ -89,15 +100,51 @@ export class DevicesService {
     return this.supabaseService.getDevice(id);
   }
 
+  getStationState(deviceId: string) {
+    const id = this.assertValidDeviceAccess(deviceId);
+    return this.ops.getStationState(id);
+  }
+
+  getOperation(deviceId: string, operationId: string) {
+    const id = this.assertValidDeviceAccess(deviceId);
+    return this.ops.getOperation(id, operationId);
+  }
+
   async sendCommand(deviceId: string, dto: SendCommandDto) {
     const id = this.assertValidDeviceAccess(deviceId);
     this.assertValidCommand(dto);
+    const { operation, duplicate } = this.ops.createCommandOperation(id, dto);
+    if (duplicate) {
+      return {
+        status: operation.status === 'failed' ? 'failed' : operation.status,
+        delivery: operation.broker_acked_at ? 'broker_ack' : 'failed',
+        executed: operation.status === 'applied',
+        duplicate: true,
+        operation_id: operation.operation_id,
+        operation_status: operation.status,
+        expires_at: operation.expires_at,
+        deviceId: id,
+        command: dto,
+      };
+    }
+
     this.logger.log(`[DevicesService] Nhận lệnh điều khiển cho trạm ${id}: ${dto.cmd}`);
-    const success = await this.mqttService.publishCommand(id, dto);
+    const success = await this.mqttService.publishCommand(id, {
+      schema_version: 2,
+      request_id: operation.operation_id,
+      expires_at: operation.expires_at,
+      ...(operation.deployment_id ? { deployment_id: operation.deployment_id } : {}),
+      cmd: dto.cmd,
+      ...(dto.arg !== undefined ? { arg: dto.arg } : {}),
+    });
+    const updated = this.ops.markPublishResult(id, operation.operation_id, success) ?? operation;
     return {
-      status: success ? 'accepted' : 'failed',
+      status: success ? 'published' : 'failed',
       delivery: success ? 'broker_ack' : 'failed',
       executed: false,
+      operation_id: updated.operation_id,
+      operation_status: updated.status,
+      expires_at: updated.expires_at,
       deviceId: id,
       command: dto,
     };
@@ -106,14 +153,42 @@ export class DevicesService {
   async updateConfig(deviceId: string, dto: UpdateConfigDto) {
     const id = this.assertValidDeviceAccess(deviceId);
     this.assertValidConfig(dto);
-    this.logger.log(`[DevicesService] Nhận cấu hình mới cho trạm ${id}`);
-    const success = await this.mqttService.publishConfig(id, dto);
+    const { operation, duplicate, mergedConfig } = this.ops.createConfigOperation(id, dto);
+    if (duplicate) {
+      return {
+        status: operation.status === 'failed' ? 'failed' : operation.status,
+        delivery: operation.broker_acked_at ? 'broker_ack' : 'failed',
+        executed: operation.status === 'persisted' || operation.status === 'applied',
+        duplicate: true,
+        operation_id: operation.operation_id,
+        operation_status: operation.status,
+        desired_version: operation.desired_version,
+        expires_at: operation.expires_at,
+        deviceId: id,
+        config: mergedConfig,
+      };
+    }
+
+    this.logger.log(`[DevicesService] Nhận cấu hình mới cho trạm ${id} (v${operation.desired_version})`);
+    const success = await this.mqttService.publishConfig(id, {
+      schema_version: 2,
+      request_id: operation.operation_id,
+      version: operation.desired_version,
+      expires_at: operation.expires_at,
+      ...(operation.deployment_id ? { deployment_id: operation.deployment_id } : {}),
+      ...mergedConfig,
+    });
+    const updated = this.ops.markPublishResult(id, operation.operation_id, success) ?? operation;
     return {
-      status: success ? 'accepted' : 'failed',
+      status: success ? 'published' : 'failed',
       delivery: success ? 'broker_ack' : 'failed',
       executed: false,
+      operation_id: updated.operation_id,
+      operation_status: updated.status,
+      desired_version: updated.desired_version,
+      expires_at: updated.expires_at,
       deviceId: id,
-      config: dto,
+      config: mergedConfig,
     };
   }
 }
