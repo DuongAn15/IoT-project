@@ -30,7 +30,7 @@ export class WeatherController {
   @ApiOperation({ summary: 'Truy vấn dữ liệu lịch sử đã được làm mịn (Downsampled)' })
   @ApiResponse({ status: 200, description: 'Danh sách điểm dữ liệu vẽ biểu đồ fl_chart' })
   getHistory(@Query() query: QueryHistoryDto) {
-    return this.weatherService.getHistory(query.device_id, query.range);
+    return this.weatherService.getHistory(query.device_id, query.range, query.since);
   }
 
   /* Forecast endpoint is deferred; re-enable only with an approved forecast scope.

@@ -7,10 +7,15 @@ import type { DerivedMinuteLogRecord } from '../telemetry/minute-log-v2';
 export interface WeatherRecord {
   device_id: string | null;
   temp: number;
+  temp_min?: number;
+  temp_max?: number;
   humi: number;
   rain_rate: number;
   rainfall_mm?: number;
   wind_speed: number;
+  sample_count?: number;
+  source?: 'v2' | 'v1_legacy';
+  rain_quality?: 'observed' | 'estimated';
   recorded_at: string;
 }
 
@@ -232,7 +237,7 @@ export class SupabaseService {
     }
   }
 
-  async getHistory(deviceId: string, range: string = '24h'): Promise<WeatherRecord[]> {
+  async getHistory(deviceId: string, range: string = '24h', since?: string): Promise<WeatherRecord[]> {
     if (!deviceId?.trim()) throw new BadRequestException('device_id is required');
     if (!Object.prototype.hasOwnProperty.call(HISTORY_RANGES, range)) {
       throw new BadRequestException('range must be one of 1h, 6h, 24h, 3d, 7d');
@@ -240,8 +245,24 @@ export class SupabaseService {
     const settings = HISTORY_RANGES[range as keyof typeof HISTORY_RANGES];
     const end = Date.now();
     const start = end - settings.duration * 1000;
-    const v1Buckets = new Map<number, { point: WeatherRecord; count: number }>();
-    const v2Buckets = new Map<number, { point: WeatherRecord; count: number; rainfallMmSum: number }>();
+    let effectiveStart = start;
+    if (since !== undefined && since.trim() !== '') {
+      const parsedSince = Date.parse(since);
+      if (!Number.isFinite(parsedSince)) {
+        throw new BadRequestException('since must be a valid ISO-8601 timestamp');
+      }
+      if (parsedSince > start) {
+        effectiveStart = Math.min(parsedSince, end);
+      }
+    }
+    const v1Buckets = new Map<
+      number,
+      { point: WeatherRecord; count: number; tempMin: number; tempMax: number }
+    >();
+    const v2Buckets = new Map<
+      number,
+      { point: WeatherRecord; count: number; rainfallMmSum: number; tempMin: number; tempMax: number }
+    >();
 
     try {
       // Read every page from legacy v1 table
@@ -249,7 +270,7 @@ export class SupabaseService {
         const { data, error } = await this.client.from(this.table)
           .select(WEATHER_COLUMNS)
           .eq('device_id', deviceId)
-          .gte('created_at', new Date(start).toISOString())
+          .gte('created_at', new Date(effectiveStart).toISOString())
           .lte('created_at', new Date(end).toISOString())
           .order('created_at', { ascending: true })
           .order('id', { ascending: true })
@@ -268,11 +289,15 @@ export class SupabaseService {
             existing.point.humi += row.humidity;
             existing.point.rain_rate += row.rain_rate;
             existing.point.wind_speed += row.wind_speed;
+            if (row.temperature < existing.tempMin) existing.tempMin = row.temperature;
+            if (row.temperature > existing.tempMax) existing.tempMax = row.temperature;
             existing.count++;
           } else {
             v1Buckets.set(bucketTime, {
               point: { ...this.toWeatherRecord(row), recorded_at: new Date(bucketTime).toISOString() },
               count: 1,
+              tempMin: row.temperature,
+              tempMax: row.temperature,
             });
           }
         }
@@ -286,7 +311,7 @@ export class SupabaseService {
           const { data, error } = await this.client.from(this.v2Table)
             .select(WEATHER_V2_COLUMNS)
             .eq('device_id', deviceId)
-            .gte('recorded_at', new Date(start).toISOString())
+            .gte('recorded_at', new Date(effectiveStart).toISOString())
             .lte('recorded_at', new Date(end).toISOString())
             .order('recorded_at', { ascending: true })
             .order('id', { ascending: true })
@@ -306,6 +331,8 @@ export class SupabaseService {
               existing.point.rain_rate += row.rain_rate;
               existing.point.wind_speed += row.wind_speed;
               existing.rainfallMmSum += row.rainfall_mm;
+              if (row.temperature < existing.tempMin) existing.tempMin = row.temperature;
+              if (row.temperature > existing.tempMax) existing.tempMax = row.temperature;
               existing.count++;
             } else {
               v2Buckets.set(bucketTime, {
@@ -319,6 +346,8 @@ export class SupabaseService {
                 },
                 count: 1,
                 rainfallMmSum: row.rainfall_mm,
+                tempMin: row.temperature,
+                tempMax: row.temperature,
               });
             }
           }
@@ -337,21 +366,31 @@ export class SupabaseService {
         return {
           ...v2.point,
           temp: v2.point.temp / v2.count,
+          temp_min: v2.tempMin,
+          temp_max: v2.tempMax,
           humi: v2.point.humi / v2.count,
           rain_rate: v2.point.rain_rate / v2.count,
           rainfall_mm: Number(v2.rainfallMmSum.toFixed(3)),
           wind_speed: v2.point.wind_speed / v2.count,
+          sample_count: v2.count,
+          source: 'v2',
+          rain_quality: 'observed',
         };
       }
-      const { point, count } = v1Buckets.get(bucketTime)!;
+      const { point, count, tempMin, tempMax } = v1Buckets.get(bucketTime)!;
       const avgRainRate = point.rain_rate / count;
       return {
         ...point,
         temp: point.temp / count,
+        temp_min: tempMin,
+        temp_max: tempMax,
         humi: point.humi / count,
         rain_rate: avgRainRate,
         rainfall_mm: Number(((avgRainRate * settings.bucket) / 3600).toFixed(3)),
         wind_speed: point.wind_speed / count,
+        sample_count: count,
+        source: 'v1_legacy',
+        rain_quality: 'estimated',
       };
     });
   }

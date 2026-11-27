@@ -36,9 +36,9 @@ export class WeatherService {
         return this.supabaseService.getLatest(resolvedId);
     }
 
-    async getHistory(deviceId: string, range: string = '24h') {
+    async getHistory(deviceId: string, range: string = '24h', since?: string) {
         const resolvedId = this.assertAllowedDevice(deviceId) || '';
-        const data = await this.supabaseService.getHistory(resolvedId, range);
+        const data = await this.supabaseService.getHistory(resolvedId, range, since);
         return {
             device_id: resolvedId,
             range,

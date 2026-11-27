@@ -192,4 +192,113 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 20));
     expect(container.read(weatherDashboardProvider).valueOrNull?.current.stationId, 'adht_weather_02');
   });
+
+  test('WeatherDashboardNotifier.refresh() fetches once and keeps existing UI state visible', () async {
+    int currentCalls = 0;
+    int intradayCalls = 0;
+    int weeklyCalls = 0;
+    int refreshAllCalls = 0;
+    Completer<WeatherCurrentModel>? refreshCompleter;
+
+    final repo = _CountingFakeRepo(
+      onCurrent: () {
+        currentCalls++;
+        if (refreshCompleter != null) return refreshCompleter.future;
+        return Future.value(
+          WeatherCurrentModel(
+            stationId: 'adht_weather_01',
+            stationName: 'Station 01',
+            timestamp: DateTime(2026, 11, 26, 12, 0),
+            temperature: 29.0,
+            humidity: 70.0,
+            rainfall: 0.0,
+            windSpeed: 2.0,
+            isOnline: true,
+          ),
+        );
+      },
+      onIntraday: () async {
+        intradayCalls++;
+        return [];
+      },
+      onWeekly: () async {
+        weeklyCalls++;
+        return [];
+      },
+      onRefreshAll: () async {
+        refreshAllCalls++;
+      },
+    );
+
+    final container = ProviderContainer(
+      overrides: [
+        weatherRepositoryProvider.overrideWithValue(repo),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final sub = container.listen(weatherDashboardProvider, (_, _) {});
+    addTearDown(sub.close);
+
+    final initial = await container.read(weatherDashboardProvider.future);
+    expect(initial.current.temperature, 29.0);
+    expect(currentCalls, 1);
+    expect(intradayCalls, 1);
+    expect(weeklyCalls, 1);
+    expect(refreshAllCalls, 0);
+
+    refreshCompleter = Completer<WeatherCurrentModel>();
+    final refreshFuture = container.read(weatherDashboardProvider.notifier).refresh();
+
+    // Existing data stays visible (not reset to AsyncLoading without value)
+    final duringRefresh = container.read(weatherDashboardProvider);
+    expect(duringRefresh.hasValue, isTrue);
+    expect(duringRefresh.value?.current.temperature, 29.0);
+
+    refreshCompleter.complete(
+      WeatherCurrentModel(
+        stationId: 'adht_weather_01',
+        stationName: 'Station 01',
+        timestamp: DateTime(2026, 11, 26, 12, 5),
+        temperature: 30.5,
+        humidity: 68.0,
+        rainfall: 0.2,
+        windSpeed: 2.5,
+        isOnline: true,
+      ),
+    );
+    await refreshFuture;
+
+    expect(container.read(weatherDashboardProvider).value?.current.temperature, 30.5);
+    expect(currentCalls, 2);
+    expect(intradayCalls, 2);
+    expect(weeklyCalls, 2);
+    expect(refreshAllCalls, 0);
+  });
+}
+
+class _CountingFakeRepo implements WeatherRepository {
+  final Future<WeatherCurrentModel> Function() onCurrent;
+  final Future<List<WeatherPoint>> Function() onIntraday;
+  final Future<List<WeatherDailySummary>> Function() onWeekly;
+  final Future<void> Function() onRefreshAll;
+
+  _CountingFakeRepo({
+    required this.onCurrent,
+    required this.onIntraday,
+    required this.onWeekly,
+    required this.onRefreshAll,
+  });
+
+  @override
+  Future<WeatherCurrentModel> getCurrentWeather() => onCurrent();
+
+  @override
+  Future<List<WeatherPoint>> getIntraDayData() => onIntraday();
+
+  @override
+  Future<List<WeatherDailySummary>> get7DaysSummary() => onWeekly();
+
+  @override
+  Future<void> refreshAllData() => onRefreshAll();
 }

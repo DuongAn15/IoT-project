@@ -90,15 +90,32 @@ class AppWeatherRepository implements WeatherRepository {
     );
   }
 
+  String? _latestRecordCursorIso(List<WeatherMonitoringRecord> records) {
+    if (records.isEmpty) return null;
+    DateTime latest = records.first.recordedAt.toUtc();
+    for (final record in records.skip(1)) {
+      final candidate = record.recordedAt.toUtc();
+      if (candidate.isAfter(latest)) {
+        latest = candidate;
+      }
+    }
+    return latest.toIso8601String();
+  }
+
   @override
   Future<List<WeatherPoint>> getIntraDayData() async {
     // Mốc thời gian hiện tại theo giờ thiết bị (Local Time)
     final now = DateTime.now();
 
     try {
+      final since = await dao.getSyncCursor(
+        deviceId: currentDeviceId,
+        series: '24h',
+      );
       final response = await apiService.fetchHistory(
         deviceId: currentDeviceId,
         range: '24h',
+        since: since,
       );
 
       final rawList = response.data['data'] as List<dynamic>? ?? [];
@@ -109,21 +126,12 @@ class AppWeatherRepository implements WeatherRepository {
               ))
           .toList();
 
-      if (records.isNotEmpty) {
-        // Lưu vào bảng weather_inday và dọn dẹp các bản ghi quá 24h
-        await dao.saveIndayHistoryAndCleanup(records);
-
-        // Chỉ lọc các điểm từ 00:00 sáng hôm nay đến hiện tại cho biểu đồ trong ngày
-        final todayRecords = records.where((r) {
-          final d = r.recordedAt;
-          return d.year == now.year &&
-                 d.month == now.month &&
-                 d.day == now.day;
-        }).toList();
-        todayRecords.sort((a, b) => a.recordedAt.compareTo(b.recordedAt));
-
-        return todayRecords.map((r) => r.toWeatherPoint()).toList();
-      }
+      // Lưu vào bảng weather_inday, cập nhật sync_cursors và dọn dẹp bản ghi quá 24h atomically
+      await dao.saveIndayHistoryAndCleanup(
+        records,
+        deviceId: currentDeviceId,
+        syncCursorIso: _latestRecordCursorIso(records),
+      );
     } catch (e) {
       dev.log('Lỗi fetchHistory 24h, đọc từ bảng weather_inday: $e');
     }
@@ -144,9 +152,14 @@ class AppWeatherRepository implements WeatherRepository {
   @override
   Future<List<WeatherDailySummary>> get7DaysSummary() async {
     try {
+      final since = await dao.getSyncCursor(
+        deviceId: currentDeviceId,
+        series: '7d',
+      );
       final response = await apiService.fetchHistory(
         deviceId: currentDeviceId,
         range: '7d',
+        since: since,
       );
 
       final rawList = response.data['data'] as List<dynamic>? ?? [];
@@ -157,8 +170,12 @@ class AppWeatherRepository implements WeatherRepository {
               ))
           .toList();
 
-      // Lưu vào bảng weather_week & tự động dọn dẹp các bản ghi quá 7 ngày
-      await dao.saveWeekHistoryAndCleanup(records);
+      // Lưu vào bảng weather_week, cập nhật sync_cursors & dọn dẹp bản ghi quá 7 ngày atomically
+      await dao.saveWeekHistoryAndCleanup(
+        records,
+        deviceId: currentDeviceId,
+        syncCursorIso: _latestRecordCursorIso(records),
+      );
     } catch (e) {
       dev.log('Lỗi fetchHistory 7d từ mạng, sử dụng dữ liệu bảng weather_week: $e');
     }

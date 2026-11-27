@@ -33,6 +33,7 @@ class WeatherMonitoringRecord {
       'temperature': temperature,
       'humidity': humidity,
       'rainfall': rainfall,
+      if (rainfallMm != null) 'rainfall_mm': rainfallMm,
       'wind_speed': windSpeed,
       // Lưu ISO8601 chuẩn UTC nguyên bản vào SQLite
       'recorded_at': recordedAt.toUtc().toIso8601String(),
@@ -60,6 +61,7 @@ class WeatherMonitoringRecord {
       temperature: (map['temperature'] as num).toDouble(),
       humidity: (map['humidity'] as num).toDouble(),
       rainfall: (map['rainfall'] as num).toDouble(),
+      rainfallMm: (map['rainfall_mm'] as num?)?.toDouble(),
       windSpeed: (map['wind_speed'] as num).toDouble(),
       recordedAt: parsedDate,
       timestamp: tsRaw ?? parsedDate.millisecondsSinceEpoch,

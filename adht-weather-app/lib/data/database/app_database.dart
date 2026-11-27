@@ -51,6 +51,7 @@ class AppDatabase {
         temperature REAL NOT NULL,
         humidity REAL NOT NULL,
         rainfall REAL NOT NULL,
+        rainfall_mm REAL,
         wind_speed REAL NOT NULL,
         recorded_at TEXT NOT NULL,
         timestamp INTEGER NOT NULL,
@@ -71,6 +72,7 @@ class AppDatabase {
         temperature REAL NOT NULL,
         humidity REAL NOT NULL,
         rainfall REAL NOT NULL,
+        rainfall_mm REAL,
         wind_speed REAL NOT NULL,
         recorded_at TEXT NOT NULL,
         timestamp INTEGER NOT NULL,
@@ -82,11 +84,55 @@ class AppDatabase {
       CREATE INDEX IF NOT EXISTS idx_weather_week_device_time 
       ON ${ApiConstants.tableWeatherWeek} (device_id, timestamp);
     ''');
+
+    await _createSyncCursorsTable(db);
+  }
+
+  Future<void> _createSyncCursorsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ${ApiConstants.tableSyncCursors} (
+        device_id TEXT NOT NULL,
+        series TEXT NOT NULL,
+        last_synced_at TEXT NOT NULL,
+        PRIMARY KEY (device_id, series)
+      );
+    ''');
+  }
+
+  Future<void> _addColumnIfMissing(
+    Database db,
+    String tableName,
+    String columnName,
+    String columnType,
+  ) async {
+    final cols = await db.rawQuery('PRAGMA table_info($tableName)');
+    final exists = cols.any((col) => col['name'] == columnName);
+    if (!exists) {
+      await db.execute(
+        'ALTER TABLE $tableName ADD COLUMN $columnName $columnType;',
+      );
+    }
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await _onCreate(db, newVersion);
+      return;
+    }
+    if (oldVersion < 3) {
+      await _addColumnIfMissing(
+        db,
+        ApiConstants.tableWeatherInday,
+        'rainfall_mm',
+        'REAL',
+      );
+      await _addColumnIfMissing(
+        db,
+        ApiConstants.tableWeatherWeek,
+        'rainfall_mm',
+        'REAL',
+      );
+      await _createSyncCursorsTable(db);
     }
   }
 

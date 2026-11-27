@@ -75,9 +75,10 @@ class WeatherDashboardNotifier extends AsyncNotifier<WeatherDashboardState> {
     final repo = ref.read(weatherRepositoryProvider);
     final requestId = ++_activeRequestId;
 
-    state = const AsyncValue.loading();
+    if (!state.hasValue) {
+      state = const AsyncValue.loading();
+    }
     final next = await AsyncValue.guard(() async {
-      await repo.refreshAllData();
       return _fetchDataForStation(repo, targetDeviceId, requestId);
     });
 

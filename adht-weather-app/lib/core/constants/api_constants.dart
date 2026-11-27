@@ -51,9 +51,10 @@ abstract class ApiConstants {
 
   // Cấu hình lưu trữ SQLite (Tách riêng bảng trong ngày và bảng 7 ngày)
   static const String databaseName = 'weather_monitoring.db';
-  static const int databaseVersion = 2;
+  static const int databaseVersion = 3;
   static const String tableWeatherInday = 'weather_inday';
   static const String tableWeatherWeek = 'weather_week';
+  static const String tableSyncCursors = 'sync_cursors';
   static const String latestWeatherFileName = 'latest_weather.json';
   static const int cacheRetentionDays = 7;
   static const int cacheRetentionHoursInday = 24;

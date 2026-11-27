@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsISO8601, IsOptional, IsString } from 'class-validator';
 
 export class QueryHistoryDto {
   @ApiPropertyOptional({ example: 'adht_weather_01', description: 'Mã trạm' })
@@ -11,5 +11,9 @@ export class QueryHistoryDto {
   @IsIn(['1h', '6h', '24h', '3d', '7d'])
   @IsOptional()
   range?: string = '24h';
-}
 
+  @ApiPropertyOptional({ example: '2026-11-27T00:00:00.000Z', description: 'Mốc UTC incremental sync (>= since)' })
+  @IsISO8601()
+  @IsOptional()
+  since?: string;
+}

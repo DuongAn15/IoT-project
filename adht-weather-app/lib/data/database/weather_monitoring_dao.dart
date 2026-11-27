@@ -15,6 +15,40 @@ class WeatherMonitoringDao {
 
   String get tableInday => ApiConstants.tableWeatherInday;
   String get tableWeek => ApiConstants.tableWeatherWeek;
+  String get tableSyncCursors => ApiConstants.tableSyncCursors;
+
+  Future<String?> getSyncCursor({
+    required String deviceId,
+    required String series,
+  }) async {
+    final db = await _appDatabase.database;
+    final rows = await db.query(
+      tableSyncCursors,
+      columns: ['last_synced_at'],
+      where: 'device_id = ? AND series = ?',
+      whereArgs: [deviceId, series],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first['last_synced_at'] as String?;
+  }
+
+  Future<void> setSyncCursor({
+    required String deviceId,
+    required String series,
+    required String lastSyncedAt,
+  }) async {
+    final db = await _appDatabase.database;
+    await db.insert(
+      tableSyncCursors,
+      {
+        'device_id': deviceId,
+        'series': series,
+        'last_synced_at': lastSyncedAt,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
 
   // =========================================================================
   // 1. CÁC THAO TÁC TRÊN BẢNG weather_inday (Dữ liệu trong ngày / 24h)
@@ -90,13 +124,54 @@ class WeatherMonitoringDao {
 
   /// Đồng bộ lưu danh sách bản ghi trong ngày và tự động dọn dẹp dữ liệu quá 24h
   Future<void> saveIndayHistoryAndCleanup(
-    List<WeatherMonitoringRecord> records,
-  ) async {
-    if (records.isNotEmpty) {
-      await insertIndayBatch(records);
-    }
-    await autoDeleteIndayOlderThan24Hours();
-    await purgeFutureIndayRecords();
+    List<WeatherMonitoringRecord> records, {
+    String? deviceId,
+    String? syncCursorIso,
+  }) async {
+    final db = await _appDatabase.database;
+    final cutoff = DateTime.now()
+        .subtract(const Duration(hours: ApiConstants.cacheRetentionHoursInday))
+        .millisecondsSinceEpoch;
+    final maxFuture = DateTime.now().millisecondsSinceEpoch + 600000;
+
+    await db.transaction((txn) async {
+      if (records.isNotEmpty) {
+        final batch = txn.batch();
+        for (final record in records) {
+          batch.insert(
+            tableInday,
+            record.toMap(),
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+        await batch.commit(noResult: true);
+      }
+
+      if (deviceId != null &&
+          syncCursorIso != null &&
+          syncCursorIso.isNotEmpty) {
+        await txn.insert(
+          tableSyncCursors,
+          {
+            'device_id': deviceId,
+            'series': '24h',
+            'last_synced_at': syncCursorIso,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+
+      await txn.delete(
+        tableInday,
+        where: 'timestamp < ?',
+        whereArgs: [cutoff],
+      );
+      await txn.delete(
+        tableInday,
+        where: 'timestamp > ?',
+        whereArgs: [maxFuture],
+      );
+    });
   }
 
   /// Đếm tổng số bản ghi hiện có trong bảng weather_inday
@@ -190,13 +265,54 @@ class WeatherMonitoringDao {
 
   /// Đồng bộ lưu danh sách bản ghi 7 ngày và tự động dọn dẹp các bản ghi quá 7 ngày
   Future<void> saveWeekHistoryAndCleanup(
-    List<WeatherMonitoringRecord> records,
-  ) async {
-    if (records.isNotEmpty) {
-      await insertWeekBatch(records);
-    }
-    await autoDeleteWeekOlderThan7Days();
-    await purgeFutureWeekRecords();
+    List<WeatherMonitoringRecord> records, {
+    String? deviceId,
+    String? syncCursorIso,
+  }) async {
+    final db = await _appDatabase.database;
+    final cutoffTimestamp = DateTime.now()
+        .subtract(const Duration(days: ApiConstants.cacheRetentionDays))
+        .millisecondsSinceEpoch;
+    final maxFuture = DateTime.now().millisecondsSinceEpoch + 600000;
+
+    await db.transaction((txn) async {
+      if (records.isNotEmpty) {
+        final batch = txn.batch();
+        for (final record in records) {
+          batch.insert(
+            tableWeek,
+            record.toMap(),
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+        await batch.commit(noResult: true);
+      }
+
+      if (deviceId != null &&
+          syncCursorIso != null &&
+          syncCursorIso.isNotEmpty) {
+        await txn.insert(
+          tableSyncCursors,
+          {
+            'device_id': deviceId,
+            'series': '7d',
+            'last_synced_at': syncCursorIso,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+
+      await txn.delete(
+        tableWeek,
+        where: 'timestamp < ?',
+        whereArgs: [cutoffTimestamp],
+      );
+      await txn.delete(
+        tableWeek,
+        where: 'timestamp > ?',
+        whereArgs: [maxFuture],
+      );
+    });
   }
 
   /// Đếm tổng số bản ghi hiện có trong bảng weather_week
@@ -250,10 +366,11 @@ class WeatherMonitoringDao {
 
   Future<int> count({String? deviceId}) => countWeek(deviceId: deviceId);
 
-  /// Xóa toàn bộ dữ liệu ở cả 2 bảng (dùng khi reset app hoặc test)
+  /// Xóa toàn bộ dữ liệu ở các bảng (dùng khi reset app hoặc test)
   Future<void> clearAll() async {
     final db = await _appDatabase.database;
     await db.delete(tableInday);
     await db.delete(tableWeek);
+    await db.delete(tableSyncCursors);
   }
 }

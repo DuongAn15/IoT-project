@@ -281,3 +281,63 @@ test('MqttService rejects v2 minute_log in production when DEVICE_DEPLOYMENTS bi
   assert.equal(res.errorCode, 'identity_mismatch');
   assert.equal(res.retryable, false);
 });
+
+test('SupabaseService.getHistory exposes temp_min, temp_max, provenance, and respects since', async () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse('2026-11-27T01:00:00.000Z');
+  try {
+    const svc = Object.create(SupabaseService.prototype);
+    svc.table = 'weather_logs';
+    svc.v2Table = 'weather_logs_v2';
+    svc.logger = { warn() {}, error() {} };
+    const gteCalls = [];
+    const responses = [
+      { data: [], error: null },
+      {
+        data: [
+          {
+            device_id: 'adht_weather_01',
+            temperature: 22.0,
+            humidity: 70,
+            rain_rate: 0,
+            rainfall_mm: 0.5,
+            wind_speed: 1.5,
+            recorded_at: '2026-11-27T00:10:00.000Z',
+          },
+          {
+            device_id: 'adht_weather_01',
+            temperature: 26.0,
+            humidity: 66,
+            rain_rate: 6,
+            rainfall_mm: 1.0,
+            wind_speed: 2.5,
+            recorded_at: '2026-11-27T00:15:00.000Z',
+          },
+        ],
+        error: null,
+      },
+      { data: [], error: null },
+    ];
+    const query = {};
+    for (const m of ['select', 'eq', 'lte', 'order', 'range']) {
+      query[m] = () => query;
+    }
+    query.gte = (col, val) => { gteCalls.push([col, val]); return query; };
+    query.returns = async () => responses.shift();
+    svc.client = { from: () => query };
+
+    const sinceIso = '2026-11-27T00:05:00.000Z';
+    const history = await svc.getHistory('adht_weather_01', '24h', sinceIso);
+    assert.equal(history.length, 1);
+    assert.equal(history[0].temp, 24.0);
+    assert.equal(history[0].temp_min, 22.0);
+    assert.equal(history[0].temp_max, 26.0);
+    assert.equal(history[0].rainfall_mm, 1.5);
+    assert.equal(history[0].sample_count, 2);
+    assert.equal(history[0].source, 'v2');
+    assert.equal(history[0].rain_quality, 'observed');
+    assert.ok(gteCalls.some(([, val]) => val === sinceIso));
+  } finally {
+    Date.now = originalNow;
+  }
+});

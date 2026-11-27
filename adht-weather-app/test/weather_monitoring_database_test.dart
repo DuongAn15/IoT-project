@@ -627,4 +627,53 @@ void main() {
       expect(points.last.minutesFromMidnight, equals(17 * 60 + 53));
     });
   });
+
+  group('SQLite v3 rainfall_mm & sync_cursors', () {
+    test('persists rainfall_mm and commits sync_cursors atomically with history', () async {
+      final db = AppDatabase.withFactory(databaseFactoryFfi);
+      final dao = WeatherMonitoringDao(db);
+      await dao.clearAll();
+
+      final now = DateTime.now().toUtc();
+      final cursorIso = now.toIso8601String();
+      final rec = WeatherMonitoringRecord(
+        deviceId: 'adht_weather_01',
+        temperature: 26.5,
+        humidity: 80.0,
+        rainfall: 1.2,
+        rainfallMm: 0.6,
+        windSpeed: 3.1,
+        recordedAt: now.toLocal(),
+      );
+
+      await dao.saveIndayHistoryAndCleanup(
+        [rec],
+        deviceId: 'adht_weather_01',
+        syncCursorIso: cursorIso,
+      );
+
+      final inday = await dao.getIndayRecords(deviceId: 'adht_weather_01');
+      expect(inday.length, 1);
+      expect(inday.first.rainfallMm, 0.6);
+      expect(
+        await dao.getSyncCursor(deviceId: 'adht_weather_01', series: '24h'),
+        cursorIso,
+      );
+
+      await dao.saveWeekHistoryAndCleanup(
+        [rec],
+        deviceId: 'adht_weather_01',
+        syncCursorIso: cursorIso,
+      );
+      final week = await dao.getWeekHistory7Days(deviceId: 'adht_weather_01');
+      expect(week.length, 1);
+      expect(week.first.rainfallMm, 0.6);
+      expect(
+        await dao.getSyncCursor(deviceId: 'adht_weather_01', series: '7d'),
+        cursorIso,
+      );
+
+      await (await db.database).close();
+    });
+  });
 }
