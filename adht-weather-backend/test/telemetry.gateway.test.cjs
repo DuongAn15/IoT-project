@@ -14,7 +14,10 @@ test('Socket.IO path, broadcasts to all clients, ping ACK and disconnect', { tim
   class GatewayTestModule {}
   Module({ providers: [TelemetryGateway] })(GatewayTestModule);
   const app = await NestFactory.create(GatewayTestModule, { logger: false });
-  t.after(async () => { await app.close(); });
+  t.after(async () => {
+    app.getHttpServer()?.closeAllConnections?.();
+    await app.close();
+  });
   await app.listen(0, '127.0.0.1');
   const base = `http://127.0.0.1:${app.getHttpServer().address().port}`;
   const gateway = app.get(TelemetryGateway);

@@ -51,6 +51,7 @@ export class DevicesService implements OnModuleInit, OnModuleDestroy {
         void this.recoverPendingOperations().catch((error) =>
           this.logger.error(`P06 outbox retry failed: ${String(error)}`));
       }, 5000);
+      this.retryTimer.unref?.();
     }
   }
 
