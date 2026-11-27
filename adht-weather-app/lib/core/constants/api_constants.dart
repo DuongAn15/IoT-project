@@ -52,6 +52,9 @@ abstract class ApiConstants {
   // Device Endpoints
   static String endpointDeviceCommand(String id) => '/devices/$id/command';
   static String endpointDeviceConfig(String id) => '/devices/$id/config';
+  static String endpointDeviceState(String id) => '/devices/$id/state';
+  static String endpointDeviceOperation(String id, String opId) =>
+      '/devices/$id/operations/$opId';
 
   // Weather Endpoints
   static const String endpointWeatherLatest = '/weather/latest';

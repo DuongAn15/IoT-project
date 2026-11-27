@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/api_constants.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_dimensions.dart';
+import '../../data/models/device_config_model.dart';
 import '../../data/models/station_info.dart';
 import '../../providers/device_settings_provider.dart';
 import '../../providers/station_catalogue_provider.dart';
@@ -43,6 +44,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _rainMaxController = TextEditingController(
       text: initialConfig.rainMax?.toString() ?? '30.0',
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final stationId = ref.read(selectedDeviceIdProvider);
+      ref.read(deviceConfigProvider.notifier).loadStationState(stationId);
+    });
+  }
+
+  void _syncControllers(DeviceConfigModel cfg) {
+    _tempMaxController.text = cfg.tempMax?.toString() ?? '38.0';
+    _tempMinController.text = cfg.tempMin?.toString() ?? '10.0';
+    _humiMaxController.text = cfg.humiMax?.toString() ?? '90.0';
+    _windMaxController.text = cfg.windMax?.toString() ?? '15.0';
+    _rainMaxController.text = cfg.rainMax?.toString() ?? '30.0';
   }
 
   @override
@@ -90,6 +104,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final selectedStationId = ref.watch(selectedDeviceIdProvider);
+    final cmdState = ref.watch(deviceCommandProvider);
+    final cfgState = ref.watch(deviceConfigProvider);
 
     // Lắng nghe trạng thái Command để hiển thị SnackBar
     ref.listen<DeviceCommandState>(deviceCommandProvider, (prev, next) {
@@ -102,8 +118,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       }
     });
 
-    // Lắng nghe trạng thái Config để hiển thị SnackBar
+    // Lắng nghe trạng thái Config để hiển thị SnackBar và đồng bộ input khi tải state từ server
     ref.listen<DeviceConfigState>(deviceConfigProvider, (prev, next) {
+      if (prev?.snapshotRevision != next.snapshotRevision) {
+        _syncControllers(next.config);
+      }
       if (next.lastSuccessMessage != null &&
           next.lastSuccessMessage != prev?.lastSuccessMessage) {
         _showFeedback(next.lastSuccessMessage!);
@@ -133,12 +152,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             _buildSectionTitle('Command'),
             const SizedBox(height: AppDimensions.spaceSm),
             _buildCommandCard(),
+            if (cmdState.operationStatus != null) ...[
+              const SizedBox(height: AppDimensions.spaceXs),
+              _buildOperationStatusRow(
+                label: 'Lệnh: ${cmdState.operationStatus!.labelVi}',
+                onReconcile: () => ref
+                    .read(deviceCommandProvider.notifier)
+                    .reconcileActiveOperation(),
+              ),
+            ],
             const SizedBox(height: AppDimensions.spaceLg),
 
             // Mục 2: Config Alert (Cài đặt ngưỡng)
             _buildSectionTitle('Config Alert'),
             const SizedBox(height: AppDimensions.spaceSm),
             _buildConfigCard(),
+            if (cfgState.desiredVersion > 0 || cfgState.operationStatus != null) ...[
+              const SizedBox(height: AppDimensions.spaceXs),
+              _buildOperationStatusRow(
+                label:
+                    'Phiên bản: desired v${cfgState.desiredVersion} · reported v${cfgState.reportedVersion}'
+                    '${cfgState.operationStatus != null ? ' (${cfgState.operationStatus!.labelVi})' : ''}',
+                onReconcile: () => ref
+                    .read(deviceConfigProvider.notifier)
+                    .reconcileActiveConfig(),
+              ),
+            ],
             const SizedBox(height: AppDimensions.spaceXl),
           ],
         ),
@@ -203,12 +242,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               onChanged: (newId) {
                 if (newId != null) {
                   ref.read(selectedDeviceIdProvider.notifier).state = newId;
+                  ref.read(deviceConfigProvider.notifier).loadStationState(newId);
                 }
               },
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildOperationStatusRow({
+    required String label,
+    required VoidCallback onReconcile,
+  }) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        TextButton.icon(
+          onPressed: onReconcile,
+          icon: const Icon(Icons.sync_rounded, size: 16),
+          label: const Text('Đối soát'),
+        ),
+      ],
     );
   }
 

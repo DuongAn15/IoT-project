@@ -7,7 +7,7 @@
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 
-typedef void (*CommandCallback)(const String &cmd, const String &payload);
+typedef void (*CommandCallback)(const String &cmd, const String &payload, const String &requestId, const String &expiresAt);
 typedef void (*ConfigUpdateCallback)(const ConfigUpdatePatch &patch);
 
 class MqttManager {
@@ -18,6 +18,13 @@ public:
     bool isConnected();
     void publishTelemetry(const WeatherData &data, int rssi);
     void publishMinuteLog(const MinuteLogSample &sample);
+    void publishOperationAck(
+        const char *requestId,
+        const char *kind,
+        const char *status,
+        uint32_t version = 0,
+        const char *errorCode = nullptr,
+        const char *errorMessage = nullptr);
     void setCommandCallback(CommandCallback cb);
     void setConfigCallback(ConfigUpdateCallback cb);
 
@@ -44,6 +51,7 @@ private:
 
     void enqueueBacklog(const char *topic, const char *payload);
     void flushBacklog();
+    void flushPendingAcks();
     bool reconnect();
     void onMessageReceived(char *topic, byte *payload, unsigned int length);
     static void staticCallback(char *topic, byte *payload, unsigned int length);

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/constants/api_constants.dart';
 import '../data/models/device_command_model.dart';
 import '../data/models/device_config_model.dart';
+import '../data/models/device_operation_model.dart';
 import '../data/network/device_api_service.dart';
 import '../data/network/dio_client.dart';
 import '../data/repositories/device_repository.dart';
@@ -34,11 +35,15 @@ final selectedDeviceIdProvider = StateProvider<String>((ref) {
 
 class DeviceCommandState {
   final String? activeCommand; // 'led', 'buzzer', 'reboot'
+  final String? activeOperationId;
+  final OperationLifecycleStatus? operationStatus;
   final String? lastSuccessMessage;
   final String? errorMessage;
 
   const DeviceCommandState({
     this.activeCommand,
+    this.activeOperationId,
+    this.operationStatus,
     this.lastSuccessMessage,
     this.errorMessage,
   });
@@ -47,6 +52,8 @@ class DeviceCommandState {
 
   DeviceCommandState copyWith({
     String? activeCommand,
+    String? activeOperationId,
+    OperationLifecycleStatus? operationStatus,
     String? lastSuccessMessage,
     String? errorMessage,
     bool clearActiveCommand = false,
@@ -54,6 +61,8 @@ class DeviceCommandState {
   }) {
     return DeviceCommandState(
       activeCommand: clearActiveCommand ? null : (activeCommand ?? this.activeCommand),
+      activeOperationId: activeOperationId ?? this.activeOperationId,
+      operationStatus: operationStatus ?? this.operationStatus,
       lastSuccessMessage: clearMessages ? null : (lastSuccessMessage ?? this.lastSuccessMessage),
       errorMessage: clearMessages ? null : (errorMessage ?? this.errorMessage),
     );
@@ -69,38 +78,74 @@ class DeviceCommandNotifier extends StateNotifier<DeviceCommandState> {
   Future<bool> sendInstantCommand(String cmd, {String? arg, String? labelVi}) async {
     final deviceId = ref.read(selectedDeviceIdProvider);
     final repo = ref.read(deviceRepositoryProvider);
+    final requestId = 'cmd-${DateTime.now().microsecondsSinceEpoch}';
 
     state = state.copyWith(
       activeCommand: cmd,
+      activeOperationId: requestId,
+      operationStatus: OperationLifecycleStatus.queued,
       clearMessages: true,
     );
 
     try {
-      final success = await repo.sendCommand(
+      final result = await repo.sendCommandOperation(
         deviceId: deviceId,
         command: DeviceCommandModel(cmd: cmd, arg: arg),
+        requestId: requestId,
       );
 
       final displayName = labelVi ?? cmd;
-      if (success) {
+      if (result.status != OperationLifecycleStatus.failed &&
+          result.status != OperationLifecycleStatus.expired) {
         state = state.copyWith(
           clearActiveCommand: true,
-          lastSuccessMessage: 'Đã gửi lệnh $displayName tới trạm $deviceId',
+          activeOperationId: result.operationId ?? requestId,
+          operationStatus: result.status,
+          lastSuccessMessage: '$displayName ($deviceId): ${result.status.labelVi}',
         );
         return true;
       } else {
         state = state.copyWith(
           clearActiveCommand: true,
-          errorMessage: 'Trạm $deviceId không tiếp nhận lệnh "$displayName".',
+          activeOperationId: result.operationId ?? requestId,
+          operationStatus: result.status,
+          errorMessage: result.errorMessage ??
+              'Trạm $deviceId không tiếp nhận lệnh "$displayName".',
         );
         return false;
       }
     } catch (e) {
       state = state.copyWith(
         clearActiveCommand: true,
-        errorMessage: 'Lỗi khi gửi lệnh "$cmd": ${e.toString()}',
+        operationStatus: OperationLifecycleStatus.unknown,
+        errorMessage: 'Mất kết nối khi gửi "$cmd" (trạng thái chưa rõ): ${e.toString()}',
       );
       return false;
+    }
+  }
+
+  Future<void> reconcileActiveOperation() async {
+    final opId = state.activeOperationId;
+    if (opId == null || opId.isEmpty) return;
+    final deviceId = ref.read(selectedDeviceIdProvider);
+    final repo = ref.read(deviceRepositoryProvider);
+    try {
+      final result = await repo.getOperationStatus(
+        deviceId: deviceId,
+        operationId: opId,
+      );
+      state = state.copyWith(
+        operationStatus: result.status,
+        lastSuccessMessage: result.status == OperationLifecycleStatus.applied
+            ? 'Trạm $deviceId đã thực thi lệnh'
+            : null,
+        errorMessage: result.status == OperationLifecycleStatus.failed ||
+                result.status == OperationLifecycleStatus.expired
+            ? (result.errorMessage ?? result.status.labelVi)
+            : null,
+      );
+    } catch (_) {
+      state = state.copyWith(operationStatus: OperationLifecycleStatus.unknown);
     }
   }
 
@@ -120,12 +165,22 @@ final deviceCommandProvider =
 
 class DeviceConfigState {
   final DeviceConfigModel config;
+  final int snapshotRevision;
+  final int desiredVersion;
+  final int reportedVersion;
+  final String? activeOperationId;
+  final OperationLifecycleStatus? operationStatus;
   final bool isSaving;
   final String? lastSuccessMessage;
   final String? errorMessage;
 
   const DeviceConfigState({
     required this.config,
+    this.snapshotRevision = 0,
+    this.desiredVersion = 0,
+    this.reportedVersion = 0,
+    this.activeOperationId,
+    this.operationStatus,
     this.isSaving = false,
     this.lastSuccessMessage,
     this.errorMessage,
@@ -133,6 +188,11 @@ class DeviceConfigState {
 
   DeviceConfigState copyWith({
     DeviceConfigModel? config,
+    int? snapshotRevision,
+    int? desiredVersion,
+    int? reportedVersion,
+    String? activeOperationId,
+    OperationLifecycleStatus? operationStatus,
     bool? isSaving,
     String? lastSuccessMessage,
     String? errorMessage,
@@ -140,6 +200,11 @@ class DeviceConfigState {
   }) {
     return DeviceConfigState(
       config: config ?? this.config,
+      snapshotRevision: snapshotRevision ?? this.snapshotRevision,
+      desiredVersion: desiredVersion ?? this.desiredVersion,
+      reportedVersion: reportedVersion ?? this.reportedVersion,
+      activeOperationId: activeOperationId ?? this.activeOperationId,
+      operationStatus: operationStatus ?? this.operationStatus,
       isSaving: isSaving ?? this.isSaving,
       lastSuccessMessage: clearMessages ? null : (lastSuccessMessage ?? this.lastSuccessMessage),
       errorMessage: clearMessages ? null : (errorMessage ?? this.errorMessage),
@@ -149,6 +214,7 @@ class DeviceConfigState {
 
 class DeviceConfigNotifier extends StateNotifier<DeviceConfigState> {
   final Ref ref;
+  int _activeLoadId = 0;
 
   DeviceConfigNotifier(this.ref)
       : super(
@@ -206,41 +272,112 @@ class DeviceConfigNotifier extends StateNotifier<DeviceConfigState> {
     );
   }
 
+  Future<void> loadStationState(String deviceId) async {
+    final repo = ref.read(deviceRepositoryProvider);
+    final loadId = ++_activeLoadId;
+    try {
+      final snapshot = await repo.getStationState(deviceId);
+      if (loadId != _activeLoadId ||
+          ref.read(selectedDeviceIdProvider) != deviceId) {
+        return;
+      }
+      state = state.copyWith(
+        config: snapshot.desiredConfig,
+        snapshotRevision: state.snapshotRevision + 1,
+        desiredVersion: snapshot.desiredVersion,
+        reportedVersion: snapshot.reportedVersion,
+      );
+    } catch (_) {
+      // Giữ config hiện tại nếu offline
+    }
+  }
+
   /// Gửi HTTP request lưu cấu hình
   Future<bool> saveConfig() async {
     final deviceId = ref.read(selectedDeviceIdProvider);
     final repo = ref.read(deviceRepositoryProvider);
+    final requestId = 'cfg-${DateTime.now().microsecondsSinceEpoch}';
 
     state = state.copyWith(
       isSaving: true,
+      activeOperationId: requestId,
+      operationStatus: OperationLifecycleStatus.queued,
       clearMessages: true,
     );
 
     try {
-      final success = await repo.updateConfig(
+      final result = await repo.updateConfigOperation(
         deviceId: deviceId,
         config: state.config,
+        expectedVersion: state.desiredVersion,
+        requestId: requestId,
       );
 
-      if (success) {
+      if (result.status != OperationLifecycleStatus.failed &&
+          result.status != OperationLifecycleStatus.expired) {
         state = state.copyWith(
           isSaving: false,
-          lastSuccessMessage: 'Đã lưu cấu hình tới trạm $deviceId',
+          desiredVersion: result.desiredVersion ?? state.desiredVersion,
+          activeOperationId: result.operationId ?? requestId,
+          operationStatus: result.status,
+          lastSuccessMessage: 'Cấu hình $deviceId: ${result.status.labelVi}',
         );
         return true;
       } else {
         state = state.copyWith(
           isSaving: false,
-          errorMessage: 'Trạm $deviceId không tiếp nhận cấu hình mới.',
+          activeOperationId: result.operationId ?? requestId,
+          operationStatus: result.status,
+          errorMessage: result.errorMessage ??
+              'Trạm $deviceId không tiếp nhận cấu hình mới.',
         );
         return false;
       }
     } catch (e) {
       state = state.copyWith(
         isSaving: false,
-        errorMessage: 'Lưu cấu hình thất bại: ${e.toString()}',
+        operationStatus: OperationLifecycleStatus.unknown,
+        errorMessage: 'Lưu cấu hình chưa rõ kết quả: ${e.toString()}',
       );
       return false;
+    }
+  }
+
+  Future<void> reconcileActiveConfig() async {
+    final deviceId = ref.read(selectedDeviceIdProvider);
+    final repo = ref.read(deviceRepositoryProvider);
+    final loadId = ++_activeLoadId;
+    try {
+      final snapshot = await repo.getStationState(deviceId);
+      if (loadId != _activeLoadId ||
+          ref.read(selectedDeviceIdProvider) != deviceId) {
+        return;
+      }
+      OperationLifecycleStatus? opStatus = state.operationStatus;
+      final opId = state.activeOperationId;
+      if (opId != null && opId.isNotEmpty) {
+        try {
+          final op = await repo.getOperationStatus(
+            deviceId: deviceId,
+            operationId: opId,
+          );
+          opStatus = op.status;
+        } catch (_) {}
+      }
+      if (loadId != _activeLoadId ||
+          ref.read(selectedDeviceIdProvider) != deviceId) {
+        return;
+      }
+      state = state.copyWith(
+        desiredVersion: snapshot.desiredVersion,
+        reportedVersion: snapshot.reportedVersion,
+        operationStatus: opStatus,
+      );
+    } catch (_) {
+      if (loadId == _activeLoadId &&
+          ref.read(selectedDeviceIdProvider) == deviceId) {
+        state = state.copyWith(operationStatus: OperationLifecycleStatus.unknown);
+      }
     }
   }
 

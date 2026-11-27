@@ -1,5 +1,6 @@
 #include "mqtt_manager.h"
 #include "mqtt_ca_cert.h"
+#include "../storage/storage_manager.h"
 #include <ArduinoJson.h>
 #include <esp_system.h>
 #include <time.h>
@@ -98,11 +99,13 @@ void MqttManager::loop() {
         if (now - lastReconnectAttempt > 5000) {
             lastReconnectAttempt = now;
             if (reconnect()) {
+                flushPendingAcks();
                 flushBacklog();
             }
         }
     } else {
         mqttClient.loop();
+        flushPendingAcks();
         flushBacklog();
     }
 }
@@ -272,6 +275,59 @@ void MqttManager::publishMinuteLog(const MinuteLogSample &sample) {
     }
 }
 
+void MqttManager::flushPendingAcks() {
+    if (!mqttClient.connected()) return;
+    size_t sent = 0;
+    for (size_t i = 0; i < StorageManager::ACK_SLOTS && sent < 2; ++i) {
+        String payload = storageMgr.pendingAck(i);
+        if (payload.isEmpty()) continue;
+        if (!mqttClient.publish(TOPIC_ACK, payload.c_str())) break;
+        storageMgr.clearPendingAck(i);
+        sent++;
+    }
+}
+
+void MqttManager::publishOperationAck(
+    const char *requestId,
+    const char *kind,
+    const char *status,
+    uint32_t version,
+    const char *errorCode,
+    const char *errorMessage) {
+    if (!requestId || requestId[0] == '\0') return;
+
+    JsonDocument doc;
+    doc["request_id"] = requestId;
+    doc["device_id"] = DEVICE_ID;
+    doc["deployment_id"] = DEPLOYMENT_ID;
+    doc["boot_id"] = bootId;
+    doc["kind"] = kind;
+    doc["status"] = status;
+    if (version > 0) {
+        doc["version"] = version;
+    }
+    if (errorCode && errorCode[0] != '\0') {
+        doc["error_code"] = errorCode;
+    }
+    if (errorMessage && errorMessage[0] != '\0') {
+        doc["error_message"] = errorMessage;
+    }
+
+    char buffer[384];
+    serializeJson(doc, buffer, sizeof(buffer));
+    if (!storageMgr.savePendingAck(String(buffer))) {
+        // Do not silently drop an ACK if the persistent queue is full or NVS failed.
+        Serial.println("[MQTT] ACK NVS queue full or write failed");
+        if (mqttClient.connected() && !mqttClient.publish(TOPIC_ACK, buffer)) {
+            enqueueBacklog(TOPIC_ACK, buffer);
+        } else if (!mqttClient.connected()) {
+            enqueueBacklog(TOPIC_ACK, buffer);
+        }
+        return;
+    }
+    flushPendingAcks();
+}
+
 void MqttManager::onMessageReceived(char *topic, byte *payload, unsigned int length) {
     if (!topic || !payload) {
         return;
@@ -288,6 +344,14 @@ void MqttManager::onMessageReceived(char *topic, byte *payload, unsigned int len
             return;
         }
 
+        String requestId = doc["request_id"] | "";
+        String expiresAt = doc["expires_at"] | "";
+        const char *depId = doc["deployment_id"] | "";
+        if (depId[0] != '\0' && strcmp(depId, DEPLOYMENT_ID) != 0) {
+            publishOperationAck(requestId.c_str(), "command", "rejected", 0, "deployment_mismatch", "Deployment ID mismatch");
+            return;
+        }
+
         String cmd = doc["cmd"] | "";
         String arg = "";
         if (doc["arg"].is<const char *>()) {
@@ -296,7 +360,7 @@ void MqttManager::onMessageReceived(char *topic, byte *payload, unsigned int len
             arg = doc["arg"].as<String>();
         }
         if (onCommand) {
-            onCommand(cmd, arg);
+            onCommand(cmd, arg, requestId, expiresAt);
         }
     }
     // 2. Config update handling (Chỉ nhận từ topic riêng của trạm: TOPIC_CONFIG)
@@ -308,8 +372,22 @@ void MqttManager::onMessageReceived(char *topic, byte *payload, unsigned int len
             return;
         }
 
+        String requestId = doc["request_id"] | "";
+        const char *depId = doc["deployment_id"] | "";
+        if (depId[0] != '\0' && strcmp(depId, DEPLOYMENT_ID) != 0) {
+            publishOperationAck(requestId.c_str(), "config", "rejected", 0, "deployment_mismatch", "Deployment ID mismatch");
+            return;
+        }
+
         if (onConfig) {
             ConfigUpdatePatch patch;
+            snprintf(patch.request_id, sizeof(patch.request_id), "%s", requestId.c_str());
+            String expiresAt = doc["expires_at"] | "";
+            snprintf(patch.expires_at, sizeof(patch.expires_at), "%s", expiresAt.c_str());
+            if (doc["version"].is<uint32_t>()) {
+                patch.has_version = true;
+                patch.version = doc["version"].as<uint32_t>();
+            }
             if (doc["temp_max"].is<float>()) {
                 float v = doc["temp_max"].as<float>();
                 if (isfinite(v)) { patch.has_temp_max = true; patch.temp_max = v; }

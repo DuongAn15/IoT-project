@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsNumber, IsOptional, Max, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 export class UpdateConfigDto {
   @ApiPropertyOptional({ example: 38.0, description: 'Ngưỡng nhiệt độ tối đa (°C)' })
@@ -46,4 +46,16 @@ export class UpdateConfigDto {
   @IsBoolean()
   @IsOptional()
   buzzer?: boolean;
+
+  @ApiPropertyOptional({ example: 1, description: 'Phiên bản desired config kỳ vọng (optimistic concurrency)' })
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  expected_version?: number;
+
+  @ApiPropertyOptional({ example: 'req-cfg-001', description: 'Idempotency key từ client' })
+  @IsString()
+  @MaxLength(64)
+  @IsOptional()
+  request_id?: string;
 }

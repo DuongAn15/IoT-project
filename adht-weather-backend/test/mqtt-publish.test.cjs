@@ -45,14 +45,15 @@ test('waits for broker ACK before returning accepted', async () => {
   assert.equal(settled, false);
   acknowledge();
   const res = await result;
-  assert.equal(res.status, 'accepted');
+  assert.equal(res.status, 'published');
   assert.equal(res.delivery, 'broker_ack');
   assert.equal(res.executed, false);
+  assert.ok(res.operation_id);
 });
 
-test('reports failed status when broker rejects publication', async () => {
+test('keeps operation pending when broker receipt is unknown', async () => {
   const service = createService(async () => { throw new Error('publish failed'); });
   const devices = new DevicesService(service);
-  assert.equal((await devices.sendCommand('station1', { cmd: 'buzzer' })).status, 'failed');
-  assert.equal((await devices.updateConfig('station1', { temp_max: 38 })).status, 'failed');
+  assert.equal((await devices.sendCommand('station1', { cmd: 'buzzer' })).status, 'queued');
+  assert.equal((await devices.updateConfig('station1', { temp_max: 38 })).status, 'queued');
 });

@@ -1,22 +1,113 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, Optional } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MqttService } from '../mqtt/mqtt.service';
 import { ALLOWED_DEVICE_COMMANDS, SendCommandDto } from './dto/send-command.dto';
 import { UpdateConfigDto } from './dto/update-config.dto';
 import { CreateDeviceDto } from './dto/create-device.dto';
 import { SupabaseService } from '../database/supabase.service';
+import { DeviceOperationsService, OperationRecord } from './device-operations.service';
 
 const LED_ALLOWED_ARGS = new Set(['', '0', '1', 'on', 'off', 'true', 'false', 'auto']);
 
 @Injectable()
-export class DevicesService {
+export class DevicesService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DevicesService.name);
+  private readonly ops: DeviceOperationsService;
+  private retryTimer?: ReturnType<typeof setInterval>;
+  private recoveryRunning = false;
+
+  private get useDbOperations(): boolean {
+    return typeof this.supabaseService?.createP06Operation === 'function';
+  }
 
   constructor(
     private readonly mqttService: MqttService,
     private readonly supabaseService: SupabaseService,
     @Optional() private readonly configService?: ConfigService,
-  ) {}
+    @Optional() operationsService?: DeviceOperationsService,
+  ) {
+    this.ops = operationsService ?? new DeviceOperationsService(configService);
+    const maybeMqtt = this.mqttService as unknown as {
+      setDeviceAckHandler?: (cb: (deviceId: string, payload: Record<string, unknown>) => void) => void;
+      setBrokerConnectHandler?: (cb: () => void) => void;
+    };
+    maybeMqtt?.setDeviceAckHandler?.((deviceId, payload) => {
+      if (this.useDbOperations) {
+        void this.supabaseService.applyP06Ack(deviceId, payload).catch((error) =>
+          this.logger.error(`P06 ACK persistence failed: ${String(error)}`));
+      } else {
+        this.ops.handleDeviceAck(deviceId, payload);
+      }
+    });
+    maybeMqtt?.setBrokerConnectHandler?.(() => {
+      void this.recoverPendingOperations().catch((error) =>
+        this.logger.error(`P06 outbox recovery failed: ${String(error)}`));
+    });
+  }
+
+  onModuleInit(): void {
+    if (this.useDbOperations) {
+      this.retryTimer = setInterval(() => {
+        void this.recoverPendingOperations().catch((error) =>
+          this.logger.error(`P06 outbox retry failed: ${String(error)}`));
+      }, 5000);
+    }
+  }
+
+  onModuleDestroy(): void {
+    if (this.retryTimer) clearInterval(this.retryTimer);
+  }
+
+  private async publishOperation(op: OperationRecord): Promise<boolean> {
+    const common = {
+      schema_version: 2, request_id: op.operation_id, expires_at: op.expires_at,
+      ...(op.deployment_id ? { deployment_id: op.deployment_id } : {}),
+    };
+    if (op.kind === 'command') {
+      return this.mqttService.publishCommand(op.device_id, { ...common, ...op.payload });
+    }
+    return this.mqttService.publishConfig(op.device_id, {
+      ...common, version: op.desired_version, ...(op.snapshot ?? op.payload),
+    });
+  }
+
+  async recoverPendingOperations(): Promise<number> {
+    if (this.useDbOperations) {
+      if (this.recoveryRunning) return 0;
+      this.recoveryRunning = true;
+      try {
+        let published = 0;
+        for (const op of await this.supabaseService.claimP06Operations()) {
+          let ok = false;
+          try { ok = await this.publishOperation(op); } catch { /* retry with same ID */ }
+          await this.supabaseService.markP06Publish(op.device_id, op.operation_id, ok);
+          if (ok) published++;
+        }
+        return published;
+      } finally {
+        this.recoveryRunning = false;
+      }
+    }
+    return this.ops.recoverPendingOutbox(async (op) => {
+      if (op.kind === 'command') {
+        return this.mqttService.publishCommand(op.device_id, {
+          schema_version: 2,
+          request_id: op.operation_id,
+          expires_at: op.expires_at,
+          ...(op.deployment_id ? { deployment_id: op.deployment_id } : {}),
+          ...op.payload,
+        });
+      }
+      return this.mqttService.publishConfig(op.device_id, {
+        schema_version: 2,
+        request_id: op.operation_id,
+        version: op.desired_version,
+        expires_at: op.expires_at,
+        ...(op.deployment_id ? { deployment_id: op.deployment_id } : {}),
+        ...(op.snapshot ?? op.payload),
+      });
+    });
+  }
 
   private assertValidDeviceAccess(deviceId: string): string {
     const trimmed = typeof deviceId === 'string' ? deviceId.trim() : '';
@@ -115,15 +206,101 @@ export class DevicesService {
     };
   }
 
+  getStationState(deviceId: string) {
+    const id = this.assertValidDeviceAccess(deviceId);
+    return this.useDbOperations ? this.supabaseService.getP06State(id) : this.ops.getStationState(id);
+  }
+
+  getOperation(deviceId: string, operationId: string) {
+    const id = this.assertValidDeviceAccess(deviceId);
+    return this.useDbOperations
+      ? this.supabaseService.getP06Operation(id, operationId)
+      : this.ops.getOperation(id, operationId);
+  }
+
+  private async sendCommandDb(deviceId: string, dto: SendCommandDto) {
+    const payload: Record<string, unknown> = { cmd: dto.cmd };
+    if (dto.arg !== undefined) payload.arg = dto.arg;
+    const created = await this.supabaseService.createP06Operation({
+      deviceId, kind: 'command', payload, requestId: dto.request_id,
+      expiresAt: new Date(Date.now() + (dto.ttl_seconds ?? 60) * 1000).toISOString(),
+      deploymentId: this.configService?.get<Record<string, string>>('auth.deviceDeployments')?.[deviceId],
+    });
+    if (!created.duplicate) {
+      void this.recoverPendingOperations().catch((error) =>
+        this.logger.error(`P06 outbox dispatch failed: ${String(error)}`));
+    }
+    const op = await this.supabaseService.getP06Operation(deviceId, created.operation.operation_id);
+    return {
+      status: op.status, delivery: op.broker_acked_at ? 'broker_ack' : 'pending',
+      executed: op.status === 'applied', duplicate: created.duplicate,
+      operation_id: op.operation_id, operation_status: op.status,
+      expires_at: op.expires_at, deviceId, command: dto,
+    };
+  }
+
+  private async updateConfigDb(deviceId: string, dto: UpdateConfigDto) {
+    const payload: Record<string, unknown> = {};
+    for (const key of ['temp_max', 'temp_min', 'humi_max', 'wind_max',
+      'rain_max', 'auto_warning', 'buzzer'] as const) {
+      if (dto[key] !== undefined) payload[key] = dto[key];
+    }
+    const created = await this.supabaseService.createP06Operation({
+      deviceId, kind: 'config', payload, requestId: dto.request_id,
+      expectedVersion: dto.expected_version,
+      expiresAt: new Date(Date.now() + 300_000).toISOString(),
+      deploymentId: this.configService?.get<Record<string, string>>('auth.deviceDeployments')?.[deviceId],
+    });
+    if (!created.duplicate) {
+      void this.recoverPendingOperations().catch((error) =>
+        this.logger.error(`P06 outbox dispatch failed: ${String(error)}`));
+    }
+    const op = await this.supabaseService.getP06Operation(deviceId, created.operation.operation_id);
+    return {
+      status: op.status, delivery: op.broker_acked_at ? 'broker_ack' : 'pending',
+      executed: op.status === 'persisted' || op.status === 'applied', duplicate: created.duplicate,
+      operation_id: op.operation_id, operation_status: op.status,
+      desired_version: op.desired_version, expires_at: op.expires_at,
+      deviceId, config: op.snapshot,
+    };
+  }
+
   async sendCommand(deviceId: string, dto: SendCommandDto) {
     const id = this.assertValidDeviceAccess(deviceId);
     this.assertValidCommand(dto);
+    if (this.useDbOperations) return this.sendCommandDb(id, dto);
+    const { operation, duplicate } = this.ops.createCommandOperation(id, dto);
+    if (duplicate) {
+      return {
+        status: operation.status === 'failed' ? 'failed' : operation.status,
+        delivery: operation.broker_acked_at ? 'broker_ack' : 'failed',
+        executed: operation.status === 'applied',
+        duplicate: true,
+        operation_id: operation.operation_id,
+        operation_status: operation.status,
+        expires_at: operation.expires_at,
+        deviceId: id,
+        command: dto,
+      };
+    }
+
     this.logger.log(`[DevicesService] Nhận lệnh điều khiển cho trạm ${id}: ${dto.cmd}`);
-    const success = await this.mqttService.publishCommand(id, dto);
+    const success = await this.mqttService.publishCommand(id, {
+      schema_version: 2,
+      request_id: operation.operation_id,
+      expires_at: operation.expires_at,
+      ...(operation.deployment_id ? { deployment_id: operation.deployment_id } : {}),
+      cmd: dto.cmd,
+      ...(dto.arg !== undefined ? { arg: dto.arg } : {}),
+    });
+    const updated = this.ops.markPublishResult(id, operation.operation_id, success) ?? operation;
     return {
-      status: success ? 'accepted' : 'failed',
-      delivery: success ? 'broker_ack' : 'failed',
+      status: updated.status,
+      delivery: success ? 'broker_ack' : 'pending',
       executed: false,
+      operation_id: updated.operation_id,
+      operation_status: updated.status,
+      expires_at: updated.expires_at,
       deviceId: id,
       command: dto,
     };
@@ -132,14 +309,43 @@ export class DevicesService {
   async updateConfig(deviceId: string, dto: UpdateConfigDto) {
     const id = this.assertValidDeviceAccess(deviceId);
     this.assertValidConfig(dto);
-    this.logger.log(`[DevicesService] Nhận cấu hình mới cho trạm ${id}`);
-    const success = await this.mqttService.publishConfig(id, dto);
+    if (this.useDbOperations) return this.updateConfigDb(id, dto);
+    const { operation, duplicate, mergedConfig } = this.ops.createConfigOperation(id, dto);
+    if (duplicate) {
+      return {
+        status: operation.status === 'failed' ? 'failed' : operation.status,
+        delivery: operation.broker_acked_at ? 'broker_ack' : 'failed',
+        executed: operation.status === 'persisted' || operation.status === 'applied',
+        duplicate: true,
+        operation_id: operation.operation_id,
+        operation_status: operation.status,
+        desired_version: operation.desired_version,
+        expires_at: operation.expires_at,
+        deviceId: id,
+        config: mergedConfig,
+      };
+    }
+
+    this.logger.log(`[DevicesService] Nhận cấu hình mới cho trạm ${id} (v${operation.desired_version})`);
+    const success = await this.mqttService.publishConfig(id, {
+      schema_version: 2,
+      request_id: operation.operation_id,
+      version: operation.desired_version,
+      expires_at: operation.expires_at,
+      ...(operation.deployment_id ? { deployment_id: operation.deployment_id } : {}),
+      ...mergedConfig,
+    });
+    const updated = this.ops.markPublishResult(id, operation.operation_id, success) ?? operation;
     return {
-      status: success ? 'accepted' : 'failed',
-      delivery: success ? 'broker_ack' : 'failed',
+      status: updated.status,
+      delivery: success ? 'broker_ack' : 'pending',
       executed: false,
+      operation_id: updated.operation_id,
+      operation_status: updated.status,
+      desired_version: updated.desired_version,
+      expires_at: updated.expires_at,
       deviceId: id,
-      config: dto,
+      config: mergedConfig,
     };
   }
 }
