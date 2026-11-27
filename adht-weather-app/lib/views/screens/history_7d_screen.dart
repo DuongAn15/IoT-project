@@ -223,10 +223,15 @@ class History7dScreen extends ConsumerWidget {
                                 _buildColumnMetric(
                                   theme: theme,
                                   label: 'Mưa',
-                                  value: summary.totalRainfall > 0
-                                      ? '${summary.totalRainfall.toStringAsFixed(1)} mm'
-                                      : '0 mm',
-                                  valueColor: summary.totalRainfall > 0 ? AppColors.rainfall : null,
+                                  value: !summary.hasObservedRainfall
+                                      ? '--'
+                                      : summary.totalRainfall > 0
+                                          ? '${summary.rainQuality == 'estimated' ? '~' : ''}${summary.totalRainfall.toStringAsFixed(1)} mm'
+                                          : '0 mm',
+                                  valueColor: summary.hasObservedRainfall &&
+                                          summary.totalRainfall > 0
+                                      ? AppColors.rainfall
+                                      : null,
                                 ),
 
                                 // Wind

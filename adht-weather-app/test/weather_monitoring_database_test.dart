@@ -675,5 +675,90 @@ void main() {
 
       await (await db.database).close();
     });
+
+    test('migrates existing v1 database directly to v3 with provenance columns and sync_cursors', () async {
+      final dbPath = await databaseFactoryFfi.getDatabasesPath();
+      final fullPath = '$dbPath/${ApiConstants.databaseName}';
+      if (await File(fullPath).exists()) {
+        await File(fullPath).delete();
+      }
+
+      // Create a legacy v1 database without rainfall_mm, provenance columns, or sync_cursors
+      final v1Db = await databaseFactoryFfi.openDatabase(
+        fullPath,
+        options: OpenDatabaseOptions(
+          version: 1,
+          onCreate: (db, version) async {
+            await db.execute('''
+              CREATE TABLE ${ApiConstants.tableWeatherInday} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                temperature REAL NOT NULL,
+                humidity REAL NOT NULL,
+                rainfall REAL NOT NULL,
+                wind_speed REAL NOT NULL,
+                recorded_at TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                UNIQUE(device_id, recorded_at) ON CONFLICT REPLACE
+              );
+            ''');
+            await db.execute('''
+              CREATE TABLE ${ApiConstants.tableWeatherWeek} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                temperature REAL NOT NULL,
+                humidity REAL NOT NULL,
+                rainfall REAL NOT NULL,
+                wind_speed REAL NOT NULL,
+                recorded_at TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                UNIQUE(device_id, recorded_at) ON CONFLICT REPLACE
+              );
+            ''');
+          },
+        ),
+      );
+      await v1Db.close();
+
+      // Re-open with AppDatabase (v3) -> triggers v1 -> v3 migration
+      final upgraded = AppDatabase.withFactory(databaseFactoryFfi);
+      final dao = WeatherMonitoringDao(upgraded);
+      final now = DateTime.now().toUtc();
+      final rec = WeatherMonitoringRecord(
+        deviceId: 'adht_weather_01',
+        temperature: 25.0,
+        humidity: 75.0,
+        rainfall: 2.0,
+        rainfallMm: 0.4,
+        windSpeed: 1.5,
+        source: 'v2',
+        rainQuality: 'observed',
+        sampleCount: 12,
+        tempMin: 24.5,
+        tempMax: 25.5,
+        recordedAt: now.toLocal(),
+      );
+
+      await dao.saveWeekHistoryAndCleanup(
+        [rec],
+        deviceId: 'adht_weather_01',
+        syncCursorIso: now.toIso8601String(),
+      );
+
+      final rows = await dao.getWeekHistory7Days(deviceId: 'adht_weather_01');
+      expect(rows.length, 1);
+      expect(rows.first.rainfallMm, 0.4);
+      expect(rows.first.source, 'v2');
+      expect(rows.first.rainQuality, 'observed');
+      expect(rows.first.sampleCount, 12);
+      expect(rows.first.tempMin, 24.5);
+      expect(rows.first.tempMax, 25.5);
+      expect(
+        await dao.getSyncCursor(deviceId: 'adht_weather_01', series: '7d'),
+        now.toIso8601String(),
+      );
+
+      await (await upgraded.database).close();
+    });
   });
 }

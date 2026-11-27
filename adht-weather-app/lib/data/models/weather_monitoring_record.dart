@@ -8,8 +8,13 @@ class WeatherMonitoringRecord {
   final double temperature; // °C
   final double humidity; // %
   final double rainfall; // rain_rate (mm/h)
-  final double? rainfallMm; // Estimated bucket rainfall amount (mm)
+  final double? rainfallMm; // Bucket rainfall amount (mm)
   final double windSpeed; // km/h
+  final String? source; // 'v2' | 'v1_legacy'
+  final String? rainQuality; // 'observed' | 'estimated'
+  final int? sampleCount;
+  final double? tempMin;
+  final double? tempMax;
   final DateTime recordedAt;
   final int timestamp; // millisecondsSinceEpoch
 
@@ -21,6 +26,11 @@ class WeatherMonitoringRecord {
     required this.rainfall,
     this.rainfallMm,
     required this.windSpeed,
+    this.source,
+    this.rainQuality,
+    this.sampleCount,
+    this.tempMin,
+    this.tempMax,
     required this.recordedAt,
     int? timestamp,
   }) : timestamp = timestamp ?? recordedAt.millisecondsSinceEpoch;
@@ -35,6 +45,11 @@ class WeatherMonitoringRecord {
       'rainfall': rainfall,
       if (rainfallMm != null) 'rainfall_mm': rainfallMm,
       'wind_speed': windSpeed,
+      if (source != null) 'source': source,
+      if (rainQuality != null) 'rain_quality': rainQuality,
+      if (sampleCount != null) 'sample_count': sampleCount,
+      if (tempMin != null) 'temp_min': tempMin,
+      if (tempMax != null) 'temp_max': tempMax,
       // Lưu ISO8601 chuẩn UTC nguyên bản vào SQLite
       'recorded_at': recordedAt.toUtc().toIso8601String(),
       'timestamp': timestamp,
@@ -63,6 +78,11 @@ class WeatherMonitoringRecord {
       rainfall: (map['rainfall'] as num).toDouble(),
       rainfallMm: (map['rainfall_mm'] as num?)?.toDouble(),
       windSpeed: (map['wind_speed'] as num).toDouble(),
+      source: map['source'] as String?,
+      rainQuality: map['rain_quality'] as String?,
+      sampleCount: (map['sample_count'] as num?)?.toInt(),
+      tempMin: (map['temp_min'] as num?)?.toDouble(),
+      tempMax: (map['temp_max'] as num?)?.toDouble(),
       recordedAt: parsedDate,
       timestamp: tsRaw ?? parsedDate.millisecondsSinceEpoch,
     );
@@ -83,6 +103,11 @@ class WeatherMonitoringRecord {
       rainfall: (json['rain_rate'] as num?)?.toDouble() ?? 0.0,
       rainfallMm: (json['rainfall_mm'] as num?)?.toDouble(),
       windSpeed: (json['wind_speed'] as num?)?.toDouble() ?? 0.0,
+      source: json['source'] as String?,
+      rainQuality: json['rain_quality'] as String?,
+      sampleCount: (json['sample_count'] as num?)?.toInt(),
+      tempMin: (json['temp_min'] as num?)?.toDouble(),
+      tempMax: (json['temp_max'] as num?)?.toDouble(),
       recordedAt: date,
       timestamp: date.millisecondsSinceEpoch,
     );

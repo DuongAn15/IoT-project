@@ -99,7 +99,8 @@ class AppWeatherRepository implements WeatherRepository {
         latest = candidate;
       }
     }
-    return latest.toIso8601String();
+    // Advance by 1ms so backend .gte('created_at', since) does not re-fetch the boundary row.
+    return latest.add(const Duration(milliseconds: 1)).toIso8601String();
   }
 
   @override
@@ -218,13 +219,23 @@ class AppWeatherRepository implements WeatherRepository {
       if (dayRecords != null && dayRecords.isNotEmpty) {
         double sumTemp = 0, minTemp = double.infinity, maxTemp = -double.infinity;
         double sumHumi = 0, sumRain = 0, sumWind = 0;
+        bool hasAnyRainfallMm = false;
+        bool allObserved = true;
 
         for (final r in dayRecords) {
           sumTemp += r.temperature;
-          if (r.temperature < minTemp) minTemp = r.temperature;
-          if (r.temperature > maxTemp) maxTemp = r.temperature;
+          final lowTemp = r.tempMin ?? r.temperature;
+          final highTemp = r.tempMax ?? r.temperature;
+          if (lowTemp < minTemp) minTemp = lowTemp;
+          if (highTemp > maxTemp) maxTemp = highTemp;
           sumHumi += r.humidity;
-          sumRain += r.rainfallMm ?? r.rainfall;
+          if (r.rainfallMm != null) {
+            sumRain += r.rainfallMm!;
+            hasAnyRainfallMm = true;
+            if (r.rainQuality != 'observed') {
+              allObserved = false;
+            }
+          }
           sumWind += r.windSpeed;
         }
 
@@ -239,7 +250,12 @@ class AppWeatherRepository implements WeatherRepository {
             maxTemperature:
                 double.parse((maxTemp.isFinite ? maxTemp : 0.0).toStringAsFixed(1)),
             avgHumidity: double.parse((sumHumi / count).toStringAsFixed(1)),
-            totalRainfall: double.parse(sumRain.toStringAsFixed(1)),
+            totalRainfall:
+                hasAnyRainfallMm ? double.parse(sumRain.toStringAsFixed(1)) : 0.0,
+            hasObservedRainfall: hasAnyRainfallMm,
+            rainQuality: !hasAnyRainfallMm
+                ? 'unknown'
+                : (allObserved ? 'observed' : 'estimated'),
             avgWindSpeed: double.parse((sumWind / count).toStringAsFixed(1)),
             hasData: true,
           ),

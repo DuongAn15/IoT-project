@@ -53,6 +53,11 @@ class AppDatabase {
         rainfall REAL NOT NULL,
         rainfall_mm REAL,
         wind_speed REAL NOT NULL,
+        source TEXT,
+        rain_quality TEXT,
+        sample_count INTEGER,
+        temp_min REAL,
+        temp_max REAL,
         recorded_at TEXT NOT NULL,
         timestamp INTEGER NOT NULL,
         UNIQUE(device_id, recorded_at) ON CONFLICT REPLACE
@@ -74,6 +79,11 @@ class AppDatabase {
         rainfall REAL NOT NULL,
         rainfall_mm REAL,
         wind_speed REAL NOT NULL,
+        source TEXT,
+        rain_quality TEXT,
+        sample_count INTEGER,
+        temp_min REAL,
+        temp_max REAL,
         recorded_at TEXT NOT NULL,
         timestamp INTEGER NOT NULL,
         UNIQUE(device_id, recorded_at) ON CONFLICT REPLACE
@@ -117,21 +127,19 @@ class AppDatabase {
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await _onCreate(db, newVersion);
-      return;
     }
     if (oldVersion < 3) {
-      await _addColumnIfMissing(
-        db,
+      for (final table in [
         ApiConstants.tableWeatherInday,
-        'rainfall_mm',
-        'REAL',
-      );
-      await _addColumnIfMissing(
-        db,
         ApiConstants.tableWeatherWeek,
-        'rainfall_mm',
-        'REAL',
-      );
+      ]) {
+        await _addColumnIfMissing(db, table, 'rainfall_mm', 'REAL');
+        await _addColumnIfMissing(db, table, 'source', 'TEXT');
+        await _addColumnIfMissing(db, table, 'rain_quality', 'TEXT');
+        await _addColumnIfMissing(db, table, 'sample_count', 'INTEGER');
+        await _addColumnIfMissing(db, table, 'temp_min', 'REAL');
+        await _addColumnIfMissing(db, table, 'temp_max', 'REAL');
+      }
       await _createSyncCursorsTable(db);
     }
   }

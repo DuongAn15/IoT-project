@@ -120,6 +120,55 @@ void main() {
     expect(summaries.last.totalRainfall, 3.0);
   });
 
+  test('buildContinuous7DaysSummary never sums rain_rate when rainfallMm is null and tracks provenance', () {
+    final now = DateTime(2026, 11, 26, 14, 0);
+    final yesterday = DateTime(2026, 11, 25, 10, 0);
+
+    final summaries = AppWeatherRepository.buildContinuous7DaysSummary(
+      [
+        // Legacy record: rain_rate = 15.0 mm/h, rainfallMm = null
+        WeatherMonitoringRecord(
+          deviceId: 'adht_weather_01',
+          temperature: 28.0,
+          humidity: 70.0,
+          rainfall: 15.0,
+          windSpeed: 2.0,
+          source: 'v1_legacy',
+          rainQuality: 'estimated',
+          recordedAt: yesterday,
+        ),
+        // V2 observed record with tempMin/tempMax
+        WeatherMonitoringRecord(
+          deviceId: 'adht_weather_01',
+          temperature: 27.0,
+          humidity: 75.0,
+          rainfall: 3.0,
+          rainfallMm: 0.8,
+          windSpeed: 2.5,
+          source: 'v2',
+          rainQuality: 'observed',
+          tempMin: 25.2,
+          tempMax: 29.4,
+          recordedAt: now,
+        ),
+      ],
+      referenceDate: now,
+    );
+
+    final yesterdaySummary = summaries[summaries.length - 2];
+    expect(yesterdaySummary.hasData, isTrue);
+    expect(yesterdaySummary.hasObservedRainfall, isFalse);
+    expect(yesterdaySummary.rainQuality, 'unknown');
+    expect(yesterdaySummary.totalRainfall, 0.0);
+
+    final todaySummary = summaries.last;
+    expect(todaySummary.hasObservedRainfall, isTrue);
+    expect(todaySummary.rainQuality, 'observed');
+    expect(todaySummary.totalRainfall, 0.8);
+    expect(todaySummary.minTemperature, 25.2);
+    expect(todaySummary.maxTemperature, 29.4);
+  });
+
   test('StationCatalogueStorage persists and restores station list offline', () async {
     final tempDir = await Directory.systemTemp.createTemp('adht_cat_test_');
     addTearDown(() async {
