@@ -2,7 +2,7 @@
 
 ## Before deployment
 
-1. Review and apply [`p06-operations-migration.sql`](p06-operations-migration.sql) in the Supabase SQL editor with a database administrator account. This creates `p06_station_state`, `p06_operations`, and four transactional RPC functions. No live migration is performed by the repository build.
+1. Review and apply [`p06-operations-migration.sql`](p06-operations-migration.sql) (or [`p06-operations-rename-migration.sql`](p06-operations-rename-migration.sql) if upgrading from `p06_*` names) in the Supabase SQL editor with a database administrator account. This creates `station_state`, `device_operations`, and four transactional RPC functions. No live migration is performed by the repository build.
 2. Keep `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` configured on the backend. The service role key must stay server-side. A missing migration makes operation endpoints return 503; the backend does not silently reset the desired version.
 3. If a previous P06 backend already wrote `data/operation-ledger.json`, preserve it and reconcile its desired version/config with the station before cutover. The new DB starts at version 0 and cannot infer an existing NVS version; do not discard that file or enable writes until reconciled.
 4. Set `DEVICE_DEPLOYMENTS` so each station is bound to its current firmware deployment ID. Deploy the P06 firmware before using the new operation endpoints.
